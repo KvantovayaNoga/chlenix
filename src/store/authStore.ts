@@ -9,12 +9,15 @@ interface AuthState {
   login: (email: string, password: string) => { success: boolean; error?: string };
   register: (email: string, password: string, fullName: string) => { success: boolean; error?: string };
   logout: () => void;
-  addUser: (user: Omit<User, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy'>) => { success: boolean; error?: string };
+  addUser: (user: Omit<User, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy' | 'organizationId'> & { organizationId?: string | null }) => { success: boolean; error?: string };
   updateUser: (id: string, data: Partial<User>) => void;
   deleteUser: (id: string) => void;
   getUserRole: () => UserRole | null;
   canEdit: () => boolean;
   canManageUsers: () => boolean;
+  // Организация
+  setOrganizationForUser: (userId: string, organizationId: string | null) => void;
+  hasOrganization: () => boolean;
 }
 
 const now = new Date().toISOString();
@@ -180,6 +183,22 @@ export const useAuthStore = create<AuthState>()(
       },
 
       canManageUsers: () => get().currentUser?.role === 'admin',
+
+      // Организация: привязка пользователя к организации
+      setOrganizationForUser: (userId, organizationId) => {
+        set((state) => {
+          const updatedUsers = state.users.map((u) =>
+            u.id === userId ? { ...u, organizationId, updatedAt: new Date().toISOString() } : u
+          );
+          const updatedCurrentUser =
+            state.currentUser?.id === userId
+              ? updatedUsers.find((u) => u.id === userId) || state.currentUser
+              : state.currentUser;
+          return { users: updatedUsers, currentUser: updatedCurrentUser };
+        });
+      },
+
+      hasOrganization: () => !!get().currentUser?.organizationId,
     }),
     {
       name: 'auth-storage',

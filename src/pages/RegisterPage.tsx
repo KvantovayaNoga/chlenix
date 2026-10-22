@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import { Building2, UserPlus, Eye, EyeOff } from 'lucide-react';
-import type { UserRole } from '../types';
+import { Building2, UserPlus, Eye, EyeOff, ArrowRight } from 'lucide-react';
 
 export function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -10,6 +9,7 @@ export function RegisterPage() {
     email: '',
     password: '',
     confirmPassword: '',
+    createOrganization: true,
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -32,7 +32,8 @@ export function RegisterPage() {
 
     const result = register(formData.email, formData.password, formData.fullName);
     if (result.success) {
-      navigate('/dashboard');
+      // После регистрации сразу предлагаем создать организацию
+      navigate(formData.createOrganization ? '/organization/create' : '/dashboard');
     } else {
       setError(result.error || 'Ошибка регистрации');
     }
@@ -56,7 +57,11 @@ export function RegisterPage() {
 
         {/* Form */}
         <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 border border-gray-700">
-          <h2 className="text-2xl font-bold text-gray-200 mb-6">Создать аккаунт</h2>
+          <h2 className="text-2xl font-bold text-gray-200 mb-2">Создать аккаунт</h2>
+          <p className="text-gray-400 text-sm mb-6 flex items-start gap-2">
+            <ArrowRight className="w-4 h-4 text-indigo-400 mt-0.5 flex-shrink-0" />
+            После регистрации вы сможете создать свою организацию и начать учёт активов.
+          </p>
           
           {error && (
             <div className="mb-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-red-300 text-sm">
@@ -137,6 +142,24 @@ export function RegisterPage() {
               <UserPlus className="w-5 h-5" />
               Зарегистрироваться
             </button>
+
+            <label className="flex items-start gap-3 mt-4 p-3 bg-gray-700/50 border border-gray-600 rounded-xl cursor-pointer hover:bg-gray-700 transition-colors">
+              <input
+                type="checkbox"
+                checked={formData.createOrganization}
+                onChange={(e) => setFormData((prev) => ({ ...prev, createOrganization: e.target.checked }))}
+                className="mt-0.5 w-4 h-4 accent-indigo-500"
+              />
+              <span className="text-sm text-gray-300">
+                <span className="flex items-center gap-1.5 font-medium text-gray-200">
+                  <Building2 className="w-4 h-4 text-indigo-400" />
+                  Создать организацию после регистрации
+                </span>
+                <span className="block text-gray-400 mt-1">
+                  Карточку организации можно будет создать и позже — в разделе «Организация».
+                </span>
+              </span>
+            </label>
           </form>
 
           <div className="mt-6 text-center">

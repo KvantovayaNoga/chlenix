@@ -13,7 +13,18 @@ import { PhysicalServersPage } from './pages/PhysicalServersPage';
 import { UsersPage } from './pages/UsersPage';
 import { UserProfilePage } from './pages/UserProfilePage';
 import { DirectoriesPage } from './pages/DirectoriesPage';
+import { OrganizationPage } from './pages/OrganizationPage';
+import { CreateOrganizationPage } from './pages/CreateOrganizationPage';
 import { AboutPage } from './pages/AboutPage';
+
+// После авторизации: если у пользователя нет организации — сначала предлагаем создать
+function DefaultAuthenticatedRedirect() {
+  const { currentUser } = useAuthStore();
+  if (currentUser && !currentUser.organizationId) {
+    return <Navigate to="/organization/create" replace />;
+  }
+  return <Navigate to="/dashboard" replace />;
+}
 
 function App() {
   const { isAuthenticated } = useAuthStore();
@@ -21,8 +32,8 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
-        <Route path="/register" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <RegisterPage />} />
+        <Route path="/login" element={isAuthenticated ? <DefaultAuthenticatedRedirect /> : <LoginPage />} />
+        <Route path="/register" element={isAuthenticated ? <DefaultAuthenticatedRedirect /> : <RegisterPage />} />
 
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route path="/dashboard" element={<DashboardPage />} />
@@ -32,12 +43,14 @@ function App() {
           <Route path="/employees/:id" element={<EmployeeDetailPage />} />
           <Route path="/equipment" element={<EquipmentPage />} />
           <Route path="/directories" element={<DirectoriesPage />} />
+          <Route path="/organization" element={<OrganizationPage />} />
+          <Route path="/organization/create" element={<CreateOrganizationPage />} />
           <Route path="/users" element={<ProtectedRoute requiredRole="admin"><UsersPage /></ProtectedRoute>} />
           <Route path="/users/:id" element={<ProtectedRoute><UserProfilePage /></ProtectedRoute>} />
           <Route path="/about" element={<ProtectedRoute requiredRole="admin"><AboutPage /></ProtectedRoute>} />
         </Route>
 
-        <Route path="*" element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />} />
+        <Route path="*" element={isAuthenticated ? <DefaultAuthenticatedRedirect /> : <Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   );
