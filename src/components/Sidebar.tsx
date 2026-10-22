@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { useDataStore } from '../store/dataStore';
 import { useState } from 'react';
 import {
   LayoutDashboard,
@@ -13,6 +14,7 @@ import {
   Info,
   ChevronLeft,
   ChevronRight,
+  Building2,
 } from 'lucide-react';
 
 const roleLabels = {
@@ -29,6 +31,7 @@ const roleColors = {
 
 export function Sidebar() {
   const { currentUser, logout, canManageUsers } = useAuthStore();
+  const organization = useDataStore((s) => s.organizations.find((o) => o.id === currentUser?.organizationId));
   const navigate = useNavigate();
   const [isMinimized, setIsMinimized] = useState(false);
 
@@ -46,6 +49,7 @@ export function Sidebar() {
   // Новый порядок вкладок
   const navItems = [
     { to: '/dashboard', label: 'Обзор', icon: LayoutDashboard },
+    { to: '/organization', label: organization ? organization.shortName || organization.name : 'Организация', icon: Building2 },
     { to: '/employees', label: 'Сотрудники', icon: Users },
     { to: '/equipment', label: 'Оборудование', icon: Monitor },
     { to: '/servers/physical', label: 'Физические серверы', icon: Server },

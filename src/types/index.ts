@@ -24,6 +24,44 @@ export interface User {
   updatedAt: string;
   updatedBy: string | null;
   isActive: boolean;
+  organizationId?: string | null; // Организация, к которой привязан пользователь
+  history?: HistoryEntry[];
+}
+
+// Организация (создаётся пользователем после регистрации)
+export type OrganizationLegalForm = 'OOO' | 'AO' | 'PAO' | 'IAO' | 'IPO' | 'PT' | 'GP' | 'ANO' | 'FGBU' | 'MBU' | 'IP';
+
+export interface Organization {
+  id: string;
+  name: string;                 // Наименование организации
+  legalForm: OrganizationLegalForm; // Организационно-правовая форма
+  shortName: string;            // Краткое наименование
+  inn: string;                  // ИНН
+  kpp: string;                  // КПП (может отсутствовать, например у ИП)
+  ogrn: string;                 // ОГРН / ОГРНИП
+  legalAddress: string;         // Юридический адрес
+  actualAddress: string;        // Фактический адрес
+  postalCode: string;           // Почтовый индекс
+  city: string;                 // Город
+  phone: string;                // Контактный телефон
+  email: string;                // Email
+  website: string;              // Сайт
+  directorName: string;         // Руководитель (ФИО)
+  accountantName: string;       // Главный бухгалтер (ФИО)
+  bankName: string;             // Наименование банка
+  checkingAccount: string;      // Расчётный счёт
+  correspondentAccount: string; // Корреспондентский счёт
+  bik: string;                  // БИК
+  taxSystem: string;            // Система налогообложения
+  industry: string;             // Отрасль / вид деятельности
+  employeeCount: number | null; // Штатная численность
+  foundedDate: string;          // Дата основания
+  logo?: string;                // Логотип (Base64)
+  notes: string;                // Примечания
+  createdBy: string;            // ID пользователя-создателя
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string | null;
   history?: HistoryEntry[];
 }
 

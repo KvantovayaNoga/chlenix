@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Employee, Equipment, Assignment, EquipmentCategory, DashboardStats, VirtualMachine, NetworkInterface, Service, AuditLogEntry, Department, Position, Branch, HistoryEntry } from '../types';
+import type { Employee, Equipment, Assignment, EquipmentCategory, DashboardStats, VirtualMachine, NetworkInterface, Service, AuditLogEntry, Department, Position, Branch, HistoryEntry, Organization } from '../types';
 import { useAuthStore } from './authStore';
 
 const now = new Date().toISOString();
@@ -144,6 +144,7 @@ const initialServices: Service[] = [
 const initialAssignments: Assignment[] = [];
 
 interface DataState {
+  organizations: Organization[];
   departments: Department[];
   positions: Position[];
   branches: Branch[];
@@ -153,6 +154,13 @@ interface DataState {
   virtualMachines: VirtualMachine[];
   services: Service[];
   auditLog: AuditLogEntry[];
+
+  // Organizations
+  addOrganization: (data: Omit<Organization, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy' | 'createdBy'>) => Organization;
+  updateOrganization: (id: string, data: Partial<Organization>) => void;
+  deleteOrganization: (id: string) => void;
+  getOrganizationById: (id: string) => Organization | undefined;
+  getCurrentUserOrganization: () => Organization | undefined;
 
   // Departments
   addDepartment: (data: Omit<Department, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy'>) => void;
@@ -208,6 +216,7 @@ interface DataState {
 export const useDataStore = create<DataState>()(
   persist(
     (set, get) => ({
+      organizations: [],
       departments: initialDepartments,
       positions: initialPositions,
       branches: initialBranches,
@@ -217,6 +226,76 @@ export const useDataStore = create<DataState>()(
       virtualMachines: initialVMs,
       services: initialServices,
       auditLog: [],
+
+      // Organizations
+      addOrganization: (data) => {
+        const currentUser = useAuthStore.getState().currentUser;
+        const historyEntry = createHistoryEntry('created');
+        const newOrganization: Organization = {
+          ...data,
+          id: 'org' + Date.now().toString(),
+          createdBy: currentUser?.id || 'system',
+          createdAt: new Date().toISOString().split('T')[0],
+          updatedAt: new Date().toISOString(),
+          updatedBy: currentUser?.id || null,
+          history: [historyEntry],
+        };
+        set((state) => ({ organizations: [...state.organizations, newOrganization] }));
+        // Привязываем создавшего пользователя к организации
+        if (currentUser) {
+          useAuthStore.getState().setOrganizationForUser(currentUser.id, newOrganization.id);
+        }
+        set((state) => ({
+          auditLog: addAuditLog(state, 'create', 'organization', newOrganization.id, newOrganization.name, `Создана организация "${newOrganization.name}"`),
+        }));
+        return newOrganization;
+      },
+      updateOrganization: (id, data) => {
+        set((state) => {
+          const oldOrg = state.organizations.find((o) => o.id === id);
+          const historyEntry = createHistoryEntry('updated');
+          const changes: string[] = [];
+          if (oldOrg) {
+            if (data.name && data.name !== oldOrg.name) changes.push(`наименование: "${oldOrg.name}" → "${data.name}"`);
+            if (data.inn && data.inn !== oldOrg.inn) changes.push(`ИНН: "${oldOrg.inn}" → "${data.inn}"`);
+            if (data.legalAddress && data.legalAddress !== oldOrg.legalAddress) changes.push('юридический адрес');
+            if (data.directorName && data.directorName !== oldOrg.directorName) changes.push(`руководитель: "${oldOrg.directorName}" → "${data.directorName}"`);
+          }
+          return {
+            organizations: state.organizations.map((o) =>
+              o.id === id
+                ? {
+                    ...o,
+                    ...data,
+                    updatedAt: new Date().toISOString(),
+                    updatedBy: useAuthStore.getState().currentUser?.id || null,
+                    history: [...(o.history || []), { ...historyEntry, fieldName: changes.length > 0 ? changes.join(', ') : 'данные обновлены' }],
+                  }
+                : o
+            ),
+            auditLog: addAuditLog(state, 'update', 'organization', id, oldOrg?.name || '', `Обновлена организация "${oldOrg?.name || ''}"`),
+          };
+        });
+      },
+      deleteOrganization: (id) => {
+        set((state) => {
+          const org = state.organizations.find((o) => o.id === id);
+          // Отвязываем пользователей от организации
+          useAuthStore.getState().users
+            .filter((u) => u.organizationId === id)
+            .forEach((u) => useAuthStore.getState().setOrganizationForUser(u.id, null));
+          return {
+            organizations: state.organizations.filter((o) => o.id !== id),
+            auditLog: addAuditLog(state, 'delete', 'organization', id, org?.name || '', `Удалена организация "${org?.name || ''}"`),
+          };
+        });
+      },
+      getOrganizationById: (id) => get().organizations.find((o) => o.id === id),
+      getCurrentUserOrganization: () => {
+        const currentUser = useAuthStore.getState().currentUser;
+        if (!currentUser?.organizationId) return undefined;
+        return get().organizations.find((o) => o.id === currentUser.organizationId);
+      },
 
       // Departments
       addDepartment: (data) => {
