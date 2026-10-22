@@ -1,0 +1,24 @@
+import { Navigate } from 'react-router-dom';
+import { useAuthStore } from '../store/authStore';
+
+interface ProtectedRouteProps {
+  children: React.ReactNode;
+  requiredRole?: 'admin' | 'materially_responsible' | 'viewer';
+}
+
+export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
+  const { isAuthenticated, currentUser } = useAuthStore();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (requiredRole && currentUser) {
+    const roleHierarchy = { admin: 3, materially_responsible: 2, viewer: 1 };
+    if (roleHierarchy[currentUser.role] < roleHierarchy[requiredRole]) {
+      return <Navigate to="/dashboard" replace />;
+    }
+  }
+
+  return <>{children}</>;
+}
