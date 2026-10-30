@@ -126,7 +126,7 @@ cat backup_20240101.sql | docker compose exec -T postgres psql -U chlenix chleni
 
 ## 📚 Дополнительная информация
 
-Полная документация: [DOCKER_DEPLOY.md](./DOCKER_DEPLOY.md)
+- Полная документация по деплою (Docker и bare-metal): [DEPLOY.md](./DEPLOY.md)
 
 ---
 

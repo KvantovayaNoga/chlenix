@@ -2,3 +2,9 @@ node_modules/
 .env
 .env.local
 .env.*.local
+
+# Логи и артефакты сборки
+*.log
+dist/
+backend/dist/
+dist/

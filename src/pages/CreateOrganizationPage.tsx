@@ -350,7 +350,7 @@ export function CreateOrganizationPage() {
                   value={form.email}
                   onChange={(e) => handleChange('email', e.target.value)}
                   className={inputCls}
-                  placeholder="info@company.ru"
+                  placeholder="example: info@org.ru"
                 />
               </div>
               <div>
@@ -360,7 +360,7 @@ export function CreateOrganizationPage() {
                   value={form.website}
                   onChange={(e) => handleChange('website', e.target.value)}
                   className={inputCls}
-                  placeholder="https://company.ru"
+                  placeholder="example: https://org.ru"
                 />
               </div>
               <div>
