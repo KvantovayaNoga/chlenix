@@ -282,6 +282,38 @@ docker compose exec frontend tail -f /var/log/nginx/access.log
 
 ## 🛠 Решение проблем
 
+### Сборка «висит» на шаге `RUN npm install` (docker build)
+
+Причина: с сервера недоступен `registry.npmjs.org` (блокировка, отсутствие DNS/прокси).
+npm по умолчанию не имеет таймаутов и бесконечно ждёт ответа. Диагностика:
+
+```bash
+docker run --rm node:22-alpine npm view react version   # если висит — сеть до реестра недоступна
+curl -sI --max-time 10 https://registry.npmjs.org       # проверка доступности с хоста
+```
+
+Решения (по приоритету):
+
+1. **Зеркало npm** — задайте в `.env`:
+   ```bash
+   NPM_REGISTRY=https://registry.npmmirror.com
+   ```
+   `deploy.sh` и `docker-compose.yml` автоматически пробросят его в build-арги.
+2. **Прокси** — если в сети компании есть HTTP-прокси, задайте в `.env`
+   `HTTP_PROXY` / `HTTPS_PROXY` (пробрасываются в сборку), либо глобально для Docker:
+   ```bash
+   sudo tee /etc/docker/daemon.json <<'JSON'
+   { "proxies": { "http-proxy": "http://proxy:3128", "https-proxy": "http://proxy:3128" } }
+   JSON
+   sudo systemctl restart docker
+   ```
+3. **DNS** — если не резолвятся имена, добавьте в `/etc/docker/daemon.json`:
+   `{ "dns": ["8.8.8.8", "1.1.1.1"] }` и перезапустите docker.
+
+В проект добавлен `.npmrc` с таймаутами и ретраями (`fetch-timeout`, `fetch-retries`) —
+теперь вместо вечного зависания установка быстро переключается между попытками и падает
+с понятной ошибкой, если сеть действительно недоступна.
+
 ### Порт уже занят
 
 ```bash

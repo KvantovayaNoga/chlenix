@@ -58,6 +58,21 @@ check_docker_env() {
     fail "Docker Compose не найден — см. https://docs.docker.com/compose/install/"
     ERRORS=$((ERRORS+1))
   fi
+
+  # Диагностика сети до npm-реестра: именно из-за её отсутствия сборка
+  # «бесконечно висит» на шаге RUN npm install внутри Dockerfile.
+  echo "🌐 Проверка доступности registry.npmjs.org с сервера..."
+  if curl -fsS --max-time 10 https://registry.npmjs.org/-/ping >/dev/null 2>&1; then
+    ok "registry.npmjs.org доступен"
+  else
+    warn "registry.npmjs.org недоступен или отвечает медленно."
+    warn "Сборка образов будет висеть/падать на npm install. Варианты:"
+    warn "  1) Зеркало npm: export NPM_REGISTRY=https://registry.npmmirror.com"
+    warn "     и раскомментируйте args в docker-compose.yml (см. DEPLOY.md)"
+    warn "  2) Прокси: пропишите HTTP_PROXY/HTTPS_PROXY в /etc/docker/daemon.json"
+    warn "     (section \"proxies\") и выполните: systemctl restart docker"
+    warn "  3) DNS: задайте dns в /etc/docker/daemon.json, например [\"8.8.8.8\",\"1.1.1.1\"]"
+  fi
 }
 
 check_bare_env() {
@@ -170,7 +185,14 @@ deploy_docker() {
   (cd "$APP_DIR" && docker compose down 2>/dev/null) || true
 
   echo "🔨 Собираем образы и запускаем сервисы..."
-  (cd "$APP_DIR" && docker compose up -d --build)
+  # Пробрасываем NPM_REGISTRY / прокси в build-арги, если заданы в .env —
+  # это лечит «вечное зависание» npm install при недоступности registry.npmjs.org.
+  BUILD_ARGS=""
+  [ -n "${NPM_REGISTRY:-}" ] && BUILD_ARGS="$BUILD_ARGS --build-arg NPM_REGISTRY=${NPM_REGISTRY}"
+  [ -n "${HTTPS_PROXY:-}" ]  && BUILD_ARGS="$BUILD_ARGS --build-arg HTTPS_PROXY=${HTTPS_PROXY}"
+  [ -n "${HTTP_PROXY:-}" ]   && BUILD_ARGS="$BUILD_ARGS --build-arg HTTP_PROXY=${HTTP_PROXY}"
+  # shellcheck disable=SC2086
+  (cd "$APP_DIR" && docker compose up -d --build $BUILD_ARGS)
 
   echo "⏳ Ожидаем готовности backend..."
   wait_for_api "http://localhost:${HTTP_PORT:-80}/api/health" "http://localhost:${BACKEND_PORT:-4000}/api/health"
