@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import { Building2, UserPlus, Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { Building2, UserPlus, Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react';
 
 export function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -13,7 +13,8 @@ export function RegisterPage() {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const { register } = useAuthStore();
+  const { register, users } = useAuthStore();
+  const isFirstUser = users.length === 0;
   const navigate = useNavigate();
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -58,6 +59,12 @@ export function RegisterPage() {
         {/* Form */}
         <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 border border-gray-700">
           <h2 className="text-2xl font-bold text-gray-200 mb-2">Создать аккаунт</h2>
+          {isFirstUser && (
+            <div className="mb-5 p-3 bg-indigo-900/30 border border-indigo-700/60 rounded-xl text-indigo-200 text-sm flex items-start gap-2">
+              <ShieldCheck className="w-4 h-4 text-indigo-400 mt-0.5 flex-shrink-0" />
+              Вы первый пользователь в системе — после регистрации вы автоматически получите роль администратора организации.
+            </div>
+          )}
           <p className="text-gray-400 text-sm mb-6 flex items-start gap-2">
             <ArrowRight className="w-4 h-4 text-indigo-400 mt-0.5 flex-shrink-0" />
             После регистрации вы сможете создать свою организацию и начать учёт активов.

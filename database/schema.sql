@@ -327,19 +327,8 @@ LEFT JOIN employees emp ON eq.assigned_to_employee_id = emp.id
 LEFT JOIN users upd ON eq.updated_by = upd.id;
 
 -- ============================================================
--- Начальные данные: пользователи
+-- Продакшн-режим: база стартует БЕЗ начальных данных.
+-- Первый администратор регистрируется через интерфейс сервиса
+-- (POST /api/auth/register — первому пользователю выдаётся роль "admin").
+-- Справочники и активы заполняет предметный администратор организации.
 -- ============================================================
-INSERT INTO users (email, password_hash, full_name, role) VALUES
-    ('admin@company.ru', '$2b$12$LJ3m4ys3Lk0TSwHjGBOUdu.YBjKr3vQhsPLFqFxQgVwMCxHnGKxWy', 'Иванов Админ Админович', 'admin'),
-    ('mat@company.ru', '$2b$12$LJ3m4ys3Lk0TSwHjGBOUdu.YBjKr3vQhsPLFqFxQgVwMCxHnGKxWy', 'Петрова Материальная Ответственная', 'materially_responsible'),
-    ('user@company.ru', '$2b$12$LJ3m4ys3Lk0TSwHjGBOUdu.YBjKr3vQhsPLFqFxQgVwMCxHnGKxWy', 'Сидоров Обычный Пользователь', 'viewer');
-
--- Начальные отделы
-INSERT INTO departments (name, description) VALUES
-    ('IT-отдел', 'Информационные технологии'),
-    ('Бухгалтерия', 'Бухгалтерский учёт и отчётность'),
-    ('Отдел продаж', 'Продажи и работа с клиентами'),
-    ('Отдел маркетинга', 'Маркетинг и реклама'),
-    ('Отдел кадров', 'Управление персоналом'),
-    ('Руководство', 'Руководство организации'),
-    ('Приёмная', 'Приёмная директора');

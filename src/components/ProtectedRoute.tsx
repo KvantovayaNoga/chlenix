@@ -7,13 +7,16 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
-  const { isAuthenticated, currentUser } = useAuthStore();
+  // Надёжнее опираться на currentUser: при hard-refresh zustand persist
+  // восстанавливает состояние асинхронно, и isAuthenticated может кратковременно
+  // расходиться с currentUser.
+  const { currentUser } = useAuthStore();
 
-  if (!isAuthenticated) {
+  if (!currentUser) {
     return <Navigate to="/login" replace />;
   }
 
-  if (requiredRole && currentUser) {
+  if (requiredRole) {
     const roleHierarchy = { admin: 3, materially_responsible: 2, viewer: 1 };
     if (roleHierarchy[currentUser.role] < roleHierarchy[requiredRole]) {
       return <Navigate to="/dashboard" replace />;

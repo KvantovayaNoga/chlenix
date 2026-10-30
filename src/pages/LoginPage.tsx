@@ -100,14 +100,16 @@ export function LoginPage() {
           </div>
         </div>
 
-        {/* Demo credentials */}
+        {/* Hint */}
         <div className="mt-6 bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-          <p className="text-slate-300 text-sm font-medium mb-2">Демо-доступ:</p>
-          <div className="space-y-1 text-xs text-slate-400">
-            <p><span className="text-slate-300">Админ:</span> admin@company.ru / admin123</p>
-            <p><span className="text-slate-300">Мат. лицо:</span> mat@company.ru / mat123</p>
-            <p><span className="text-slate-300">Пользователь:</span> user@company.ru / user123</p>
-          </div>
+          <p className="text-slate-300 text-sm">
+            Система предназначена для внутреннего учёта активов организации.
+            Если вы устанавливаете сервис впервые —{' '}
+            <Link to="/register" className="text-indigo-300 hover:text-indigo-200 font-medium">
+              зарегистрируйте первого пользователя
+            </Link>
+            : он автоматически получит роль администратора.
+          </p>
         </div>
       </div>
     </div>
