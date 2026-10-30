@@ -5,6 +5,5 @@ node_modules/
 
 # Логи и артефакты сборки
 *.log
-dist/
 backend/dist/
 dist/
