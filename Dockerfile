@@ -4,16 +4,32 @@
 # Stage 2: Nginx для раздачи статики
 # ============================================================
 
+# Зеркало npm-реестра и прокси (используются при проблемах с сетью на сервере):
+#   docker build --build-arg NPM_REGISTRY=https://registry.npmmirror.com ...
+#   docker build --build-arg HTTPS_PROXY=http://proxy:3128 ...
+ARG NPM_REGISTRY=https://registry.npmjs.org
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+
 # Stage 1: Build
 FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Копируем package файлы
-COPY package*.json ./
+# Копируем package файлы и настройки npm (таймауты/ретраи — чтобы установка
+# не «висела вечно» при проблемах с DNS/прокси, а быстро ретраила или падала с ошибкой)
+COPY package*.json .npmrc ./
 
-# Устанавливаем зависимости
-RUN npm install --no-audit --no-fund
+# Переопределяем реестр/прокси, если переданы build-аргументы
+ARG NPM_REGISTRY
+ENV npm_config_registry=${NPM_REGISTRY}
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+
+# Устанавливаем зависимости (ci быстрее и воспроизводимее; fallback на install)
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
 # Копируем исходники
 COPY . .
