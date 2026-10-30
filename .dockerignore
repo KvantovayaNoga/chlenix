@@ -1,0 +1,17 @@
+node_modules
+dist
+.git
+.env
+.env.example
+*.log
+logs
+database
+deploy.sh
+DEPLOY.md
+QUICKSTART.md
+README.md
+PR_BODY.md
+chlenix-pr.bundle
+chlenix-src.tar.gz
+backend/node_modules
+backend/dist
