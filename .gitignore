@@ -1,12 +1,2 @@
-node_modules/
-.env
-.env.local
-.env.*.local
-
-# Логи и артефакты сборки
-*.log
-backend/dist/
-dist/
-chlenix-pr.bundle
-chlenix-src.tar.gz
-PR_BODY.md
+*.tar.gz
+*.bundle
