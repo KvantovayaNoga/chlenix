@@ -7,3 +7,6 @@ node_modules/
 *.log
 backend/dist/
 dist/
+chlenix-pr.bundle
+chlenix-src.tar.gz
+PR_BODY.md
