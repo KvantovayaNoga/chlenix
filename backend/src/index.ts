@@ -32,7 +32,13 @@ type Env = {
 const app = new Hono<Env>();
 const prisma = new PrismaClient();
 
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'default_secret_change_me');
+const JWT_SECRET_RAW = process.env.JWT_SECRET;
+if (!JWT_SECRET_RAW && process.env.NODE_ENV === 'production') {
+  console.error('❌ Ошибка запуска: в production обязателен JWT_SECRET.');
+  console.error('   Задайте его в .env (генерация: openssl rand -base64 48).');
+  process.exit(1);
+}
+const JWT_SECRET = new TextEncoder().encode(JWT_SECRET_RAW || 'dev_only_secret_do_not_use_in_production');
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost';
 
@@ -150,7 +156,6 @@ app.post('/api/auth/register', async (c) => {
     email: z.string().email(),
     password: z.string().min(6),
     fullName: z.string().min(2),
-    role: z.enum(['admin', 'materially_responsible', 'viewer']),
   });
 
   const result = schema.safeParse(body);
@@ -158,12 +163,16 @@ app.post('/api/auth/register', async (c) => {
     return c.json({ error: 'Invalid input' }, 400);
   }
 
-  const { email, password, fullName, role } = result.data;
+  const { email, password, fullName } = result.data;
 
   const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
-    return c.json({ error: 'User already exists' }, 400);
+    return c.json({ error: 'Пользователь с таким email уже существует' }, 400);
   }
+
+  // Первый зарегистрированный пользователь — администратор организации
+  const userCount = await prisma.user.count();
+  const role = userCount === 0 ? 'admin' : 'viewer';
 
   const passwordHash = await bcrypt.hash(password, 12);
 
@@ -643,61 +652,10 @@ app.get('/api/audit-logs', authMiddleware, requireRole(['admin']), async (c) => 
 });
 
 // ============================================================
-// Seed Initial Data
+// Продакшн-режим: база стартует пустой.
+// Первый администратор создаётся через POST /api/auth/register
+// (если таблица users пуста — роль принудительно "admin").
 // ============================================================
-async function seed() {
-  const adminExists = await prisma.user.findUnique({ where: { email: 'admin@company.ru' } });
-  if (!adminExists) {
-    console.log('Seeding initial data...');
-
-    // Создаём админа
-    await prisma.user.create({
-      data: {
-        email: 'admin@company.ru',
-        password: await bcrypt.hash('admin123', 12),
-        fullName: 'Иванов Админ Админович',
-        role: 'admin',
-      },
-    });
-
-    await prisma.user.create({
-      data: {
-        email: 'mat@company.ru',
-        password: await bcrypt.hash('mat123', 12),
-        fullName: 'Петрова Материальная Ответственная',
-        role: 'materially_responsible',
-      },
-    });
-
-    await prisma.user.create({
-      data: {
-        email: 'user@company.ru',
-        password: await bcrypt.hash('user123', 12),
-        fullName: 'Сидоров Обычный Пользователь',
-        role: 'viewer',
-      },
-    });
-
-    // Создаём отделы
-    const departments = ['IT-отдел', 'Бухгалтерия', 'Отдел продаж', 'Отдел маркетинга', 'Отдел кадров', 'Руководство'];
-    for (const name of departments) {
-      await prisma.department.create({ data: { name, description: '' } });
-    }
-
-    // Создаём должности
-    const positions = ['Ведущий разработчик', 'Бухгалтер', 'Системный администратор', 'Менеджер по продажам', 'Дизайнер', 'HR-менеджер', 'Директор', 'Секретарь', 'DevOps-инженер', 'Backend-разработчик'];
-    for (const name of positions) {
-      await prisma.position.create({ data: { name, description: '' } });
-    }
-
-    // Создаём филиалы
-    await prisma.branch.create({ data: { name: 'Главный офис', address: 'г. Москва, ул. Ленина, 1', description: 'Центральный офис компании' } });
-    await prisma.branch.create({ data: { name: 'Филиал Санкт-Петербург', address: 'г. Санкт-Петербург, Невский пр., 100', description: 'Северо-западный филиал' } });
-    await prisma.branch.create({ data: { name: 'Дата-центр', address: 'г. Москва, Промышленная зона, 5', description: 'Серверная инфраструктура' } });
-
-    console.log('Seed completed!');
-  }
-}
 
 // ============================================================
 // Запуск сервера
@@ -708,8 +666,6 @@ async function start() {
   try {
     await prisma.$connect();
     console.log('✓ Connected to PostgreSQL');
-
-    await seed();
 
     serve({
       fetch: app.fetch,

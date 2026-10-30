@@ -48,100 +48,11 @@ function createHistoryEntry(
   };
 }
 
-// Справочники
-const initialDepartments: Department[] = [
-  { id: 'd1', name: 'IT-отдел', description: 'Информационные технологии', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'd2', name: 'Бухгалтерия', description: 'Бухгалтерский учёт и отчётность', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'd3', name: 'Отдел продаж', description: 'Продажи и работа с клиентами', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'd4', name: 'Отдел маркетинга', description: 'Маркетинг и реклама', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'd5', name: 'Отдел кадров', description: 'Управление персоналом', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'd6', name: 'Руководство', description: 'Руководство организации', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-];
-
-const initialPositions: Position[] = [
-  { id: 'p1', name: 'Ведущий разработчик', description: '', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'p2', name: 'Бухгалтер', description: '', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'p3', name: 'Системный администратор', description: '', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'p4', name: 'Менеджер по продажам', description: '', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'p5', name: 'Дизайнер', description: '', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'p6', name: 'HR-менеджер', description: '', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'p7', name: 'Директор', description: '', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'p8', name: 'Секретарь', description: '', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'p9', name: 'DevOps-инженер', description: '', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'p10', name: 'Backend-разработчик', description: '', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-];
-
-const initialBranches: Branch[] = [
-  { id: 'b1', name: 'Главный офис', address: 'г. Москва, ул. Ленина, 1', description: 'Центральный офис компании', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'b2', name: 'Филиал Санкт-Петербург', address: 'г. Санкт-Петербург, Невский пр., 100', description: 'Северо-западный филиал', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-  { id: 'b3', name: 'Дата-центр', address: 'г. Москва, Промышленная зона, 5', description: 'Серверная инфраструктура', createdAt: '2024-01-01', updatedAt: now, updatedBy: null },
-];
-
-// Сотрудники
-const initialEmployees: Employee[] = [
-  { id: '1', firstName: 'Алексей', lastName: 'Смирнов', middleName: 'Петрович', positionId: 'p1', departmentId: 'd1', email: 'smirnov@company.ru', workPhone: '+7 (495) 123-45-67', internalPhone: '1001', personalPhone: '+7 (999) 123-45-67', hireDate: '2020-03-15', isEmployed: true, branchId: 'b1', floor: '3', room: '301', notes: '', createdAt: '2024-01-10', updatedAt: now, updatedBy: null },
-  { id: '2', firstName: 'Мария', lastName: 'Козлова', middleName: 'Александровна', positionId: 'p2', departmentId: 'd2', email: 'kozlova@company.ru', workPhone: '+7 (495) 234-56-78', internalPhone: '2001', personalPhone: '+7 (999) 234-56-78', hireDate: '2019-07-01', isEmployed: true, branchId: 'b1', floor: '2', room: '205', notes: '', createdAt: '2024-01-10', updatedAt: now, updatedBy: null },
-  { id: '3', firstName: 'Дмитрий', lastName: 'Волков', middleName: 'Сергеевич', positionId: 'p3', departmentId: 'd1', email: 'volkov@company.ru', workPhone: '+7 (495) 345-67-89', internalPhone: '1002', personalPhone: '+7 (999) 345-67-89', hireDate: '2021-01-10', isEmployed: true, branchId: 'b3', floor: '', room: 'Серверная', notes: 'Ответственный за серверное оборудование', createdAt: '2024-01-10', updatedAt: now, updatedBy: null },
-  { id: '4', firstName: 'Елена', lastName: 'Новикова', middleName: 'Игоревна', positionId: 'p4', departmentId: 'd3', email: 'novikova@company.ru', workPhone: '+7 (495) 456-78-90', internalPhone: '3001', personalPhone: '+7 (999) 456-78-90', hireDate: '2022-05-20', isEmployed: true, branchId: 'b1', floor: '1', room: '102', notes: '', createdAt: '2024-01-10', updatedAt: now, updatedBy: null },
-  { id: '5', firstName: 'Игорь', lastName: 'Морозов', middleName: 'Владимирович', positionId: 'p5', departmentId: 'd4', email: 'morozov@company.ru', workPhone: '+7 (495) 567-89-01', internalPhone: '4001', personalPhone: '+7 (999) 567-89-01', hireDate: '2023-02-14', isEmployed: true, branchId: 'b1', floor: '3', room: '303', notes: '', createdAt: '2024-01-10', updatedAt: now, updatedBy: null },
-  { id: '6', firstName: 'Ольга', lastName: 'Соколова', middleName: 'Дмитриевна', positionId: 'p6', departmentId: 'd5', email: 'sokolova@company.ru', workPhone: '+7 (495) 678-90-12', internalPhone: '5001', personalPhone: '+7 (999) 678-90-12', hireDate: '2021-09-01', isEmployed: true, branchId: 'b1', floor: '2', room: '201', notes: '', createdAt: '2024-01-10', updatedAt: now, updatedBy: null },
-  { id: '7', firstName: 'Андрей', lastName: 'Лебедев', middleName: 'Николаевич', positionId: 'p7', departmentId: 'd6', email: 'lebedev@company.ru', workPhone: '+7 (495) 789-01-23', internalPhone: '6001', personalPhone: '+7 (999) 789-01-23', hireDate: '2018-01-15', isEmployed: true, branchId: 'b1', floor: '4', room: '401', notes: '', createdAt: '2024-01-10', updatedAt: now, updatedBy: null },
-  { id: '8', firstName: 'Наталья', lastName: 'Кузнецова', middleName: 'Андреевна', positionId: 'p8', departmentId: 'd6', email: 'kuznetsova@company.ru', workPhone: '+7 (495) 890-12-34', internalPhone: '6002', personalPhone: '+7 (999) 890-12-34', hireDate: '2020-11-01', isEmployed: false, branchId: 'b1', floor: '1', room: '101', notes: 'Уволена 15.12.2024', createdAt: '2024-01-10', updatedAt: now, updatedBy: null },
-  { id: '9', firstName: 'Павел', lastName: 'Куликов', middleName: 'Олегович', positionId: 'p9', departmentId: 'd1', email: 'kulikov@company.ru', workPhone: '+7 (495) 901-23-45', internalPhone: '1003', personalPhone: '+7 (999) 901-23-45', hireDate: '2022-03-01', isEmployed: true, branchId: 'b1', floor: '3', room: '302', notes: 'Ответственный за сервисы и middleware', createdAt: '2024-01-10', updatedAt: now, updatedBy: null },
-  { id: '10', firstName: 'Сергей', lastName: 'Зайцев', middleName: 'Александрович', positionId: 'p10', departmentId: 'd1', email: 'zaytsev@company.ru', workPhone: '+7 (495) 012-34-56', internalPhone: '1004', personalPhone: '+7 (999) 012-34-56', hireDate: '2023-06-15', isEmployed: true, branchId: 'b1', floor: '3', room: '302', notes: '', createdAt: '2024-01-10', updatedAt: now, updatedBy: null },
-];
-
-// Оборудование
-const initialEquipment: Equipment[] = [
-  { id: '1', name: 'Ноутбук Dell Latitude 5540', category: 'computer', serialNumber: 'DL5540-2024-001', inventoryNumber: 'INV-PC-001', brand: 'Dell', model: 'Latitude 5540', purchaseDate: '2024-01-15', writeOffDate: null, condition: 'good', assignedToEmployeeId: '1', branchId: 'b1', floor: '3', room: '301', cpuCores: null, ramGB: null, diskGB: null, notes: 'i7, 32GB RAM, 512GB SSD', createdAt: '2024-01-15', updatedAt: now, updatedBy: null },
-  { id: '2', name: 'Монитор Dell U2723QE', category: 'monitor', serialNumber: 'DU2723-2024-002', inventoryNumber: 'INV-MON-001', brand: 'Dell', model: 'U2723QE', purchaseDate: '2024-01-15', writeOffDate: null, condition: 'good', assignedToEmployeeId: '1', branchId: 'b1', floor: '3', room: '301', cpuCores: null, ramGB: null, diskGB: null, notes: '27" 4K IPS', createdAt: '2024-01-15', updatedAt: now, updatedBy: null },
-  { id: '3', name: 'ПК HP ProDesk 400 G9', category: 'computer', serialNumber: 'HP400G9-2023-003', inventoryNumber: 'INV-PC-002', brand: 'HP', model: 'ProDesk 400 G9', purchaseDate: '2023-06-01', writeOffDate: null, condition: 'good', assignedToEmployeeId: '2', branchId: 'b1', floor: '2', room: '205', cpuCores: null, ramGB: null, diskGB: null, notes: 'i5, 16GB RAM, 256GB SSD', createdAt: '2023-06-01', updatedAt: now, updatedBy: null },
-  { id: '4', name: 'Монитор LG 24MK430H', category: 'monitor', serialNumber: 'LG24MK-2023-004', inventoryNumber: 'INV-MON-002', brand: 'LG', model: '24MK430H', purchaseDate: '2023-06-01', writeOffDate: null, condition: 'good', assignedToEmployeeId: '2', branchId: 'b1', floor: '2', room: '205', cpuCores: null, ramGB: null, diskGB: null, notes: '24" Full HD IPS', createdAt: '2023-06-01', updatedAt: now, updatedBy: null },
-  { id: '5', name: 'Сервер Dell PowerEdge R750', category: 'server', serialNumber: 'DPE-R750-2022-005', inventoryNumber: 'INV-SRV-001', brand: 'Dell', model: 'PowerEdge R750', purchaseDate: '2022-03-10', writeOffDate: null, condition: 'good', assignedToEmployeeId: '3', branchId: 'b3', floor: '', room: 'Серверная', cpuCores: 56, ramGB: 256, diskGB: 4000, notes: '2x Xeon Gold, 256GB ECC, 4x 1TB NVMe', createdAt: '2022-03-10', updatedAt: now, updatedBy: null },
-  { id: '6', name: 'Коммутатор Cisco Catalyst 9300', category: 'network', serialNumber: 'CC9300-2022-006', inventoryNumber: 'INV-NET-001', brand: 'Cisco', model: 'Catalyst 9300', purchaseDate: '2022-03-10', writeOffDate: null, condition: 'good', assignedToEmployeeId: '3', branchId: 'b3', floor: '', room: 'Серверная', cpuCores: null, ramGB: null, diskGB: null, notes: '48 портов PoE+', createdAt: '2022-03-10', updatedAt: now, updatedBy: null },
-  { id: '7', name: 'Стол офисный Бюрократ', category: 'furniture', serialNumber: 'N/A', inventoryNumber: 'INV-FUR-001', brand: 'Бюрократ', model: 'Director-1', purchaseDate: '2020-01-10', writeOffDate: null, condition: 'satisfactory', assignedToEmployeeId: '1', branchId: 'b1', floor: '3', room: '301', cpuCores: null, ramGB: null, diskGB: null, notes: '', createdAt: '2020-01-10', updatedAt: now, updatedBy: null },
-  { id: '8', name: 'Кресло офисное Chairman', category: 'furniture', serialNumber: 'N/A', inventoryNumber: 'INV-FUR-002', brand: 'Chairman', model: '690', purchaseDate: '2020-01-10', writeOffDate: null, condition: 'good', assignedToEmployeeId: '1', branchId: 'b1', floor: '3', room: '301', cpuCores: null, ramGB: null, diskGB: null, notes: '', createdAt: '2020-01-10', updatedAt: now, updatedBy: null },
-  { id: '9', name: 'MacBook Pro 16" M3 Pro', category: 'computer', serialNumber: 'MBP16-M3-2024-009', inventoryNumber: 'INV-PC-003', brand: 'Apple', model: 'MacBook Pro 16 M3 Pro', purchaseDate: '2024-02-01', writeOffDate: null, condition: 'new', assignedToEmployeeId: '5', branchId: 'b1', floor: '3', room: '303', cpuCores: null, ramGB: null, diskGB: null, notes: 'M3 Pro, 36GB, 1TB SSD', createdAt: '2024-02-01', updatedAt: now, updatedBy: null },
-  { id: '10', name: 'Монитор Apple Studio Display', category: 'monitor', serialNumber: 'ASD-2024-010', inventoryNumber: 'INV-MON-003', brand: 'Apple', model: 'Studio Display', purchaseDate: '2024-02-01', writeOffDate: null, condition: 'new', assignedToEmployeeId: '5', branchId: 'b1', floor: '3', room: '303', cpuCores: null, ramGB: null, diskGB: null, notes: '27" 5K Retina', createdAt: '2024-02-01', updatedAt: now, updatedBy: null },
-  { id: '11', name: 'Телефон Panasonic KX-T7730', category: 'phone', serialNumber: 'PAN-T7730-011', inventoryNumber: 'INV-PH-001', brand: 'Panasonic', model: 'KX-T7730', purchaseDate: '2019-05-01', writeOffDate: null, condition: 'satisfactory', assignedToEmployeeId: '7', branchId: 'b1', floor: '4', room: '401', cpuCores: null, ramGB: null, diskGB: null, notes: '', createdAt: '2019-05-01', updatedAt: now, updatedBy: null },
-  { id: '12', name: 'Принтер HP LaserJet Pro M404dn', category: 'peripheral', serialNumber: 'HP-M404-2021-012', inventoryNumber: 'INV-PRN-001', brand: 'HP', model: 'LaserJet Pro M404dn', purchaseDate: '2021-08-15', writeOffDate: null, condition: 'needs_repair', assignedToEmployeeId: null, branchId: 'b1', floor: '2', room: 'Коридор', cpuCores: null, ramGB: null, diskGB: null, notes: 'Требуется замена термоплёнки', createdAt: '2021-08-15', updatedAt: now, updatedBy: null },
-  { id: '13', name: 'Сервер HP ProLiant DL380 Gen10', category: 'server', serialNumber: 'HP-DL380-2021-013', inventoryNumber: 'INV-SRV-002', brand: 'HP', model: 'ProLiant DL380 Gen10', purchaseDate: '2021-06-01', writeOffDate: null, condition: 'good', assignedToEmployeeId: '3', branchId: 'b3', floor: '', room: 'Серверная', cpuCores: 32, ramGB: 128, diskGB: 2000, notes: '2x Xeon Silver, 128GB ECC, RAID5', createdAt: '2021-06-01', updatedAt: now, updatedBy: null },
-  { id: '14', name: 'UPS APC Smart-UPS 3000', category: 'other', serialNumber: 'APC-3000-2022-014', inventoryNumber: 'INV-OTH-001', brand: 'APC', model: 'Smart-UPS 3000VA', purchaseDate: '2022-03-10', writeOffDate: null, condition: 'good', assignedToEmployeeId: '3', branchId: 'b3', floor: '', room: 'Серверная', cpuCores: null, ramGB: null, diskGB: null, notes: 'ИБП для серверного оборудования', createdAt: '2022-03-10', updatedAt: now, updatedBy: null },
-];
-
-// Виртуальные машины
-const initialVMs: VirtualMachine[] = [
-  { id: 'vm1', name: 'prod-web-01', hostname: 'web01.company.local', type: 'virtual', hostServerId: '5', os: 'Ubuntu 22.04 LTS', cpuCores: 4, ramGB: 8, diskGB: 100, responsibleEmployeeId: '3', serviceResponsibleEmployeeId: '9', networkInterfaces: [{ id: 'ni1', name: 'eth0', macAddress: '00:50:56:A1:01:01', ipAddress: '10.0.2.10', isPublic: false, notes: 'Основной интерфейс', createdAt: '2024-01-15', updatedAt: now, updatedBy: null }, { id: 'ni2', name: 'eth1', macAddress: '00:50:56:A1:01:02', ipAddress: '203.0.113.10', isPublic: true, notes: 'Белый IP для веб-сервера', createdAt: '2024-01-15', updatedAt: now, updatedBy: null }], status: 'running', notes: 'Основной веб-сервер', createdAt: '2024-01-15', updatedAt: now, updatedBy: null },
-  { id: 'vm2', name: 'prod-db-01', hostname: 'db01.company.local', type: 'virtual', hostServerId: '5', os: 'CentOS 8', cpuCores: 8, ramGB: 32, diskGB: 500, responsibleEmployeeId: '3', serviceResponsibleEmployeeId: '10', networkInterfaces: [{ id: 'ni3', name: 'eth0', macAddress: '00:50:56:A1:02:01', ipAddress: '10.0.2.20', isPublic: false, notes: '', createdAt: '2024-01-15', updatedAt: now, updatedBy: null }], status: 'running', notes: 'PostgreSQL основной сервер БД', createdAt: '2024-01-15', updatedAt: now, updatedBy: null },
-  { id: 'vm3', name: 'prod-app-01', hostname: 'app01.company.local', type: 'virtual', hostServerId: '5', os: 'Ubuntu 22.04 LTS', cpuCores: 4, ramGB: 16, diskGB: 200, responsibleEmployeeId: '3', serviceResponsibleEmployeeId: '9', networkInterfaces: [{ id: 'ni4', name: 'eth0', macAddress: '00:50:56:A1:03:01', ipAddress: '10.0.2.30', isPublic: false, notes: '', createdAt: '2024-01-15', updatedAt: now, updatedBy: null }], status: 'running', notes: 'Backend приложение Node.js', createdAt: '2024-01-15', updatedAt: now, updatedBy: null },
-  { id: 'vm4', name: 'prod-redis-01', hostname: 'redis01.company.local', type: 'virtual', hostServerId: '13', os: 'Debian 12', cpuCores: 2, ramGB: 8, diskGB: 50, responsibleEmployeeId: '3', serviceResponsibleEmployeeId: '9', networkInterfaces: [{ id: 'ni5', name: 'eth0', macAddress: '00:50:56:A1:04:01', ipAddress: '10.0.2.40', isPublic: false, notes: '', createdAt: '2024-02-01', updatedAt: now, updatedBy: null }], status: 'running', notes: 'Redis кластер', createdAt: '2024-02-01', updatedAt: now, updatedBy: null },
-  { id: 'vm5', name: 'test-web-01', hostname: 'web-test.company.local', type: 'virtual', hostServerId: '13', os: 'Ubuntu 22.04 LTS', cpuCores: 2, ramGB: 4, diskGB: 50, responsibleEmployeeId: '3', serviceResponsibleEmployeeId: '10', networkInterfaces: [{ id: 'ni6', name: 'eth0', macAddress: '00:50:56:A1:05:01', ipAddress: '10.0.3.10', isPublic: false, notes: '', createdAt: '2024-03-01', updatedAt: now, updatedBy: null }], status: 'running', notes: 'Тестовый веб-сервер', createdAt: '2024-03-01', updatedAt: now, updatedBy: null },
-  { id: 'vm6', name: 'prod-monitoring', hostname: 'monitoring.company.local', type: 'virtual', hostServerId: '5', os: 'Ubuntu 22.04 LTS', cpuCores: 4, ramGB: 16, diskGB: 200, responsibleEmployeeId: '3', serviceResponsibleEmployeeId: '3', networkInterfaces: [{ id: 'ni7', name: 'eth0', macAddress: '00:50:56:A1:06:01', ipAddress: '10.0.2.50', isPublic: false, notes: 'Grafana/Prometheus сеть', createdAt: '2024-01-20', updatedAt: now, updatedBy: null }, { id: 'ni8', name: 'eth1', macAddress: '00:50:56:A1:06:02', ipAddress: '192.168.100.50', isPublic: false, notes: 'Сеть управления', createdAt: '2024-01-20', updatedAt: now, updatedBy: null }], status: 'running', notes: 'Grafana + Prometheus + Alertmanager', createdAt: '2024-01-20', updatedAt: now, updatedBy: null },
-  { id: 'vm7', name: 'prod-gitlab', hostname: 'gitlab.company.local', type: 'virtual', hostServerId: '13', os: 'Ubuntu 22.04 LTS', cpuCores: 8, ramGB: 16, diskGB: 500, responsibleEmployeeId: '3', serviceResponsibleEmployeeId: '10', networkInterfaces: [{ id: 'ni9', name: 'eth0', macAddress: '00:50:56:A1:07:01', ipAddress: '10.0.2.60', isPublic: false, notes: '', createdAt: '2024-02-15', updatedAt: now, updatedBy: null }, { id: 'ni10', name: 'eth1', macAddress: '00:50:56:A1:07:02', ipAddress: '203.0.113.60', isPublic: true, notes: 'Белый IP для GitLab', createdAt: '2024-02-15', updatedAt: now, updatedBy: null }], status: 'running', notes: 'GitLab CE + Runner', createdAt: '2024-02-15', updatedAt: now, updatedBy: null },
-  { id: 'vm8', name: 'prod-mail', hostname: 'mail.company.local', type: 'virtual', hostServerId: '5', os: 'Debian 12', cpuCores: 2, ramGB: 4, diskGB: 100, responsibleEmployeeId: '3', serviceResponsibleEmployeeId: '9', networkInterfaces: [{ id: 'ni11', name: 'eth0', macAddress: '00:50:56:A1:08:01', ipAddress: '10.0.2.70', isPublic: false, notes: '', createdAt: '2024-01-25', updatedAt: now, updatedBy: null }, { id: 'ni12', name: 'eth1', macAddress: '00:50:56:A1:08:02', ipAddress: '203.0.113.70', isPublic: true, notes: 'MX запись', createdAt: '2024-01-25', updatedAt: now, updatedBy: null }], status: 'running', notes: 'Postfix + Dovecot', createdAt: '2024-01-25', updatedAt: now, updatedBy: null },
-  { id: 'vm9', name: 'dev-k8s-node-01', hostname: 'k8s-node01.company.local', type: 'virtual', hostServerId: '5', os: 'Ubuntu 22.04 LTS', cpuCores: 4, ramGB: 8, diskGB: 100, responsibleEmployeeId: '3', serviceResponsibleEmployeeId: '9', networkInterfaces: [{ id: 'ni13', name: 'eth0', macAddress: '00:50:56:A1:09:01', ipAddress: '10.0.3.20', isPublic: false, notes: 'Kubernetes worker node', createdAt: '2024-04-01', updatedAt: now, updatedBy: null }], status: 'running', notes: 'Kubernetes worker', createdAt: '2024-04-01', updatedAt: now, updatedBy: null },
-  { id: 'vm10', name: 'dev-k8s-node-02', hostname: 'k8s-node02.company.local', type: 'virtual', hostServerId: '13', os: 'Ubuntu 22.04 LTS', cpuCores: 4, ramGB: 8, diskGB: 100, responsibleEmployeeId: '3', serviceResponsibleEmployeeId: '9', networkInterfaces: [{ id: 'ni14', name: 'eth0', macAddress: '00:50:56:A1:10:01', ipAddress: '10.0.3.21', isPublic: false, notes: 'Kubernetes worker node', createdAt: '2024-04-01', updatedAt: now, updatedBy: null }], status: 'running', notes: 'Kubernetes worker', createdAt: '2024-04-01', updatedAt: now, updatedBy: null },
-  { id: 'vm11', name: 'prod-backup', hostname: 'backup.company.local', type: 'virtual', hostServerId: '13', os: 'Debian 12', cpuCores: 2, ramGB: 4, diskGB: 2000, responsibleEmployeeId: '3', serviceResponsibleEmployeeId: '3', networkInterfaces: [{ id: 'ni15', name: 'eth0', macAddress: '00:50:56:A1:11:01', ipAddress: '10.0.1.100', isPublic: false, notes: '', createdAt: '2024-01-10', updatedAt: now, updatedBy: null }], status: 'running', notes: 'Сервер резервного копирования', createdAt: '2024-01-10', updatedAt: now, updatedBy: null },
-  { id: 'vm12', name: 'old-legacy-app', hostname: 'legacy.company.local', type: 'virtual', hostServerId: '13', os: 'CentOS 7', cpuCores: 2, ramGB: 4, diskGB: 50, responsibleEmployeeId: '3', serviceResponsibleEmployeeId: '10', networkInterfaces: [{ id: 'ni16', name: 'eth0', macAddress: '00:50:56:A1:12:01', ipAddress: '10.0.2.200', isPublic: false, notes: 'Планируется миграция', createdAt: '2023-01-01', updatedAt: now, updatedBy: null }], status: 'maintenance', notes: 'Устаревшее приложение, планируется вывод из эксплуатации', createdAt: '2023-01-01', updatedAt: now, updatedBy: null },
-];
-
-// Сервисы
-const initialServices: Service[] = [
-  { id: 'svc1', virtualMachineId: 'vm1', name: 'Nginx', version: '1.24.0', port: 80, description: 'Reverse proxy', status: 'active', createdAt: '2024-01-15', updatedAt: now, updatedBy: null },
-  { id: 'svc2', virtualMachineId: 'vm1', name: 'Nginx (SSL)', version: '1.24.0', port: 443, description: 'HTTPS reverse proxy', status: 'active', createdAt: '2024-01-15', updatedAt: now, updatedBy: null },
-  { id: 'svc3', virtualMachineId: 'vm2', name: 'PostgreSQL', version: '15.4', port: 5432, description: 'Основная БД', status: 'active', createdAt: '2024-01-15', updatedAt: now, updatedBy: null },
-  { id: 'svc4', virtualMachineId: 'vm3', name: 'Node.js API', version: '20.10.0', port: 3000, description: 'Backend API сервер', status: 'active', createdAt: '2024-01-15', updatedAt: now, updatedBy: null },
-  { id: 'svc5', virtualMachineId: 'vm4', name: 'Redis', version: '7.2.3', port: 6379, description: 'Кэш и сессии', status: 'active', createdAt: '2024-02-01', updatedAt: now, updatedBy: null },
-  { id: 'svc6', virtualMachineId: 'vm6', name: 'Grafana', version: '10.2.3', port: 3000, description: 'Мониторинг', status: 'active', createdAt: '2024-01-20', updatedAt: now, updatedBy: null },
-  { id: 'svc7', virtualMachineId: 'vm6', name: 'Prometheus', version: '2.48.1', port: 9090, description: 'Метрики', status: 'active', createdAt: '2024-01-20', updatedAt: now, updatedBy: null },
-  { id: 'svc8', virtualMachineId: 'vm7', name: 'GitLab CE', version: '16.7.0', port: 80, description: 'Git репозитории', status: 'active', createdAt: '2024-02-15', updatedAt: now, updatedBy: null },
-  { id: 'svc9', virtualMachineId: 'vm8', name: 'Postfix', version: '3.7.0', port: 25, description: 'SMTP сервер', status: 'active', createdAt: '2024-01-25', updatedAt: now, updatedBy: null },
-  { id: 'svc10', virtualMachineId: 'vm8', name: 'Dovecot', version: '2.3.21', port: 993, description: 'IMAP сервер', status: 'active', createdAt: '2024-01-25', updatedAt: now, updatedBy: null },
-  { id: 'svc11', virtualMachineId: 'vm12', name: 'Apache', version: '2.4.6', port: 80, description: 'Устаревший веб-сервер', status: 'inactive', createdAt: '2023-01-01', updatedAt: now, updatedBy: null },
-  { id: 'svc12', virtualMachineId: 'vm11', name: 'Bacula', version: '13.0.0', port: 9101, description: 'Backup daemon', status: 'active', createdAt: '2024-01-10', updatedAt: now, updatedBy: null },
-];
-
-const initialAssignments: Assignment[] = [];
+// ============================================================
+// Продакшн-режим: сервис стартует пустым.
+// Все данные (справочники, сотрудники, оборудование, ВМ, сервисы)
+// заполняет администратор организации через интерфейс.
+// ============================================================
 
 interface DataState {
   organizations: Organization[];
@@ -217,14 +128,14 @@ export const useDataStore = create<DataState>()(
   persist(
     (set, get) => ({
       organizations: [],
-      departments: initialDepartments,
-      positions: initialPositions,
-      branches: initialBranches,
-      employees: initialEmployees,
-      equipment: initialEquipment,
-      assignments: initialAssignments,
-      virtualMachines: initialVMs,
-      services: initialServices,
+      departments: [],
+      positions: [],
+      branches: [],
+      employees: [],
+      equipment: [],
+      assignments: [],
+      virtualMachines: [],
+      services: [],
       auditLog: [],
 
       // Organizations

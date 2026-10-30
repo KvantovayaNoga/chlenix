@@ -20,49 +20,15 @@ interface AuthState {
   hasOrganization: () => boolean;
 }
 
-const now = new Date().toISOString();
-
-const initialUsers: User[] = [
-  {
-    id: '1',
-    email: 'admin@company.ru',
-    password: 'admin123',
-    fullName: 'Иванов Админ Админович',
-    role: 'admin',
-    createdAt: '2024-01-01',
-    updatedAt: now,
-    updatedBy: null,
-    isActive: true,
-  },
-  {
-    id: '2',
-    email: 'mat@company.ru',
-    password: 'mat123',
-    fullName: 'Петрова Материальная Ответственная',
-    role: 'materially_responsible',
-    createdAt: '2024-01-15',
-    updatedAt: now,
-    updatedBy: null,
-    isActive: true,
-  },
-  {
-    id: '3',
-    email: 'user@company.ru',
-    password: 'user123',
-    fullName: 'Сидоров Обычный Пользователь',
-    role: 'viewer',
-    createdAt: '2024-02-01',
-    updatedAt: now,
-    updatedBy: null,
-    isActive: true,
-  },
-];
+// Продакшн-режим: список пользователей стартует пустым.
+// Первый зарегистрированный пользователь автоматически получает роль «Администратор»
+// и становится предметным администратором организации.
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       currentUser: null,
-      users: initialUsers,
+      users: [],
       isAuthenticated: false,
 
       login: (email: string, password: string) => {
@@ -81,6 +47,8 @@ export const useAuthStore = create<AuthState>()(
         if (exists) {
           return { success: false, error: 'Пользователь с таким email уже существует' };
         }
+        // Первый пользователь в системе — администратор (предметный администратор организации)
+        const isFirstUser = get().users.length === 0;
         const historyEntry = {
           id: Date.now().toString(),
           action: 'created' as const,
@@ -92,7 +60,7 @@ export const useAuthStore = create<AuthState>()(
           email,
           password,
           fullName,
-          role: 'viewer',
+          role: isFirstUser ? 'admin' : 'viewer',
           createdAt: new Date().toISOString().split('T')[0],
           updatedAt: new Date().toISOString(),
           updatedBy: null,
