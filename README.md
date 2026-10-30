@@ -50,25 +50,28 @@
 
 ```bash
 # Клонируйте репозиторий
-git clone https://github.com/your-org/chlenix.git
+git clone <URL вашего репозитория> chlenix
 cd chlenix
 
-# Запустите скрипт деплоя
+# Запустите скрипт деплоя (Docker — по умолчанию)
 chmod +x deploy.sh
-./deploy.sh
+./deploy.sh docker
+
+# Или деплой без Docker (nginx + systemd + PostgreSQL):
+sudo ./deploy.sh bare
 ```
 
 Скрипт автоматически:
-- Проверит наличие Docker
+- Проверит все необходимые пакеты и их версии (для выбранного режима)
 - Создаст `.env` с безопасными секретами
 - Соберёт и запустит все сервисы
-- Инициализирует базу данных
+- Выполнит миграции и инициализирует базу данных
 
 ### Вариант 2: Ручной деплой
 
 ```bash
 # 1. Клонируйте репозиторий
-git clone https://github.com/your-org/chlenix.git
+git clone <URL вашего репозитория> chlenix
 cd chlenix
 
 # 2. Настройте переменные окружения
@@ -125,9 +128,9 @@ http://YOUR_SERVER_IP
 
 ## 📚 Документация
 
-- **[DEPLOY.md](DEPLOY.md)** — Полная инструкция по деплою
-- **[API.md](API.md)** — Документация API (в разработке)
-- **[DATABASE.md](DATABASE.md)** — Схема базы данных
+- **[DEPLOY.md](DEPLOY.md)** — Полная инструкция по деплою (Docker и bare-metal)
+- **[QUICKSTART.md](QUICKSTART.md)** — Быстрый старт за 3 шага
+- Схема базы данных: [`backend/prisma/schema.prisma`](backend/prisma/schema.prisma) и [`database/schema.sql`](database/schema.sql)
 
 ## 🏗 Архитектура
 
@@ -177,9 +180,10 @@ chlenix/
 ├── docker-compose.yml       # Оркестрация контейнеров
 ├── Dockerfile               # Frontend (Nginx + React)
 ├── nginx.conf               # Конфигурация Nginx
-├── deploy.sh                # Скрипт быстрого деплоя
+├── deploy.sh                # Скрипт быстрого деплоя (docker | bare | check)
 ├── .env.example             # Пример переменных окружения
-├── DEPLOY.md                # Инструкция по деплою
+├── DEPLOY.md                # Инструкция по деплою (Docker + bare-metal)
+├── QUICKSTART.md            # Быстрый старт
 ├── README.md                # Этот файл
 │
 ├── backend/
@@ -391,4 +395,4 @@ MIT License — см. файл [LICENSE](LICENSE)
 
 **Разработано с ❤️ для эффективного управления ИТ-инфраструктурой**
 
-[Документация по деплою](DEPLOY.md) • [API Reference](API.md) • [База данных](DATABASE.md)
+[Деплой](DEPLOY.md) • [Быстрый старт](QUICKSTART.md) • [Схема БД](backend/prisma/schema.prisma)

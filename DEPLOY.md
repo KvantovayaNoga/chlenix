@@ -1,6 +1,10 @@
-# 🚀 Деплой Chlenix в Docker
+# 🚀 Деплой Chlenix
 
-Полная инструкция по развёртыванию системы Chlenix на вашем хосте с использованием Docker.
+Полная инструкция по развёртыванию системы Chlenix на Linux-сервере:
+в Docker (рекомендуется) или в режиме bare-metal (nginx + systemd + PostgreSQL без Docker).
+
+> 💡 Самый быстрый путь — скрипт `./deploy.sh docker` или `./deploy.sh bare`:
+> он сам проверит все необходимые пакеты, создаст `.env` с секретами и выполнит деплой.
 
 ## 📋 Требования
 
@@ -27,10 +31,22 @@
 
 ## ⚡ Быстрый старт
 
+### 0. (Опционально) Проверка окружения и автоматический деплой
+
+```bash
+# Проверить, всё ли установлено для Docker-деплоя
+./deploy.sh check
+
+# Полный автоматический деплой в Docker
+chmod +x deploy.sh && ./deploy.sh docker
+```
+
+Если используете `deploy.sh`, пункты 1–5 ниже выполнять не нужно — скрипт делает их сам.
+
 ### 1. Клонируйте репозиторий
 
 ```bash
-git clone https://github.com/your-org/chlenix.git
+git clone <URL вашего репозитория> chlenix
 cd chlenix
 ```
 
@@ -343,28 +359,33 @@ docker compose up -d --build
    apt update && apt upgrade
    ```
 
-## 📈 Масштабирование
+## ⚙️ Деплой без Docker (bare-metal)
 
-### Горизонтальное масштабирование backend
+Для серверов, где Docker не используется: nginx + systemd + локальный PostgreSQL.
 
 ```bash
-# Запустить 3 экземпляра backend
-docker compose up -d --scale backend=3
+# Только проверка окружения (node, npm, psql, nginx, systemctl, rsync, gcc и т.д.)
+./deploy.sh check-bare
+
+# Полный деплой в bare-режиме
+sudo ./deploy.sh bare
 ```
 
-### Вертикальное масштабирование
+Скрипт автоматически:
+- проверит все необходимые пакеты и их версии;
+- создаст `.env` со сгенерированными секретами (`JWT_SECRET`, `POSTGRES_PASSWORD`);
+- соберёт frontend (`npm run build`) и backend (`tsc` + `prisma generate && migrate deploy`);
+- настроит systemd-сервис `chlenix-api` и сайт nginx;
+- выполнит миграции базы данных и запустит сервисы.
 
-Измените ресурсы в `docker-compose.yml`:
+Полезные команды после деплоя:
 
-```yaml
-services:
-  backend:
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
+```bash
+systemctl status chlenix-api     # состояние API
+journalctl -u chlenix-api -f     # живые логи API
+nginx -t && systemctl reload nginx
 ```
+
 
 ## 📚 Дополнительная информация
 
