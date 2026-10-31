@@ -43,10 +43,14 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-chlenix}:${POSTGRES_PASSWORD:-chlenix_secret}@postgres:5432/${POSTGRES_DB:-chlenix}
       JWT_SECRET: "${JWT_SECRET:?set JWT_SECRET in .env (generate: openssl rand -base64 48)}"
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
     depends_on:
       postgres:
         condition: service_healthy
+      # backend должен быть запущен до старта nginx — иначе первые /api/*
+      # запросы (например, регистрация) давали бы 502 Bad Gateway
+      backend:
+        condition: service_started
     ports:
       - "${BACKEND_PORT:-4000}:4000"
     networks:

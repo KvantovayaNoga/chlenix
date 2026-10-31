@@ -65,6 +65,16 @@ app.use('/api/*', cors({
   allowHeaders: ['Content-Type', 'Authorization'],
 }));
 
+// Глобальный обработчик необработанных reject'ов: Node.js >=15 завершает
+// процесс по умолчанию — это приводило к рестартам backend и «плавающим»
+// 502 Bad Gateway на /api/auth/register. Логируем и живём дальше.
+process.on('unhandledRejection', (reason) => {
+  log.error('Unhandled rejection (process kept alive)', reason);
+});
+process.on('uncaughtException', (err) => {
+  log.error('Uncaught exception (process kept alive)', err);
+});
+
 // Единая обработка ошибок (не отдаём внутренние детали клиенту)
 app.onError((err, c) => {
   log.error('Unhandled error', err);
@@ -1567,10 +1577,25 @@ app.get('/api/audit-logs', authMiddleware, requireRole(['admin']), async (c) => 
 const PORT = parseInt(process.env.PORT || '4000', 10);
 
 async function start() {
-  try {
-    await prisma.$connect();
-    log.info('Connected to PostgreSQL');
+  // Повторные попытки подключения к БД: postgres может ещё подниматься,
+  // а nginx без запущенного backend отдавал бы 502 на все /api/*
+  const maxRetries = 30;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await prisma.$connect();
+      log.info('Connected to PostgreSQL');
+      break;
+    } catch (error) {
+      if (attempt === maxRetries) {
+        log.error(`Failed to connect to PostgreSQL after ${maxRetries} attempts`, error);
+        process.exit(1);
+      }
+      log.info(`PostgreSQL not ready (attempt ${attempt}/${maxRetries}), retrying in 2s...`);
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
 
+  try {
     serve({
       fetch: app.fetch,
       port: PORT,
