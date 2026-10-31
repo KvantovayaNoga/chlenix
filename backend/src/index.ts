@@ -1450,7 +1450,7 @@ for (const cfg of directoryConfigs) {
     for (const check of usageChecks) {
       const used = await (prisma as any)[check.model].count({ where: { [check.field]: id } });
       if (used > 0) {
-        return c.json({ error: `Запись используется (${used) раз) — удаление запрещено` }, 409);
+        return c.json({ error: `Запись используется (${used} раз) — удаление запрещено` }, 409);
       }
     }
 
