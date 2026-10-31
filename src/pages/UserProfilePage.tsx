@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { ArrowLeft, Mail, Shield, Calendar, Edit, User as UserIcon, Upload, X, Check } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';

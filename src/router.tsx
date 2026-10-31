@@ -32,10 +32,20 @@ function useRouter(): RouterCtx {
   return ctx;
 }
 
-export function useNavigate() {
+export function useNavigate(): NavigateFunction {
   const { navigate } = useRouter();
-  return navigate;
+  // Поддержка числовой навигации (navigate(-1)) — как в react-router-dom:
+  // прокидывает вызов в window.history, не ломая синхронизацию нашего роутера
+  return useCallback<NavigateFunction>((to, opts) => {
+    if (typeof to === 'number') {
+      window.history.go(to);
+      return;
+    }
+    navigate(to, opts);
+  }, [navigate]);
 }
+
+type NavigateFunction = (to: string | number, opts?: { replace?: boolean }) => void;
 
 export function useLocation() {
   const { path, search } = useRouter();
@@ -239,7 +249,9 @@ export function Link({ to, onClick, ...rest }: LinkProps) {
   return <a href={href} onClick={handleClick} {...rest} />;
 }
 
-interface NavLinkProps extends LinkProps {
+// Не наследуемся от LinkProps: там className строго string —
+// описываем пропсы NavLink самостоятельно (совместимо с react-router-dom v6)
+interface NavLinkProps extends Omit<LinkProps, 'className'> {
   className?: string | ((state: { isActive: boolean }) => string);
   activeClassName?: string;
   end?: boolean;

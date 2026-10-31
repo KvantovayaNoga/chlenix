@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { Building2, LogIn, Eye, EyeOff } from 'lucide-react';
 import { ThemeToggle } from '../components/ThemeToggle';

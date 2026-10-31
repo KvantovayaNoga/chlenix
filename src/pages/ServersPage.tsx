@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useDataStore } from '../store/dataStore';
 import { useAuthStore } from '../store/authStore';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from '../router';
 import {
   Cpu, Network, Globe, Plus, Edit, Trash2, X, Server, Activity, Search, Filter, Save,
 } from 'lucide-react';

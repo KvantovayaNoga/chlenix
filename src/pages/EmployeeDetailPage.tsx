@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from '../router';
 import { useDataStore } from '../store/dataStore';
 import { useAuthStore } from '../store/authStore';
 import { ArrowLeft, Mail, Phone, Building, MapPin, Calendar, Monitor, Server, Armchair, MousePointerClick, Network, Package, Unlink, Cpu, Globe, User, PhoneCall, Plus, X } from 'lucide-react';

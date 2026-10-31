@@ -1,7 +1,7 @@
 import { useDataStore } from '../store/dataStore';
 import { Server, Edit, Trash2, Plus, X, History } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { HistoryLog } from '../components/HistoryLog';

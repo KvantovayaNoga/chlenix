@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from '../router';
 import { useDataStore } from '../store/dataStore';
 import { useAuthStore } from '../store/authStore';
 import { Search, Plus, UserCheck, UserX, Mail, Building, MapPin, X, Users, Phone, Filter, Save } from 'lucide-react';
