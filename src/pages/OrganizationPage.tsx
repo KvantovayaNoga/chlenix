@@ -40,13 +40,13 @@ const legalFormLabels: Record<string, string> = {
 };
 
 const inputCls =
-  'w-full px-4 py-3 border border-gray-600 bg-gray-700 text-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none placeholder-gray-500';
-const labelCls = 'block text-sm font-medium text-gray-300 mb-1';
+  'w-full px-4 py-3 border border-gray-600 bg-gray-700 text-gray-800 dark:text-gray-800 dark:text-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none placeholder-gray-500';
+const labelCls = 'block text-sm font-medium text-gray-600 dark:text-gray-600 dark:text-gray-300 mb-1';
 
 function EmptyOrganizationState({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 px-4">
-      <div className="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl p-10 md:p-14 max-w-xl w-full text-center">
+      <div className="bg-white dark:bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl p-10 md:p-14 max-w-xl w-full text-center">
         <div className="inline-flex items-center justify-center w-20 h-20 bg-indigo-500/20 rounded-2xl mb-6 border border-indigo-500/30">
           <Building2 className="w-10 h-10 text-indigo-400" />
         </div>
@@ -69,7 +69,7 @@ function EmptyOrganizationState({ onCreate }: { onCreate: () => void }) {
 
 function InfoCard({ icon: Icon, title, children }: { icon: any; title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-gray-800 rounded-2xl shadow-xl p-6 border border-gray-700">
+    <div className="bg-white dark:bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-gray-200 dark:border-gray-200 dark:border-gray-700">
       <h3 className="flex items-center gap-2 text-sm font-semibold text-indigo-400 uppercase tracking-wider mb-4">
         <Icon className="w-4 h-4" />
         {title}
@@ -84,7 +84,7 @@ function InfoRow({ label, value }: { label: string; value?: string | number | nu
   return (
     <div className="flex flex-col sm:flex-row sm:justify-between sm:gap-4 py-1">
       <span className="text-sm text-gray-400 flex-shrink-0">{label}</span>
-      <span className={`text-sm font-medium sm:text-right ${empty ? 'text-gray-600 italic' : 'text-gray-200'}`}>
+      <span className={`text-sm font-medium sm:text-right ${empty ? 'text-gray-600 italic' : 'text-gray-800 dark:text-gray-800 dark:text-gray-200'}`}>
         {empty ? 'не указан' : String(value)}
       </span>
     </div>
@@ -110,7 +110,7 @@ export function OrganizationPage() {
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-10">
       {/* Header card */}
-      <div className="bg-gray-800 rounded-2xl shadow-2xl border border-gray-700 overflow-hidden">
+      <div className="bg-white dark:bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500" />
         <div className="p-6 md:p-8">
           <div className="flex flex-col md:flex-row md:items-start gap-6">
@@ -221,7 +221,7 @@ export function OrganizationPage() {
           <div className="flex gap-2 flex-shrink-0">
             <button
               onClick={() => setConfirmDelete(false)}
-              className="px-4 py-2 bg-gray-700 text-gray-200 rounded-xl text-sm font-medium hover:bg-gray-600 transition-all"
+              className="px-4 py-2 bg-gray-700 text-gray-800 dark:text-gray-800 dark:text-gray-200 rounded-xl text-sm font-medium hover:bg-gray-600 transition-all"
             >
               Отмена
             </button>
@@ -288,15 +288,15 @@ export function OrganizationPage() {
           </div>
 
           {organization.notes && (
-            <div className="bg-gray-800 rounded-2xl shadow-xl p-6 border border-gray-700">
+            <div className="bg-white dark:bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-gray-200 dark:border-gray-200 dark:border-gray-700">
               <h3 className="flex items-center gap-2 text-sm font-semibold text-indigo-400 uppercase tracking-wider mb-3">
                 <Wallet className="w-4 h-4" /> Примечания
               </h3>
-              <p className="text-gray-300 whitespace-pre-wrap">{organization.notes}</p>
+              <p className="text-gray-600 dark:text-gray-600 dark:text-gray-300 whitespace-pre-wrap">{organization.notes}</p>
             </div>
           )}
 
-          <div className="bg-gray-800 rounded-2xl shadow-xl p-6 border border-gray-700">
+          <div className="bg-white dark:bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-gray-200 dark:border-gray-200 dark:border-gray-700">
             <h3 className="flex items-center gap-2 text-sm font-semibold text-indigo-400 uppercase tracking-wider mb-4">
               <CalendarDays className="w-4 h-4" /> История изменений карточки
             </h3>
@@ -330,7 +330,7 @@ function EditOrganizationForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 border border-indigo-500/30 space-y-6">
+    <form onSubmit={handleSubmit} className="bg-white dark:bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 border border-indigo-500/30 space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white flex items-center gap-2">
           <Pencil className="w-5 h-5 text-indigo-400" /> Редактирование организации
@@ -443,7 +443,7 @@ function EditOrganizationForm({
         <button
           type="button"
           onClick={onClose}
-          className="px-6 py-2.5 rounded-xl font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 transition-all"
+          className="px-6 py-2.5 rounded-xl font-medium text-gray-600 dark:text-gray-600 dark:text-gray-300 bg-gray-700 hover:bg-gray-600 transition-all"
         >
           Отмена
         </button>

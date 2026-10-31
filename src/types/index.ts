@@ -211,6 +211,7 @@ export interface VirtualMachine {
   updatedAt: string;
   updatedBy: string | null;
   history?: HistoryEntry[];
+  services?: Service[];
 }
 
 // Сервис/middleware на виртуальной машине

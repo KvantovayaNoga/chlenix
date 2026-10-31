@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Тёмная тема включается классом `dark` на <html> (переключатель темы) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   * {
     box-sizing: border-box;
