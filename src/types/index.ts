@@ -12,20 +12,20 @@ export interface HistoryEntry {
   changedAt: string;
 }
 
-// Пользователь системы (для авторизации)
+export type ThemePreference = 'light' | 'dark' | 'system';
+
+// Пользователь системы (для авторизации). Ответ API (пароль не передаётся клиенту).
 export interface User {
   id: string;
   email: string;
-  password: string;
   fullName: string;
   role: UserRole;
   avatar?: string; // Base64 encoded image
+  theme?: ThemePreference;
   createdAt: string;
   updatedAt: string;
-  updatedBy: string | null;
   isActive: boolean;
   organizationId?: string | null; // Организация, к которой привязан пользователь
-  history?: HistoryEntry[];
 }
 
 // Организация (создаётся пользователем после регистрации)
