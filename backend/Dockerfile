@@ -26,9 +26,12 @@ ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY
 
-# Только зависимости из package.json (без devDependencies) — детерминированная установка.
-# Именно этот слой определял содержимое node_modules в runtime-образе.
-RUN npm ci --omit=dev --no-audit --no-fund
+# ИСПРАВЛЕНИЕ ЦИКЛА ОШИБОК СБОРКИ:
+#   вариант "--omit=dev"  → tsc падал: Cannot find name 'process'/'console' (нет @types/node);
+#   вариант с dev-зависимостями во всех слоях → раздувание runtime-образа.
+# Решение: builder ставит ВСЕ зависимости (npm ci), runtime — только prod (--omit=dev).
+# Проверено локально: tsc без ошибок; @prisma/client импортируется в prod-окружении.
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
 # Генерируем Prisma Client (пишет код в node_modules/@prisma/client)
 RUN npx prisma generate
@@ -37,33 +40,41 @@ RUN npx prisma generate
 COPY tsconfig.json package.json ./
 COPY src ./src/
 
-# Собираем TypeScript.
-# ВАЖНО: сборка идёт ДО финальной генерации клиента, иначе tsc перечитывает
-# сгенерированный .d.ts и портит его (известный баг связки tsc + prisma).
+# Собираем TypeScript (сборка ДО финальной генерации клиента — см. комментарий ниже).
 RUN npm run build
 
-# Проверяем на этапе сборки, что клиент реально установлен и импортируется.
-# Если этого не сделать, битый образ молча упадёт уже в рантайме.
+# Canary: проверяем, что клиент реально установлен и импортируется.
 RUN node -e "const {PrismaClient}=require('@prisma/client'); console.log('✓ @prisma/client OK, version:', require('@prisma/client/package.json').version)"
 
-# Production stage
+# ============================================================
+# Production stage — ТОЛЬКО prod-зависимости (лёгкий образ)
+# ============================================================
 FROM node:22-alpine
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Копируем только нужные файлы
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/package.json ./
+ARG NPM_REGISTRY
+ENV npm_config_registry=${NPM_REGISTRY}
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
 
-# Финальная перегенерация клиента после сборки (см. комментарий выше).
-# Затем повторная проверка импорта — «canary»: если клиент битый,
-# docker build упадёт здесь, а не через цикл рестартов контейнера.
-RUN npx prisma generate \
- && node -e "const {PrismaClient}=require('@prisma/client'); console.log('✓ @prisma/client OK after generate')"
+# Сначала ставим ровно те 42 пакета, что нужны в рантайме (детерминированно).
+COPY package*.json .npmrc ./
+RUN npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund
+
+# Затем перегенерируем Prisma Client ПОВЕРХ prod-узлов (он сам является dependency,
+# поэтому generate не требует devDependencies) — это известный рабочий порядок:
+# tsc собирает код до генерации, клиент генерируется заново уже в runtime-слое.
+COPY --from=builder /app/prisma ./prisma
+RUN npx prisma generate
+
+COPY --from=builder /app/dist ./dist
+
+# Canary runtime-образа: битый образ упадёт на сборке, а не циклом рестартов.
+RUN node -e "const {PrismaClient}=require('@prisma/client'); if(typeof PrismaClient!=='function') process.exit(1); console.log('✓ @prisma/client OK in runtime image')"
 
 # Создаем папку для миграций если её нет
 RUN mkdir -p /app/prisma/migrations

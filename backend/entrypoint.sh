@@ -40,8 +40,15 @@ EOF
 if ! node -e "require('@prisma/client')" 2>/dev/null; then
   echo "⚠️  @prisma/client отсутствует или сломан — перегенерируем на месте..."
   ls node_modules/.prisma/client/index.js >/dev/null 2>&1 || echo "   (нет сгенерированного клиента в node_modules/.prisma)"
-  npx prisma generate && echo "✓ Prisma Client перегенерирован" \
-  || { echo "❌ Не удалось перегенерировать Prisma Client. Скорее всего образ собран без dev-зависимостей/prisma CLI."; exit 1; }
+  # КРИТИЧНО: при пересборке образа старые тома node_modules могут остаться от
+  # предыдущей сборки. Сначала приводим зависимости в соответствие с lock-файлом
+  # (полная установка, если npm ci --omit=dev не дал клиент), затем генерируем.
+  { npx prisma generate \
+    || { echo "   prisma CLI недоступен — ставим зависимости заново..."; \
+         npm ci --no-audit --no-fund || npm install --no-audit --no-fund; \
+         npx prisma generate; }; } \
+  && echo "✓ Prisma Client перегенерирован" \
+  || { echo "❌ Не удалось восстановить Prisma Client. Причину см. выше; обычно помогает: docker compose build --no-cache backend"; exit 1; }
 fi
 
 echo "⏳ Ожидаем готовности PostgreSQL..."
