@@ -40,7 +40,12 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      DATABASE_URL: postgresql://${POSTGRES_USER:-chlenix}:${POSTGRES_PASSWORD:-chlenix_secret}@postgres:5432/${POSTGRES_DB:-chlenix}
+      # Явные POSTGRES_* гарантируют, что backend использует ТЕ ЖЕ значения,
+      # что и контейнер postgres (иначе при отсутствии .env получался бы
+      # рассинхрон паролей: postgres — из :?-дефолта, backend — из своего :-дефолта)
+      POSTGRES_USER: ${POSTGRES_USER:-chlenix}
+      POSTGRES_DB: ${POSTGRES_DB:-chlenix}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chlenix}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chlenix}
       JWT_SECRET: "${JWT_SECRET:?set JWT_SECRET in .env (generate: openssl rand -base64 48)}"
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
