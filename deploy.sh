@@ -192,6 +192,13 @@ deploy_docker() {
   ensure_env
   set -a; . "$APP_DIR/.env"; set +a
 
+  # Валидация compose-файла ДО остановки контейнеров — чтобы синтаксическая
+  # ошибка не привела к простою работающей среды.
+  if ! (cd "$APP_DIR" && docker compose config -q); then
+    die "docker-compose.yml невалиден (см. ошибку выше). Исправьте файл и повторите деплой."
+  fi
+  ok "docker-compose.yml прошёл валидацию"
+
   echo "🛑 Останавливаем старые контейнеры (если есть)..."
   (cd "$APP_DIR" && docker compose down 2>/dev/null) || true
 
