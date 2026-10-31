@@ -15,16 +15,20 @@ datasource db {
 // Пользователи системы (авторизация)
 // ============================================================
 model User {
-  id         String   @id @default(uuid())
-  email      String   @unique
-  password   String   @map("password_hash")
-  fullName   String   @map("full_name")
-  role       Role     @default(viewer)
-  isActive   Boolean  @default(true) @map("is_active")
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id              String   @id @default(uuid())
+  email           String   @unique
+  password        String   @map("password_hash")
+  fullName        String   @map("full_name")
+  role            Role     @default(viewer)
+  isActive        Boolean  @default(true) @map("is_active")
+  avatar          String?  @db.Text
+  theme           String   @default("system")
+  organizationId  String?  @map("organization_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   // Связи
+  organization     Organization? @relation(fields: [organizationId], references: [id])
   updatedByUser    User?      @relation("UserUpdater", fields: [updatedById], references: [id])
   updatedById      String?    @map("updated_by")
   updatedUsers     User[]     @relation("UserUpdater")
@@ -349,4 +353,63 @@ enum AuditAction {
   unassign
   login
   logout
+}
+
+// ============================================================
+// Организации (карточка организации + реквизиты)
+// ============================================================
+model Organization {
+  id                  String   @id @default(uuid())
+  name                String
+  legalForm           String   @map("legal_form")
+  shortName           String   @map("short_name")
+  inn                 String
+  kpp                 String?
+  ogrn                String
+  legalAddress        String   @map("legal_address")
+  actualAddress       String?  @map("actual_address")
+  postalCode          String?  @map("postal_code")
+  city                String?
+  phone               String?
+  email               String?
+  website             String?
+  directorName        String?  @map("director_name")
+  accountantName      String?  @map("accountant_name")
+  bankName            String?  @map("bank_name")
+  checkingAccount     String?  @map("checking_account")
+  correspondentAccount String? @map("correspondent_account")
+  bik                 String?
+  taxSystem           String?  @map("tax_system")
+  industry            String?
+  employeeCount       Int?     @map("employee_count")
+  foundedDate         String?  @map("founded_date")
+  logo                String?  @db.Text
+  notes               String?
+  createdById         String?  @map("created_by")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  updatedById         String?  @map("updated_by")
+
+  users     User[]
+
+  @@index([inn])
+  @@map("organizations")
+}
+
+// ============================================================
+// История изменений сущностей (field-level diff)
+// ============================================================
+model HistoryRecord {
+  id         String   @id @default(uuid())
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  action     String
+  fieldName  String?  @map("field_name")
+  oldValue   String?  @map("old_value") @db.Text
+  newValue   String?  @map("new_value") @db.Text
+  changedBy  String   @map("changed_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@map("history_records")
 }

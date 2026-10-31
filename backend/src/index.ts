@@ -1,6 +1,7 @@
 // ============================================================
 // Chlenix Backend API — Main Entry Point
 // Node.js 22 + Hono + Prisma + PostgreSQL
+// Все данные приложения хранятся в серверной БД PostgreSQL.
 // ============================================================
 
 import { serve } from '@hono/node-server';
@@ -32,9 +33,15 @@ type Env = {
 const app = new Hono<Env>();
 const prisma = new PrismaClient();
 
+// Структурированное операционное логирование
+const log = {
+  info: (msg: string) => console.info(`[${new Date().toISOString()}] INFO  ${msg}`),
+  error: (msg: string, err?: unknown) => console.error(`[${new Date().toISOString()}] ERROR ${msg}`, err ?? ''),
+};
+
 const JWT_SECRET_RAW = process.env.JWT_SECRET;
 if (!JWT_SECRET_RAW && process.env.NODE_ENV === 'production') {
-  console.error('❌ Ошибка запуска: в production обязателен JWT_SECRET.');
+  console.error('Ошибка запуска: в production обязателен JWT_SECRET.');
   console.error('   Задайте его в .env (генерация: openssl rand -base64 48).');
   process.exit(1);
 }
@@ -49,9 +56,15 @@ app.use('*', logger());
 app.use('/api/*', cors({
   origin: CORS_ORIGIN,
   credentials: true,
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
 }));
+
+// Единая обработка ошибок (не отдаём внутренние детали клиенту)
+app.onError((err, c) => {
+  log.error('Unhandled error', err);
+  return c.json({ error: 'Внутренняя ошибка сервера' }, 500);
+});
 
 // Middleware для аутентификации
 const authMiddleware = async (c: any, next: any) => {
@@ -65,7 +78,7 @@ const authMiddleware = async (c: any, next: any) => {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     c.set('user', payload as any);
     await next();
-  } catch (error) {
+  } catch {
     return c.json({ error: 'Invalid token' }, 401);
   }
 };
@@ -82,95 +95,269 @@ const requireRole = (roles: string[]) => {
 };
 
 // ============================================================
+// Вспомогательные функции: аудит и история изменений
+// ============================================================
+type Ctx = { userId: string; fullName: string };
+
+async function writeAudit(ctx: Ctx, action: string, entityType: string, entityId: string | null, entityName: string | null, details: string, ipAddress?: string | null) {
+  await prisma.auditLog.create({
+    data: {
+      userId: ctx.userId,
+      userName: ctx.fullName,
+      action: action as any,
+      entityType,
+      entityId,
+      entityName,
+      details,
+      ipAddress: ipAddress ?? null,
+    },
+  });
+}
+
+const HISTORY_FIELD_LABELS: Record<string, string> = {
+  name: 'наименование',
+  hostname: 'hostname',
+  os: 'ОС',
+  type: 'тип',
+  status: 'статус',
+  cpuCores: 'CPU (ядер)',
+  ramGB: 'RAM (ГБ)',
+  diskGB: 'диск (ГБ)',
+  serialNumber: 'серийный номер',
+  inventoryNumber: 'инвентарный номер',
+  brand: 'бренд',
+  model: 'модель',
+  condition: 'состояние',
+  category: 'категория',
+  floor: 'этаж',
+  room: 'кабинет',
+  notes: 'примечания',
+  firstName: 'имя',
+  lastName: 'фамилия',
+  middleName: 'отчество',
+  email: 'email',
+  workPhone: 'рабочий телефон',
+  internalPhone: 'внутренний телефон',
+  personalPhone: 'личный телефон',
+  hireDate: 'дата приёма',
+  isEmployed: 'статус работы',
+  positionId: 'должность',
+  departmentId: 'отдел',
+  branchId: 'филиал',
+  hostServerId: 'хост-сервер',
+  responsibleEmployeeId: 'ответственный (инфраструктура)',
+  serviceResponsibleEmployeeId: 'ответственный (сервисы)',
+  description: 'описание',
+  address: 'адрес',
+  shortName: 'краткое наименование',
+  legalForm: 'ОКФ',
+  inn: 'ИНН',
+  kpp: 'КПП',
+  ogrn: 'ОГРН',
+  legalAddress: 'юридический адрес',
+  actualAddress: 'фактический адрес',
+  postalCode: 'почтовый индекс',
+  city: 'город',
+  phone: 'телефон',
+  website: 'сайт',
+  directorName: 'руководитель',
+  accountantName: 'главный бухгалтер',
+  bankName: 'банк',
+  checkingAccount: 'расчётный счёт',
+  correspondentAccount: 'корр. счёт',
+  bik: 'БИК',
+  taxSystem: 'система налогообложения',
+  industry: 'отрасль',
+  employeeCount: 'штатная численность',
+  foundedDate: 'дата основания',
+  logo: 'логотип',
+  avatar: 'аватар',
+  fullName: 'ФИО',
+  role: 'роль',
+  isActive: 'активность',
+  organizationId: 'организация',
+  theme: 'тема оформления',
+  password: 'пароль',
+  version: 'версия',
+  port: 'порт',
+  macAddress: 'MAC-адрес',
+  ipAddress: 'IP-адрес',
+  isPublic: 'публичный IP',
+  purchaseDate: 'дата покупки',
+  writeOffDate: 'дата списания',
+};
+
+function displayValue(v: unknown): string {
+  if (v === null || v === undefined || v === '') return '—';
+  if (typeof v === 'boolean') return v ? 'да' : 'нет';
+  if (v instanceof Date) return v.toISOString().split('T')[0];
+  return String(v);
+}
+
+// Вычисляет diff по белому списку отслеживаемых полей и пишет историю + аудит
+const TRACKED_KEYS = Object.keys(HISTORY_FIELD_LABELS);
+
+async function applyUpdate(opts: {
+  ctx: Ctx;
+  ipAddress?: string | null;
+  entityType: string;
+  entityId: string;
+  entityName: string;
+  oldObj: Record<string, any>;
+  newData: Record<string, any>;
+}) {
+  const changes: string[] = [];
+  for (const key of TRACKED_KEYS) {
+    if (!(key in opts.newData)) continue;
+    const nv = opts.newData[key];
+    if (nv === undefined) continue;
+    const ov = opts.oldObj[key];
+    const norm = (v: any) => (v instanceof Date ? v.toISOString() : v === undefined ? null : v);
+    if (String(norm(ov)) !== String(norm(nv))) {
+      changes.push(`${HISTORY_FIELD_LABELS[key]}: "${displayValue(ov)}" → "${displayValue(nv)}"`);
+      await prisma.historyRecord.create({
+        data: {
+          entityType: opts.entityType,
+          entityId: opts.entityId,
+          action: 'updated',
+          fieldName: HISTORY_FIELD_LABELS[key],
+          oldValue: displayValue(ov),
+          newValue: displayValue(nv),
+          changedBy: opts.ctx.fullName,
+        },
+      });
+    }
+  }
+  await writeAudit(
+    opts.ctx,
+    'update',
+    opts.entityType,
+    opts.entityId,
+    opts.entityName,
+    changes.length > 0 ? `Обновлено: ${changes.join('; ')}` : 'Обновлены данные',
+    opts.ipAddress,
+  );
+}
+
+async function createHistoryEntry(entityType: string, entityId: string, changedBy: string, action = 'created', fieldName = 'создано') {
+  await prisma.historyRecord.create({
+    data: { entityType, entityId, action, fieldName, changedBy },
+  });
+}
+
+// Разрешает внешние ключи из строковых ID, возвращает null если записи нет
+async function resolveRef(model: 'employee' | 'branch' | 'department' | 'position' | 'equipment', id: unknown): Promise<string | null> {
+  if (typeof id !== 'string' || id.trim() === '') return null;
+  const where = { id };
+  try {
+    const found: any = await (prisma as any)[model].findUnique({ where, select: { id: true } });
+    return found ? found.id : null;
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================
 // Health Check
 // ============================================================
-app.get('/api/health', (c) => {
-  return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/api/health', async (c) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+  } catch {
+    return c.json({ status: 'error', timestamp: new Date().toISOString() }, 503);
+  }
 });
 
 // ============================================================
 // Auth Routes
 // ============================================================
-app.post('/api/auth/login', async (c) => {
-  const body = await c.req.json();
-  const schema = z.object({
-    email: z.string().email(),
-    password: z.string(),
-  });
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string(),
+});
 
-  const result = schema.safeParse(body);
-  if (!result.success) {
-    return c.json({ error: 'Invalid input' }, 400);
-  }
+const registerSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  fullName: z.string().min(2),
+});
 
-  const { email, password } = result.data;
+function publicUser(u: any) {
+  return {
+    id: u.id,
+    email: u.email,
+    fullName: u.fullName,
+    role: u.role,
+    isActive: u.isActive,
+    avatar: u.avatar ?? undefined,
+    theme: u.theme ?? 'system',
+    organizationId: u.organizationId ?? null,
+    createdAt: u.createdAt,
+    updatedAt: u.updatedAt,
+  };
+}
 
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !user.isActive) {
-    return c.json({ error: 'Invalid credentials' }, 401);
-  }
-
-  const validPassword = await bcrypt.compare(password, user.password);
-  if (!validPassword) {
-    return c.json({ error: 'Invalid credentials' }, 401);
-  }
-
-  const token = await new SignJWT({ 
-    userId: user.id, 
-    email: user.email, 
-    role: user.role, 
-    fullName: user.fullName 
+async function issueToken(user: any) {
+  return new SignJWT({
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    fullName: user.fullName,
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(JWT_EXPIRES_IN)
     .sign(JWT_SECRET);
+}
 
-  await prisma.auditLog.create({
-    data: {
-      userId: user.id,
-      userName: user.fullName,
-      action: 'login',
-      entityType: 'user',
-      entityId: user.id,
-      entityName: user.fullName,
-      details: 'User logged in',
-      ipAddress: c.req.header('x-forwarded-for') || c.req.header('x-real-ip'),
-    },
-  });
+app.post('/api/auth/login', async (c) => {
+  const parsed = loginSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ error: 'Некорректные данные' }, 400);
+  }
 
-  return c.json({
-    token,
-    user: {
-      id: user.id,
-      email: user.email,
-      fullName: user.fullName,
-      role: user.role,
-    },
-  });
+  const { email, password } = parsed.data;
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user || !user.isActive) {
+    return c.json({ error: 'Неверный email или пароль' }, 401);
+  }
+
+  const validPassword = await bcrypt.compare(password, user.password);
+  if (!validPassword) {
+    return c.json({ error: 'Неверный email или пароль' }, 401);
+  }
+
+  const token = await issueToken(user);
+
+  await writeAudit(
+    { userId: user.id, fullName: user.fullName },
+    'login',
+    'user',
+    user.id,
+    user.fullName,
+    'Вход в систему',
+    c.req.header('x-forwarded-for') || c.req.header('x-real-ip'),
+  );
+
+  return c.json({ token, user: publicUser(user) });
 });
 
 app.post('/api/auth/register', async (c) => {
-  const body = await c.req.json();
-  const schema = z.object({
-    email: z.string().email(),
-    password: z.string().min(6),
-    fullName: z.string().min(2),
-  });
-
-  const result = schema.safeParse(body);
-  if (!result.success) {
-    return c.json({ error: 'Invalid input' }, 400);
+  const parsed = registerSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ error: 'Некорректные данные' }, 400);
   }
 
-  const { email, password, fullName } = result.data;
+  const { email, password, fullName } = parsed.data;
 
   const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
     return c.json({ error: 'Пользователь с таким email уже существует' }, 400);
   }
 
-  // Первый зарегистрированный пользователь — администратор организации
+  // Первый зарегистрированный пользователь — администратор системы
   const userCount = await prisma.user.count();
   const role = userCount === 0 ? 'admin' : 'viewer';
 
@@ -180,26 +367,35 @@ app.post('/api/auth/register', async (c) => {
     data: { email, password: passwordHash, fullName, role },
   });
 
-  const token = await new SignJWT({ 
-    userId: user.id, 
-    email: user.email, 
-    role: user.role, 
-    fullName: user.fullName 
-  })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime(JWT_EXPIRES_IN)
-    .sign(JWT_SECRET);
+  await createHistoryEntry('user', user.id, fullName);
+  await writeAudit({ userId: user.id, fullName }, 'create', 'user', user.id, fullName, 'Зарегистрирован новый пользователь');
 
-  return c.json({
-    token,
-    user: {
-      id: user.id,
-      email: user.email,
-      fullName: user.fullName,
-      role: user.role,
-    },
+  const token = await issueToken(user);
+
+  return c.json({ token, user: publicUser(user) });
+});
+
+app.get('/api/auth/me', authMiddleware, async (c) => {
+  const currentUser = c.get('user');
+  const user = await prisma.user.findUnique({ where: { id: currentUser.userId } });
+  if (!user || !user.isActive) {
+    return c.json({ error: 'Пользователь не найден или деактивирован' }, 401);
+  }
+  return c.json(publicUser(user));
+});
+
+// Сохранение выбора темы оформления в БД (light | dark | system)
+app.patch('/api/users/me/theme', authMiddleware, async (c) => {
+  const currentUser = c.get('user');
+  const parsed = z.object({ theme: z.enum(['light', 'dark', 'system']) }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ error: 'Некорректные данные' }, 400);
+  }
+  const user = await prisma.user.update({
+    where: { id: currentUser.userId },
+    data: { theme: parsed.data.theme },
   });
+  return c.json(publicUser(user));
 });
 
 // ============================================================
@@ -207,38 +403,59 @@ app.post('/api/auth/register', async (c) => {
 // ============================================================
 app.get('/api/users', authMiddleware, async (c) => {
   const users = await prisma.user.findMany({
-    select: {
-      id: true,
-      email: true,
-      fullName: true,
-      role: true,
-      isActive: true,
-      createdAt: true,
-      updatedAt: true,
-    },
     orderBy: { createdAt: 'desc' },
   });
-  return c.json(users);
+  return c.json(users.map(publicUser));
+});
+
+app.get('/api/users/:id', authMiddleware, async (c) => {
+  const { id } = c.req.param();
+  const currentUser = c.get('user');
+  if (currentUser.role !== 'admin' && currentUser.userId !== id) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) return c.json({ error: 'Not found' }, 404);
+  return c.json(publicUser(user));
+});
+
+app.get('/api/users/:id/history', authMiddleware, async (c) => {
+  const { id } = c.req.param();
+  const currentUser = c.get('user');
+  if (currentUser.role !== 'admin' && currentUser.userId !== id) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+  const history = await prisma.historyRecord.findMany({
+    where: { entityType: 'user', entityId: id },
+    orderBy: { createdAt: 'asc' },
+  });
+  return c.json(history);
 });
 
 app.post('/api/users', authMiddleware, requireRole(['admin']), async (c) => {
-  const body = await c.req.json();
   const schema = z.object({
     email: z.string().email(),
     password: z.string().min(6),
     fullName: z.string().min(2),
     role: z.enum(['admin', 'materially_responsible', 'viewer']),
     isActive: z.boolean().optional(),
+    organizationId: z.string().uuid().optional().nullable(),
   });
 
-  const result = schema.safeParse(body);
-  if (!result.success) {
-    return c.json({ error: 'Invalid input' }, 400);
+  const parsed = schema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ error: 'Некорректные данные' }, 400);
   }
 
-  const { email, password, fullName, role, isActive } = result.data;
-  const passwordHash = await bcrypt.hash(password, 12);
+  const { email, password, fullName, role, isActive, organizationId } = parsed.data;
+
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    return c.json({ error: 'Пользователь с таким email уже существует' }, 400);
+  }
+
   const currentUser = c.get('user');
+  const passwordHash = await bcrypt.hash(password, 12);
 
   const user = await prisma.user.create({
     data: {
@@ -247,104 +464,353 @@ app.post('/api/users', authMiddleware, requireRole(['admin']), async (c) => {
       fullName,
       role,
       isActive: isActive ?? true,
+      organizationId: organizationId ?? null,
       updatedById: currentUser.userId,
     },
   });
 
-  return c.json(user, 201);
+  await createHistoryEntry('user', user.id, currentUser.fullName);
+  await writeAudit(currentUser, 'create', 'user', user.id, fullName, `Создан пользователь "${fullName}" (${role})`, c.req.header('x-forwarded-for'));
+
+  return c.json(publicUser(user), 201);
 });
 
 app.put('/api/users/:id', authMiddleware, async (c) => {
   const { id } = c.req.param();
   const currentUser = c.get('user');
-  const body = await c.req.json();
+  const isAdmin = currentUser.role === 'admin';
 
   // Пользователь может редактировать только себя, админ — всех
-  if (currentUser.role !== 'admin' && currentUser.userId !== id) {
+  if (!isAdmin && currentUser.userId !== id) {
     return c.json({ error: 'Forbidden' }, 403);
   }
 
-  const updateData: any = {};
-  if (body.fullName) updateData.fullName = body.fullName;
-  if (body.email) updateData.email = body.email;
-  if (body.role && currentUser.role === 'admin') updateData.role = body.role;
-  if (body.isActive !== undefined && currentUser.role === 'admin') updateData.isActive = body.isActive;
-  if (body.password) updateData.password = await bcrypt.hash(body.password, 12);
-  updateData.updatedById = currentUser.userId;
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: 'Некорректные данные' }, 400);
+  }
 
-  const user = await prisma.user.update({
-    where: { id },
-    data: updateData,
+  const target = await prisma.user.findUnique({ where: { id } });
+  if (!target) return c.json({ error: 'Not found' }, 404);
+
+  const updateData: any = {};
+  if (typeof body.fullName === 'string' && body.fullName.trim().length >= 2) updateData.fullName = body.fullName.trim();
+  if (typeof body.email === 'string' && z.string().email().safeParse(body.email).success) {
+    if (body.email !== target.email) {
+      const clash = await prisma.user.findUnique({ where: { email: body.email } });
+      if (clash) return c.json({ error: 'Email уже занят' }, 400);
+    }
+    updateData.email = body.email;
+  }
+  if (typeof body.avatar === 'string' || body.avatar === null) updateData.avatar = body.avatar;
+  if (body.theme !== undefined) {
+    const t = z.enum(['light', 'dark', 'system']).safeParse(body.theme);
+    if (t.success) updateData.theme = t.data;
+  }
+  // Привилегированные поля — только для администратора
+  if (isAdmin) {
+    if (body.role !== undefined) {
+      const r = z.enum(['admin', 'materially_responsible', 'viewer']).safeParse(body.role);
+      if (r.success) updateData.role = r.data;
+    }
+    if (body.isActive !== undefined) updateData.isActive = !!body.isActive;
+    if (body.organizationId !== undefined) {
+      if (body.organizationId === null) {
+        updateData.organizationId = null;
+      } else {
+        const foundOrg = typeof body.organizationId === 'string'
+          ? await prisma.organization.findUnique({ where: { id: body.organizationId }, select: { id: true } })
+          : null;
+        updateData.organizationId = foundOrg ? foundOrg.id : target.organizationId;
+      }
+    }
+  }
+  if (typeof body.password === 'string' && body.password.length >= 6) {
+    updateData.password = await bcrypt.hash(body.password, 12);
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    return c.json(publicUser(target));
+  }
+
+  updateData.updatedById = currentUser.userId;
+  const user = await prisma.user.update({ where: { id }, data: updateData });
+
+  // История: без значения пароля
+  const safeOld: Record<string, any> = { ...target };
+  delete safeOld.password;
+  const safeNew: Record<string, any> = { ...updateData };
+  if ('password' in safeNew) {
+    delete safeNew.password;
+    await prisma.historyRecord.create({
+      data: { entityType: 'user', entityId: id, action: 'updated', fieldName: 'пароль', changedBy: currentUser.fullName },
+    });
+  }
+  await applyUpdate({
+    ctx: currentUser,
+    ipAddress: c.req.header('x-forwarded-for'),
+    entityType: 'user',
+    entityId: id,
+    entityName: user.fullName,
+    oldObj: safeOld,
+    newData: safeNew,
   });
 
-  return c.json(user);
+  return c.json(publicUser(user));
 });
 
 app.delete('/api/users/:id', authMiddleware, requireRole(['admin']), async (c) => {
   const { id } = c.req.param();
+  const currentUser = c.get('user');
+  if (currentUser.userId === id) {
+    return c.json({ error: 'Нельзя удалить собственную учётную запись' }, 400);
+  }
+  const target = await prisma.user.findUnique({ where: { id } });
+  if (!target) return c.json({ error: 'Not found' }, 404);
+
+  await prisma.historyRecord.deleteMany({ where: { entityType: 'user', entityId: id } });
   await prisma.user.delete({ where: { id } });
+  await writeAudit(currentUser, 'delete', 'user', id, target.fullName, `Удалён пользователь "${target.fullName}"`, c.req.header('x-forwarded-for'));
+  return c.json({ success: true });
+});
+
+// ============================================================
+// Organizations Routes
+// ============================================================
+const organizationSchema = z.object({
+  name: z.string().min(2),
+  legalForm: z.string().min(1),
+  shortName: z.string().min(1),
+  inn: z.string().min(4),
+  kpp: z.string().optional().nullable(),
+  ogrn: z.string().min(4),
+  legalAddress: z.string().min(3),
+  actualAddress: z.string().optional().nullable(),
+  postalCode: z.string().optional().nullable(),
+  city: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  email: z.string().optional().nullable(),
+  website: z.string().optional().nullable(),
+  directorName: z.string().optional().nullable(),
+  accountantName: z.string().optional().nullable(),
+  bankName: z.string().optional().nullable(),
+  checkingAccount: z.string().optional().nullable(),
+  correspondentAccount: z.string().optional().nullable(),
+  bik: z.string().optional().nullable(),
+  taxSystem: z.string().optional().nullable(),
+  industry: z.string().optional().nullable(),
+  employeeCount: z.number().int().nullable().optional(),
+  foundedDate: z.string().optional().nullable(),
+  logo: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+});
+
+function publicOrganization(o: any) {
+  return {
+    ...o,
+    createdAt: o.createdAt instanceof Date ? o.createdAt.toISOString() : o.createdAt,
+    updatedAt: o.updatedAt instanceof Date ? o.updatedAt.toISOString() : o.updatedAt,
+    createdBy: o.createdById,
+    updatedBy: o.updatedById,
+  };
+}
+
+app.get('/api/organizations', authMiddleware, async (c) => {
+  const organizations = await prisma.organization.findMany({ orderBy: { createdAt: 'asc' } });
+  return c.json(organizations.map(publicOrganization));
+});
+
+app.get('/api/organizations/:id', authMiddleware, async (c) => {
+  const org = await prisma.organization.findUnique({ where: { id: c.req.param('id') } });
+  if (!org) return c.json({ error: 'Not found' }, 404);
+  return c.json(publicOrganization(org));
+});
+
+app.get('/api/organizations/:id/history', authMiddleware, async (c) => {
+  const history = await prisma.historyRecord.findMany({
+    where: { entityType: 'organization', entityId: c.req.param('id') },
+    orderBy: { createdAt: 'asc' },
+  });
+  return c.json(history);
+});
+
+app.post('/api/organizations', authMiddleware, requireRole(['admin']), async (c) => {
+  const parsed = organizationSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ error: 'Некорректные данные организации' }, 400);
+  }
+  const currentUser = c.get('user');
+
+  const existingCount = await prisma.organization.count();
+  if (existingCount > 0) {
+    return c.json({ error: 'Организация уже создана' }, 409);
+  }
+
+  const org = await prisma.organization.create({
+    data: { ...parsed.data, createdById: currentUser.userId, updatedById: currentUser.userId },
+  });
+
+  await createHistoryEntry('organization', org.id, currentUser.fullName);
+  await writeAudit(currentUser, 'create', 'organization', org.id, org.name, `Создана организация "${org.name}"`, c.req.header('x-forwarded-for'));
+
+  // Создавший становится привязанным к организации
+  await prisma.user.update({ where: { id: currentUser.userId }, data: { organizationId: org.id } });
+
+  return c.json(publicOrganization(org), 201);
+});
+
+app.put('/api/organizations/:id', authMiddleware, requireRole(['admin']), async (c) => {
+  const { id } = c.req.param();
+  const parsed = organizationSchema.partial().safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ error: 'Некорректные данные' }, 400);
+  }
+  const currentUser = c.get('user');
+
+  const oldOrg = await prisma.organization.findUnique({ where: { id } });
+  if (!oldOrg) return c.json({ error: 'Not found' }, 404);
+
+  const newData: any = {};
+  for (const [k, v] of Object.entries(parsed.data)) {
+    if (v !== undefined) newData[k] = v;
+  }
+  newData.updatedById = currentUser.userId;
+
+  const org = await prisma.organization.update({ where: { id }, data: newData });
+
+  await applyUpdate({
+    ctx: currentUser,
+    ipAddress: c.req.header('x-forwarded-for'),
+    entityType: 'organization',
+    entityId: id,
+    entityName: org.name,
+    oldObj: oldOrg as any,
+    newData,
+  });
+
+  return c.json(publicOrganization(org));
+});
+
+app.delete('/api/organizations/:id', authMiddleware, requireRole(['admin']), async (c) => {
+  const { id } = c.req.param();
+  const currentUser = c.get('user');
+  const org = await prisma.organization.findUnique({ where: { id } });
+  if (!org) return c.json({ error: 'Not found' }, 404);
+
+  const linkedUsers = await prisma.user.count({ where: { organizationId: id } });
+  if (linkedUsers > 0) {
+    return c.json({ error: 'От организации отвязаны не все пользователи' }, 400);
+  }
+
+  await prisma.historyRecord.deleteMany({ where: { entityType: 'organization', entityId: id } });
+  await prisma.organization.delete({ where: { id } });
+  await writeAudit(currentUser, 'delete', 'organization', id, org.name, `Удалена организация "${org.name}"`, c.req.header('x-forwarded-for'));
   return c.json({ success: true });
 });
 
 // ============================================================
 // Employees Routes
 // ============================================================
+const employeeSchema = z.object({
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  middleName: z.string().optional().nullable(),
+  positionId: z.string().min(1),
+  departmentId: z.string().min(1),
+  branchId: z.string().min(1),
+  email: z.string().email().optional().nullable(),
+  workPhone: z.string().optional().nullable(),
+  internalPhone: z.string().optional().nullable(),
+  personalPhone: z.string().optional().nullable(),
+  hireDate: z.coerce.date(),
+  isEmployed: z.boolean().optional(),
+  floor: z.string().optional().nullable(),
+  room: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+});
+
+const employeeInclude = { position: true, department: true, branch: true, equipment: true } as const;
+
 app.get('/api/employees', authMiddleware, async (c) => {
-  const employees = await prisma.employee.findMany({
-    include: {
-      position: true,
-      department: true,
-      branch: true,
-    },
-    orderBy: { lastName: 'asc' },
-  });
+  const employees = await prisma.employee.findMany({ include: employeeInclude, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }] });
   return c.json(employees);
 });
 
 app.get('/api/employees/:id', authMiddleware, async (c) => {
-  const { id } = c.req.param();
-  const employee = await prisma.employee.findUnique({
-    where: { id },
-    include: {
-      position: true,
-      department: true,
-      branch: true,
-      equipment: true,
-    },
-  });
+  const employee = await prisma.employee.findUnique({ where: { id: c.req.param('id') }, include: employeeInclude });
   if (!employee) return c.json({ error: 'Not found' }, 404);
   return c.json(employee);
 });
 
+app.get('/api/employees/:id/history', authMiddleware, async (c) => {
+  const history = await prisma.historyRecord.findMany({
+    where: { entityType: 'employee', entityId: c.req.param('id') },
+    orderBy: { createdAt: 'asc' },
+  });
+  return c.json(history);
+});
+
 app.post('/api/employees', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
-  const body = await c.req.json();
+  const parsed = employeeSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ error: 'Некорректные данные сотрудника' }, 400);
+  }
   const currentUser = c.get('user');
+  const data = parsed.data;
+
+  const positionId = await resolveRef('position', data.positionId);
+  const departmentId = await resolveRef('department', data.departmentId);
+  const branchId = await resolveRef('branch', data.branchId);
+  if (!positionId || !departmentId || !branchId) {
+    return c.json({ error: 'Справочники (должность/отдел/филиал) выбраны некорректно' }, 400);
+  }
 
   const employee = await prisma.employee.create({
     data: {
-      ...body,
-      hireDate: new Date(body.hireDate),
+      ...data,
+      positionId,
+      departmentId,
+      branchId,
       updatedById: currentUser.userId,
     },
-    include: { position: true, department: true, branch: true },
+    include: employeeInclude,
   });
+
+  const name = `${employee.lastName} ${employee.firstName} ${employee.middleName || ''}`.trim();
+  await createHistoryEntry('employee', employee.id, currentUser.fullName);
+  await writeAudit(currentUser, 'create', 'employee', employee.id, name, `Создан сотрудник "${name}"`, c.req.header('x-forwarded-for'));
 
   return c.json(employee, 201);
 });
 
 app.put('/api/employees/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
   const { id } = c.req.param();
-  const body = await c.req.json();
+  const parsed = employeeSchema.partial().safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ error: 'Некорректные данные' }, 400);
+  }
   const currentUser = c.get('user');
 
-  const employee = await prisma.employee.update({
-    where: { id },
-    data: {
-      ...body,
-      hireDate: body.hireDate ? new Date(body.hireDate) : undefined,
-      updatedById: currentUser.userId,
-    },
-    include: { position: true, department: true, branch: true },
+  const old = await prisma.employee.findUnique({ where: { id } });
+  if (!old) return c.json({ error: 'Not found' }, 404);
+
+  const newData: any = { ...parsed.data };
+  if (newData.hireDate && !(newData.hireDate instanceof Date)) newData.hireDate = new Date(newData.hireDate);
+  if ('positionId' in newData) newData.positionId = await resolveRef('position', newData.positionId) ?? old.positionId;
+  if ('departmentId' in newData) newData.departmentId = await resolveRef('department', newData.departmentId) ?? old.departmentId;
+  if ('branchId' in newData) newData.branchId = await resolveRef('branch', newData.branchId) ?? old.branchId;
+  newData.updatedById = currentUser.userId;
+
+  const employee = await prisma.employee.update({ where: { id }, data: newData, include: employeeInclude });
+
+  await applyUpdate({
+    ctx: currentUser,
+    ipAddress: c.req.header('x-forwarded-for'),
+    entityType: 'employee',
+    entityId: id,
+    entityName: `${employee.lastName} ${employee.firstName}`,
+    oldObj: old as any,
+    newData,
   });
 
   return c.json(employee);
@@ -352,141 +818,333 @@ app.put('/api/employees/:id', authMiddleware, requireRole(['admin', 'materially_
 
 app.delete('/api/employees/:id', authMiddleware, requireRole(['admin']), async (c) => {
   const { id } = c.req.param();
+  const currentUser = c.get('user');
+  const old = await prisma.employee.findUnique({ where: { id } });
+  if (!old) return c.json({ error: 'Not found' }, 404);
+
   await prisma.employee.delete({ where: { id } });
+  await writeAudit(currentUser, 'delete', 'employee', id, `${old.lastName} ${old.firstName}`, `Удалён сотрудник "${old.lastName} ${old.firstName}"`, c.req.header('x-forwarded-for'));
   return c.json({ success: true });
 });
 
 // ============================================================
 // Equipment Routes
 // ============================================================
+const equipmentSchema = z.object({
+  name: z.string().min(1),
+  category: z.enum(['computer', 'monitor', 'peripheral', 'furniture', 'server', 'virtual_machine', 'network', 'phone', 'other']),
+  serialNumber: z.string().min(1),
+  inventoryNumber: z.string().min(1),
+  brand: z.string().optional().nullable(),
+  model: z.string().optional().nullable(),
+  purchaseDate: z.coerce.date().optional().nullable(),
+  writeOffDate: z.coerce.date().optional().nullable(),
+  condition: z.enum(['new', 'good', 'satisfactory', 'needs_repair', 'written_off']).optional(),
+  assignedToEmployeeId: z.string().optional().nullable(),
+  branchId: z.string().min(1),
+  floor: z.string().optional().nullable(),
+  room: z.string().optional().nullable(),
+  cpuCores: z.number().int().nullable().optional(),
+  ramGB: z.number().int().nullable().optional(),
+  diskGB: z.number().int().nullable().optional(),
+  notes: z.string().optional().nullable(),
+});
+
+const equipmentInclude = { assignedToEmployee: true, branch: true } as const;
+
+function normalizeDateField(v: any) {
+  if (v === undefined) return undefined;
+  if (v === null || v === '') return null;
+  return v instanceof Date ? v : new Date(v);
+}
+
 app.get('/api/equipment', authMiddleware, async (c) => {
-  const equipment = await prisma.equipment.findMany({
-    include: {
-      assignedToEmployee: true,
-      branch: true,
-    },
-    orderBy: { createdAt: 'desc' },
+  const items = await prisma.equipment.findMany({ include: equipmentInclude, orderBy: { createdAt: 'desc' } });
+  return c.json(items);
+});
+
+app.get('/api/equipment/:id', authMiddleware, async (c) => {
+  const item = await prisma.equipment.findUnique({ where: { id: c.req.param('id') }, include: equipmentInclude });
+  if (!item) return c.json({ error: 'Not found' }, 404);
+  return c.json(item);
+});
+
+app.get('/api/equipment/:id/history', authMiddleware, async (c) => {
+  const history = await prisma.historyRecord.findMany({
+    where: { entityType: 'equipment', entityId: c.req.param('id') },
+    orderBy: { createdAt: 'asc' },
   });
-  return c.json(equipment);
+  return c.json(history);
 });
 
 app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
-  const body = await c.req.json();
+  const parsed = equipmentSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ error: 'Некорректные данные оборудования' }, 400);
+  }
   const currentUser = c.get('user');
+  const data = parsed.data;
 
-  const equipment = await prisma.equipment.create({
+  const branchId = await resolveRef('branch', data.branchId);
+  if (!branchId) return c.json({ error: 'Филиал выбран некорректно' }, 400);
+  const assignedToEmployeeId = await resolveRef('employee', data.assignedToEmployeeId);
+
+  const duplicate = await prisma.equipment.findUnique({ where: { inventoryNumber: data.inventoryNumber } });
+  if (duplicate) {
+    return c.json({ error: 'Инвентарный номер уже используется' }, 409);
+  }
+
+  const item = await prisma.equipment.create({
     data: {
-      ...body,
-      purchaseDate: body.purchaseDate ? new Date(body.purchaseDate) : null,
-      writeOffDate: body.writeOffDate ? new Date(body.writeOffDate) : null,
+      ...data,
+      branchId,
+      assignedToEmployeeId,
+      purchaseDate: normalizeDateField(data.purchaseDate),
+      writeOffDate: normalizeDateField(data.writeOffDate),
       updatedById: currentUser.userId,
     },
-    include: { assignedToEmployee: true, branch: true },
+    include: equipmentInclude,
   });
 
-  return c.json(equipment, 201);
+  await createHistoryEntry('equipment', item.id, currentUser.fullName);
+  await writeAudit(currentUser, 'create', 'equipment', item.id, item.name, `Добавлено оборудование "${item.name}" (инв. ${item.inventoryNumber})`, c.req.header('x-forwarded-for'));
+
+  return c.json(item, 201);
 });
 
 app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
   const { id } = c.req.param();
-  const body = await c.req.json();
+  const parsed = equipmentSchema.partial().safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ error: 'Некорректные данные' }, 400);
+  }
   const currentUser = c.get('user');
 
-  const equipment = await prisma.equipment.update({
-    where: { id },
-    data: {
-      ...body,
-      purchaseDate: body.purchaseDate ? new Date(body.purchaseDate) : undefined,
-      writeOffDate: body.writeOffDate ? new Date(body.writeOffDate) : null,
-      updatedById: currentUser.userId,
-    },
-    include: { assignedToEmployee: true, branch: true },
+  const old = await prisma.equipment.findUnique({ where: { id } });
+  if (!old) return c.json({ error: 'Not found' }, 404);
+
+  const newData: any = { ...parsed.data };
+  if ('branchId' in newData) newData.branchId = await resolveRef('branch', newData.branchId) ?? old.branchId;
+  if ('assignedToEmployeeId' in newData) newData.assignedToEmployeeId = await resolveRef('employee', newData.assignedToEmployeeId);
+  if ('purchaseDate' in newData) newData.purchaseDate = normalizeDateField(newData.purchaseDate);
+  if ('writeOffDate' in newData) newData.writeOffDate = normalizeDateField(newData.writeOffDate);
+  if ('inventoryNumber' in newData && newData.inventoryNumber !== old.inventoryNumber) {
+    const dup = await prisma.equipment.findUnique({ where: { inventoryNumber: newData.inventoryNumber } });
+    if (dup) return c.json({ error: 'Инвентарный номер уже используется' }, 409);
+  }
+  newData.updatedById = currentUser.userId;
+
+  const item = await prisma.equipment.update({ where: { id }, data: newData, include: equipmentInclude });
+
+  await applyUpdate({
+    ctx: currentUser,
+    ipAddress: c.req.header('x-forwarded-for'),
+    entityType: 'equipment',
+    entityId: id,
+    entityName: item.name,
+    oldObj: old as any,
+    newData,
   });
 
-  return c.json(equipment);
+  return c.json(item);
 });
 
 app.delete('/api/equipment/:id', authMiddleware, requireRole(['admin']), async (c) => {
   const { id } = c.req.param();
+  const currentUser = c.get('user');
+  const old = await prisma.equipment.findUnique({ where: { id } });
+  if (!old) return c.json({ error: 'Not found' }, 404);
+
   await prisma.equipment.delete({ where: { id } });
+  await writeAudit(currentUser, 'delete', 'equipment', id, old.name, `Удалено оборудование "${old.name}" (инв. ${old.inventoryNumber})`, c.req.header('x-forwarded-for'));
   return c.json({ success: true });
+});
+
+// Assign / unassign equipment to employee
+app.post('/api/equipment/:id/assign', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+  const { id } = c.req.param();
+  const parsed = z.object({ employeeId: z.string().min(1) }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
+
+  const currentUser = c.get('user');
+  const item = await prisma.equipment.findUnique({ where: { id } });
+  if (!item) return c.json({ error: 'Not found' }, 404);
+
+  const employeeId = await resolveRef('employee', parsed.data.employeeId);
+  if (!employeeId) return c.json({ error: 'Сотрудник не найден' }, 400);
+
+  const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
+  const oldEmployee = item.assignedToEmployeeId
+    ? await prisma.employee.findUnique({ where: { id: item.assignedToEmployeeId } })
+    : null;
+
+  const empName = (e: any) => (e ? `${e.lastName} ${e.firstName}${e.middleName ? ' ' + e.middleName : ''}` : 'не закреплено');
+
+  const updated = await prisma.equipment.update({
+    where: { id },
+    data: { assignedToEmployeeId: employeeId, updatedById: currentUser.userId },
+    include: equipmentInclude,
+  });
+
+  await prisma.equipmentAssignment.create({
+    data: { equipmentId: id, employeeId, assignedBy: currentUser.userId },
+  });
+
+  await prisma.historyRecord.create({
+    data: {
+      entityType: 'equipment',
+      entityId: id,
+      action: 'assigned',
+      fieldName: 'закреплено за',
+      oldValue: empName(oldEmployee),
+      newValue: empName(employee),
+      changedBy: currentUser.fullName,
+    },
+  });
+  await writeAudit(currentUser, 'assign', 'equipment', id, item.name, `Закреплено за сотрудником "${empName(employee)}"`, c.req.header('x-forwarded-for'));
+
+  return c.json(updated);
+});
+
+app.post('/api/equipment/:id/unassign', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+  const { id } = c.req.param();
+  const currentUser = c.get('user');
+  const item = await prisma.equipment.findUnique({ where: { id } });
+  if (!item) return c.json({ error: 'Not found' }, 404);
+  if (!item.assignedToEmployeeId) {
+    return c.json({ error: 'Оборудование не закреплено ни за кем' }, 400);
+  }
+
+  const oldEmployee = await prisma.employee.findUnique({ where: { id: item.assignedToEmployeeId } });
+  const empName = oldEmployee ? `${oldEmployee.lastName} ${oldEmployee.firstName}${oldEmployee.middleName ? ' ' + oldEmployee.middleName : ''}` : '—';
+
+  const updated = await prisma.equipment.update({
+    where: { id },
+    data: { assignedToEmployeeId: null, updatedById: currentUser.userId },
+    include: equipmentInclude,
+  });
+
+  await prisma.equipmentAssignment.updateMany({
+    where: { equipmentId: id, returnedDate: null },
+    data: { returnedDate: new Date() },
+  });
+
+  await prisma.historyRecord.create({
+    data: {
+      entityType: 'equipment',
+      entityId: id,
+      action: 'unassigned',
+      fieldName: 'откреплено',
+      oldValue: empName,
+      changedBy: currentUser.fullName,
+    },
+  });
+  await writeAudit(currentUser, 'unassign', 'equipment', id, item.name, `Откреплено от сотрудника "${empName}"`, c.req.header('x-forwarded-for'));
+
+  return c.json(updated);
 });
 
 // ============================================================
 // Virtual Machines Routes
 // ============================================================
+const vmSchema = z.object({
+  name: z.string().min(1),
+  hostname: z.string().min(1),
+  type: z.enum(['virtual', 'container', 'cloud']).optional(),
+  hostServerId: z.string().optional().nullable(),
+  os: z.string().optional().nullable(),
+  cpuCores: z.number().int().min(0).optional(),
+  ramGB: z.number().int().min(0).optional(),
+  diskGB: z.number().int().min(0).optional(),
+  responsibleEmployeeId: z.string().optional().nullable(),
+  serviceResponsibleEmployeeId: z.string().optional().nullable(),
+  status: z.enum(['running', 'stopped', 'maintenance', 'decommissioned']).optional(),
+  notes: z.string().optional().nullable(),
+});
+
+const vmInclude = {
+  hostServer: true,
+  responsibleEmployee: true,
+  serviceResponsibleEmployee: true,
+  networkInterfaces: true,
+  services: true,
+} as const;
+
 app.get('/api/virtual-machines', authMiddleware, async (c) => {
-  const vms = await prisma.virtualMachine.findMany({
-    include: {
-      hostServer: true,
-      responsibleEmployee: true,
-      serviceResponsibleEmployee: true,
-      networkInterfaces: true,
-      services: true,
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  const vms = await prisma.virtualMachine.findMany({ include: vmInclude, orderBy: { createdAt: 'desc' } });
   return c.json(vms);
 });
 
 app.get('/api/virtual-machines/:id', authMiddleware, async (c) => {
-  const { id } = c.req.param();
-  const vm = await prisma.virtualMachine.findUnique({
-    where: { id },
-    include: {
-      hostServer: true,
-      responsibleEmployee: true,
-      serviceResponsibleEmployee: true,
-      networkInterfaces: true,
-      services: true,
-    },
-  });
+  const vm = await prisma.virtualMachine.findUnique({ where: { id: c.req.param('id') }, include: vmInclude });
   if (!vm) return c.json({ error: 'Not found' }, 404);
   return c.json(vm);
 });
 
+app.get('/api/virtual-machines/:id/history', authMiddleware, async (c) => {
+  const history = await prisma.historyRecord.findMany({
+    where: { entityType: 'virtualmachine', entityId: c.req.param('id') },
+    orderBy: { createdAt: 'asc' },
+  });
+  return c.json(history);
+});
+
 app.post('/api/virtual-machines', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
-  const body = await c.req.json();
+  const parsed = vmSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ error: 'Некорректные данные ВМ' }, 400);
+  }
   const currentUser = c.get('user');
+  const data = parsed.data;
+
+  const hostServerId = await resolveRef('equipment', data.hostServerId);
+  const responsibleEmployeeId = await resolveRef('employee', data.responsibleEmployeeId);
+  const serviceResponsibleEmployeeId = await resolveRef('employee', data.serviceResponsibleEmployeeId);
 
   const vm = await prisma.virtualMachine.create({
     data: {
-      ...body,
-      hostServerId: body.hostServerId || null,
-      responsibleEmployeeId: body.responsibleEmployeeId || null,
-      serviceResponsibleEmployeeId: body.serviceResponsibleEmployeeId || null,
+      ...data,
+      hostServerId,
+      responsibleEmployeeId,
+      serviceResponsibleEmployeeId,
       updatedById: currentUser.userId,
     },
-    include: {
-      hostServer: true,
-      responsibleEmployee: true,
-      serviceResponsibleEmployee: true,
-      networkInterfaces: true,
-      services: true,
-    },
+    include: vmInclude,
   });
+
+  await createHistoryEntry('virtualmachine', vm.id, currentUser.fullName);
+  await writeAudit(currentUser, 'create', 'virtualmachine', vm.id, vm.name, `Добавлена ВМ "${vm.name}" (${vm.hostname})`, c.req.header('x-forwarded-for'));
 
   return c.json(vm, 201);
 });
 
 app.put('/api/virtual-machines/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
   const { id } = c.req.param();
-  const body = await c.req.json();
+  const parsed = vmSchema.partial().safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ error: 'Некорректные данные' }, 400);
+  }
   const currentUser = c.get('user');
 
-  const vm = await prisma.virtualMachine.update({
-    where: { id },
-    data: {
-      ...body,
-      updatedById: currentUser.userId,
-    },
-    include: {
-      hostServer: true,
-      responsibleEmployee: true,
-      serviceResponsibleEmployee: true,
-      networkInterfaces: true,
-      services: true,
-    },
+  const old = await prisma.virtualMachine.findUnique({ where: { id } });
+  if (!old) return c.json({ error: 'Not found' }, 404);
+
+  const newData: any = { ...parsed.data };
+  if ('hostServerId' in newData) newData.hostServerId = await resolveRef('equipment', newData.hostServerId);
+  if ('responsibleEmployeeId' in newData) newData.responsibleEmployeeId = await resolveRef('employee', newData.responsibleEmployeeId);
+  if ('serviceResponsibleEmployeeId' in newData) newData.serviceResponsibleEmployeeId = await resolveRef('employee', newData.serviceResponsibleEmployeeId);
+  newData.updatedById = currentUser.userId;
+
+  const vm = await prisma.virtualMachine.update({ where: { id }, data: newData, include: vmInclude });
+
+  await applyUpdate({
+    ctx: currentUser,
+    ipAddress: c.req.header('x-forwarded-for'),
+    entityType: 'virtualmachine',
+    entityId: id,
+    entityName: vm.name,
+    oldObj: old as any,
+    newData,
   });
 
   return c.json(vm);
@@ -494,159 +1152,245 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(['admin', 'mate
 
 app.delete('/api/virtual-machines/:id', authMiddleware, requireRole(['admin']), async (c) => {
   const { id } = c.req.param();
+  const currentUser = c.get('user');
+  const old = await prisma.virtualMachine.findUnique({ where: { id } });
+  if (!old) return c.json({ error: 'Not found' }, 404);
+
   await prisma.virtualMachine.delete({ where: { id } });
+  await writeAudit(currentUser, 'delete', 'virtualmachine', id, old.name, `Удалена ВМ "${old.name}"`, c.req.header('x-forwarded-for'));
   return c.json({ success: true });
 });
 
 // Network Interfaces
 app.post('/api/virtual-machines/:vmId/network-interfaces', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
   const { vmId } = c.req.param();
-  const body = await c.req.json();
+  const parsed = z.object({
+    name: z.string().min(1),
+    macAddress: z.string().min(1),
+    ipAddress: z.string().min(1),
+    isPublic: z.boolean().optional(),
+    notes: z.string().optional().nullable(),
+  }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'Некорректные данные интерфейса' }, 400);
+
   const currentUser = c.get('user');
+  const vm = await prisma.virtualMachine.findUnique({ where: { id: vmId } });
+  if (!vm) return c.json({ error: 'ВМ не найдена' }, 404);
 
   const ni = await prisma.networkInterface.create({
-    data: {
-      ...body,
-      virtualMachineId: vmId,
-      updatedById: currentUser.userId,
-    },
+    data: { ...parsed.data, virtualMachineId: vmId, updatedById: currentUser.userId },
   });
 
+  await writeAudit(currentUser, 'create', 'virtualmachine', vmId, vm.name, `Добавлен сетевой интерфейс "${ni.name}" (${ni.ipAddress})`, c.req.header('x-forwarded-for'));
   return c.json(ni, 201);
 });
 
-app.delete('/api/network-interfaces/:id', authMiddleware, requireRole(['admin']), async (c) => {
+app.put('/api/network-interfaces/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
   const { id } = c.req.param();
+  const parsed = z.object({
+    name: z.string().min(1).optional(),
+    macAddress: z.string().min(1).optional(),
+    ipAddress: z.string().min(1).optional(),
+    isPublic: z.boolean().optional(),
+    notes: z.string().optional().nullable(),
+  }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
+
+  const currentUser = c.get('user');
+  const old = await prisma.networkInterface.findUnique({ where: { id } });
+  if (!old) return c.json({ error: 'Not found' }, 404);
+
+  const ni = await prisma.networkInterface.update({
+    where: { id },
+    data: { ...parsed.data, updatedById: currentUser.userId },
+  });
+
+  await writeAudit(currentUser, 'update', 'virtualmachine', old.virtualMachineId, '', `Изменён сетевой интерфейс "${ni.name}"`, c.req.header('x-forwarded-for'));
+  return c.json(ni);
+});
+
+app.delete('/api/network-interfaces/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+  const { id } = c.req.param();
+  const currentUser = c.get('user');
+  const old = await prisma.networkInterface.findUnique({ where: { id } });
+  if (!old) return c.json({ error: 'Not found' }, 404);
+
   await prisma.networkInterface.delete({ where: { id } });
+  await writeAudit(currentUser, 'delete', 'virtualmachine', old.virtualMachineId, '', `Удалён сетевой интерфейс "${old.name}"`, c.req.header('x-forwarded-for'));
   return c.json({ success: true });
 });
 
-// Services
+// Services on VMs
 app.post('/api/virtual-machines/:vmId/services', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
   const { vmId } = c.req.param();
-  const body = await c.req.json();
+  const parsed = z.object({
+    name: z.string().min(1),
+    version: z.string().optional().nullable(),
+    port: z.number().int().min(1).max(65535).nullable().optional(),
+    description: z.string().optional().nullable(),
+    status: z.enum(['active', 'inactive', 'maintenance']).optional(),
+  }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'Некорректные данные сервиса' }, 400);
+
   const currentUser = c.get('user');
+  const vm = await prisma.virtualMachine.findUnique({ where: { id: vmId } });
+  if (!vm) return c.json({ error: 'ВМ не найдена' }, 404);
 
   const service = await prisma.service.create({
-    data: {
-      ...body,
-      virtualMachineId: vmId,
-      updatedById: currentUser.userId,
-    },
+    data: { ...parsed.data, virtualMachineId: vmId, updatedById: currentUser.userId },
   });
 
+  await writeAudit(currentUser, 'create', 'virtualmachine', vmId, vm.name, `Добавлен сервис "${service.name}"`, c.req.header('x-forwarded-for'));
   return c.json(service, 201);
 });
 
-app.delete('/api/services/:id', authMiddleware, requireRole(['admin']), async (c) => {
+app.put('/api/services/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
   const { id } = c.req.param();
+  const parsed = z.object({
+    name: z.string().min(1).optional(),
+    version: z.string().optional().nullable(),
+    port: z.number().int().min(1).max(65535).nullable().optional(),
+    description: z.string().optional().nullable(),
+    status: z.enum(['active', 'inactive', 'maintenance']).optional(),
+  }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
+
+  const currentUser = c.get('user');
+  const old = await prisma.service.findUnique({ where: { id } });
+  if (!old) return c.json({ error: 'Not found' }, 404);
+
+  const service = await prisma.service.update({
+    where: { id },
+    data: { ...parsed.data, updatedById: currentUser.userId },
+  });
+
+  await writeAudit(currentUser, 'update', 'virtualmachine', old.virtualMachineId, '', `Изменён сервис "${service.name}"`, c.req.header('x-forwarded-for'));
+  return c.json(service);
+});
+
+app.delete('/api/services/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+  const { id } = c.req.param();
+  const currentUser = c.get('user');
+  const old = await prisma.service.findUnique({ where: { id } });
+  if (!old) return c.json({ error: 'Not found' }, 404);
+
   await prisma.service.delete({ where: { id } });
+  await writeAudit(currentUser, 'delete', 'virtualmachine', old.virtualMachineId, '', `Удалён сервис "${old.name}"`, c.req.header('x-forwarded-for'));
   return c.json({ success: true });
 });
 
 // ============================================================
 // Directories Routes (Departments, Positions, Branches)
 // ============================================================
-app.get('/api/departments', authMiddleware, async (c) => {
-  const departments = await prisma.department.findMany({ orderBy: { name: 'asc' } });
-  return c.json(departments);
-});
+interface DirConfig {
+  model: 'department' | 'position' | 'branch';
+  route: string;
+  label: string;
+  requiredBranchAddress?: boolean;
+}
 
-app.post('/api/departments', authMiddleware, requireRole(['admin']), async (c) => {
-  const body = await c.req.json();
-  const currentUser = c.get('user');
-  const department = await prisma.department.create({
-    data: { ...body, updatedById: currentUser.userId },
+const directoryConfigs: DirConfig[] = [
+  { model: 'department', route: 'departments', label: 'Отдел' },
+  { model: 'position', route: 'positions', label: 'Должность' },
+  { model: 'branch', route: 'branches', label: 'Филиал' },
+];
+
+for (const cfg of directoryConfigs) {
+  app.get(`/api/${cfg.route}`, authMiddleware, async (c) => {
+    const items = await (prisma as any)[cfg.model].findMany({ orderBy: { name: 'asc' } });
+    return c.json(items);
   });
-  return c.json(department, 201);
-});
 
-app.put('/api/departments/:id', authMiddleware, requireRole(['admin']), async (c) => {
-  const { id } = c.req.param();
-  const body = await c.req.json();
-  const currentUser = c.get('user');
-  const department = await prisma.department.update({
-    where: { id },
-    data: { ...body, updatedById: currentUser.userId },
+  app.post(`/api/${cfg.route}`, authMiddleware, requireRole(['admin']), async (c) => {
+    const schema = z.object({
+      name: z.string().min(1),
+      description: z.string().optional().nullable(),
+      ...(cfg.model === 'branch' ? { address: z.string().min(1) } : {}),
+    });
+    const parsed = schema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
+
+    const currentUser = c.get('user');
+    const exists = await (prisma as any)[cfg.model].findUnique({ where: { name: parsed.data.name } });
+    if (exists) return c.json({ error: `Запись «${parsed.data.name}» уже существует` }, 409);
+
+    const item = await (prisma as any)[cfg.model].create({
+      data: { ...parsed.data, updatedById: currentUser.userId },
+    });
+
+    await createHistoryEntry(cfg.model, item.id, currentUser.fullName);
+    await writeAudit(currentUser, 'create', cfg.model, item.id, item.name, `Создан справочник: ${cfg.label.toLowerCase()} «${item.name}»`, c.req.header('x-forwarded-for'));
+    return c.json(item, 201);
   });
-  return c.json(department);
-});
 
-app.delete('/api/departments/:id', authMiddleware, requireRole(['admin']), async (c) => {
-  const { id } = c.req.param();
-  await prisma.department.delete({ where: { id } });
-  return c.json({ success: true });
-});
+  app.put(`/api/${cfg.route}/:id`, authMiddleware, requireRole(['admin']), async (c) => {
+    const { id } = c.req.param();
+    const parsed = z.object({
+      name: z.string().min(1).optional(),
+      description: z.string().optional().nullable(),
+      ...(cfg.model === 'branch' ? { address: z.string().min(1).optional() } : {}),
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
 
-app.get('/api/positions', authMiddleware, async (c) => {
-  const positions = await prisma.position.findMany({ orderBy: { name: 'asc' } });
-  return c.json(positions);
-});
+    const currentUser = c.get('user');
+    const old: any = await (prisma as any)[cfg.model].findUnique({ where: { id } });
+    if (!old) return c.json({ error: 'Not found' }, 404);
 
-app.post('/api/positions', authMiddleware, requireRole(['admin']), async (c) => {
-  const body = await c.req.json();
-  const currentUser = c.get('user');
-  const position = await prisma.position.create({
-    data: { ...body, updatedById: currentUser.userId },
+    if (parsed.data.name && parsed.data.name !== old.name) {
+      const clash = await (prisma as any)[cfg.model].findUnique({ where: { name: parsed.data.name } });
+      if (clash) return c.json({ error: `Запись «${parsed.data.name}» уже существует` }, 409);
+    }
+
+    const newData: any = { ...parsed.data, updatedById: currentUser.userId };
+    const item: any = await (prisma as any)[cfg.model].update({ where: { id }, data: newData });
+
+    await applyUpdate({
+      ctx: currentUser,
+      ipAddress: c.req.header('x-forwarded-for'),
+      entityType: cfg.model,
+      entityId: id,
+      entityName: item.name,
+      oldObj: old,
+      newData,
+    });
+
+    return c.json(item);
   });
-  return c.json(position, 201);
-});
 
-app.put('/api/positions/:id', authMiddleware, requireRole(['admin']), async (c) => {
-  const { id } = c.req.param();
-  const body = await c.req.json();
-  const currentUser = c.get('user');
-  const position = await prisma.position.update({
-    where: { id },
-    data: { ...body, updatedById: currentUser.userId },
+  app.delete(`/api/${cfg.route}/:id`, authMiddleware, requireRole(['admin']), async (c) => {
+    const { id } = c.req.param();
+    const currentUser = c.get('user');
+    const old: any = await (prisma as any)[cfg.model].findUnique({ where: { id } });
+    if (!old) return c.json({ error: 'Not found' }, 404);
+
+    // Защита от нарушения ссылочной целостности
+    const usageChecks: Array<{ model: string; field: string }> = cfg.model === 'branch'
+      ? [{ model: 'employee', field: 'branchId' }, { model: 'equipment', field: 'branchId' }]
+      : cfg.model === 'department'
+        ? [{ model: 'employee', field: 'departmentId' }]
+        : [{ model: 'employee', field: 'positionId' }];
+
+    for (const check of usageChecks) {
+      const used = await (prisma as any)[check.model].count({ where: { [check.field]: id } });
+      if (used > 0) {
+        return c.json({ error: `Запись используется (${used) раз) — удаление запрещено` }, 409);
+      }
+    }
+
+    await (prisma as any)[cfg.model].delete({ where: { id } });
+    await writeAudit(currentUser, 'delete', cfg.model, id, old.name, `Удалён справочник: ${cfg.label.toLowerCase()} «${old.name}»`, c.req.header('x-forwarded-for'));
+    return c.json({ success: true });
   });
-  return c.json(position);
-});
-
-app.delete('/api/positions/:id', authMiddleware, requireRole(['admin']), async (c) => {
-  const { id } = c.req.param();
-  await prisma.position.delete({ where: { id } });
-  return c.json({ success: true });
-});
-
-app.get('/api/branches', authMiddleware, async (c) => {
-  const branches = await prisma.branch.findMany({ orderBy: { name: 'asc' } });
-  return c.json(branches);
-});
-
-app.post('/api/branches', authMiddleware, requireRole(['admin']), async (c) => {
-  const body = await c.req.json();
-  const currentUser = c.get('user');
-  const branch = await prisma.branch.create({
-    data: { ...body, updatedById: currentUser.userId },
-  });
-  return c.json(branch, 201);
-});
-
-app.put('/api/branches/:id', authMiddleware, requireRole(['admin']), async (c) => {
-  const { id } = c.req.param();
-  const body = await c.req.json();
-  const currentUser = c.get('user');
-  const branch = await prisma.branch.update({
-    where: { id },
-    data: { ...body, updatedById: currentUser.userId },
-  });
-  return c.json(branch);
-});
-
-app.delete('/api/branches/:id', authMiddleware, requireRole(['admin']), async (c) => {
-  const { id } = c.req.param();
-  await prisma.branch.delete({ where: { id } });
-  return c.json({ success: true });
-});
+}
 
 // ============================================================
 // Audit Log
 // ============================================================
 app.get('/api/audit-logs', authMiddleware, requireRole(['admin']), async (c) => {
+  const take = Math.min(parseInt(c.req.query('limit') || '100', 10) || 100, 500);
   const logs = await prisma.auditLog.findMany({
     orderBy: { createdAt: 'desc' },
-    take: 100,
+    take,
   });
   return c.json(logs);
 });
@@ -660,21 +1404,21 @@ app.get('/api/audit-logs', authMiddleware, requireRole(['admin']), async (c) => 
 // ============================================================
 // Запуск сервера
 // ============================================================
-const PORT = parseInt(process.env.PORT || '4000');
+const PORT = parseInt(process.env.PORT || '4000', 10);
 
 async function start() {
   try {
     await prisma.$connect();
-    console.log('✓ Connected to PostgreSQL');
+    log.info('Connected to PostgreSQL');
 
     serve({
       fetch: app.fetch,
       port: PORT,
     });
 
-    console.log(`✓ Chlenix Backend API running on http://localhost:${PORT}`);
+    log.info(`Chlenix Backend API listening on port ${PORT}`);
   } catch (error) {
-    console.error('Failed to start server:', error);
+    log.error('Failed to start server', error);
     process.exit(1);
   }
 }
