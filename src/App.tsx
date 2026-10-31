@@ -1,5 +1,9 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+// Бандл react-router в production-сборке может содержать устаревшую копию
+// React-контекста (несколько копий "react" в дереве node_modules на сервере) —
+// из-за этого все роутер-хуки падали с «Uncaught Error» и страница оставалась
+// пустой. Роутинг переведён на собственный мини-роутер без внешних зависимостей.
+import { Routes, Route, Navigate, Router, useNavigate } from './router';
 import { useAuthStore } from './store/authStore';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
@@ -40,7 +44,7 @@ function App() {
   }, [isAuthenticated, navigate]);
 
   return (
-    <BrowserRouter>
+    <Router>
       <Routes>
         <Route path="/login" element={isAuthenticated ? <DefaultAuthenticatedRedirect /> : <LoginPage />} />
         <Route path="/register" element={isAuthenticated ? <DefaultAuthenticatedRedirect /> : <RegisterPage />} />
@@ -62,7 +66,7 @@ function App() {
 
         <Route path="*" element={isAuthenticated ? <DefaultAuthenticatedRedirect /> : <Navigate to="/login" replace />} />
       </Routes>
-    </BrowserRouter>
+    </Router>
   );
 }
 
