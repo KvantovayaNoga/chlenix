@@ -1,1 +1,21 @@
+# Зависимости
+node_modules/
+
+# Артефакты сборки
 dist/
+build/
+
+# Секреты и локальная конфигурация
+.env
+.env.local
+.env.*.local
+
+# Логи
+*.log
+npm-debug.log*
+
+# Служебные файлы ОС/редакторов
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -68,7 +68,6 @@ services:
         HTTP_PROXY: ${HTTP_PROXY:-}
     container_name: chlenix-frontend
     restart: unless-stopped
-    environment:
     depends_on:
       - backend
     ports:
