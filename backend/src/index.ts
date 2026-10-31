@@ -161,7 +161,6 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
   phone: 'телефон',
   website: 'сайт',
   directorName: 'руководитель',
-  accountantName: 'главный бухгалтер',
   bankName: 'банк',
   checkingAccount: 'расчётный счёт',
   correspondentAccount: 'корр. счёт',
@@ -255,6 +254,29 @@ async function resolveRef(model: 'employee' | 'branch' | 'department' | 'positio
   } catch {
     return null;
   }
+}
+
+// Приводит дату (Date | ISO-строка) к ISO-формату для ответов API
+function isoDate(v: unknown): string {
+  return v instanceof Date ? v.toISOString() : String(v ?? '');
+}
+
+// Преобразует запись истории БД в формат клиента
+function publicHistory(h: any): any {
+  return {
+    id: h.id,
+    action: h.action,
+    fieldName: h.fieldName,
+    oldValue: h.oldValue,
+    newValue: h.newValue,
+    changedBy: h.changedBy,
+    changedAt: isoDate(h.createdAt),
+  };
+}
+
+// Справочник: даты в ISO-строки для клиента
+function publicDirectory(d: any): any {
+  return { ...d, createdAt: isoDate(d.createdAt), updatedAt: isoDate(d.updatedAt) };
 }
 
 // ============================================================
@@ -429,7 +451,7 @@ app.get('/api/users/:id/history', authMiddleware, async (c) => {
     where: { entityType: 'user', entityId: id },
     orderBy: { createdAt: 'asc' },
   });
-  return c.json(history);
+  return c.json(history.map(publicHistory));
 });
 
 app.post('/api/users', authMiddleware, requireRole(['admin']), async (c) => {
@@ -592,7 +614,6 @@ const organizationSchema = z.object({
   email: z.string().optional().nullable(),
   website: z.string().optional().nullable(),
   directorName: z.string().optional().nullable(),
-  accountantName: z.string().optional().nullable(),
   bankName: z.string().optional().nullable(),
   checkingAccount: z.string().optional().nullable(),
   correspondentAccount: z.string().optional().nullable(),
@@ -631,7 +652,7 @@ app.get('/api/organizations/:id/history', authMiddleware, async (c) => {
     where: { entityType: 'organization', entityId: c.req.param('id') },
     orderBy: { createdAt: 'asc' },
   });
-  return c.json(history);
+  return c.json(history.map(publicHistory));
 });
 
 app.post('/api/organizations', authMiddleware, requireRole(['admin']), async (c) => {
@@ -729,17 +750,59 @@ const employeeSchema = z.object({
   notes: z.string().optional().nullable(),
 });
 
+// Приводит записи к клиентскому формату: даты в ISO, связанные сущности — краткие объекты
+function briefEmp(e: any) {
+  if (!e) return null;
+  return { id: e.id, firstName: e.firstName, lastName: e.lastName, middleName: e.middleName };
+}
+function publicEmployee(e: any): any {
+  return {
+    ...e,
+    hireDate: isoDate(e.hireDate),
+    createdAt: isoDate(e.createdAt),
+    updatedAt: isoDate(e.updatedAt),
+    position: e.position ? { id: e.position.id, name: e.position.name } : undefined,
+    department: e.department ? { id: e.department.id, name: e.department.name } : undefined,
+    branch: e.branch ? { id: e.branch.id, name: e.branch.name } : undefined,
+    equipment: Array.isArray(e.equipment) ? e.equipment.map(publicEquipmentBrief) : undefined,
+  };
+}
+function publicEquipmentBrief(eq: any): any {
+  if (!eq) return eq;
+  const out: any = { ...eq };
+  if (out.purchaseDate !== undefined) out.purchaseDate = out.purchaseDate ? isoDate(out.purchaseDate) : null;
+  if (out.writeOffDate !== undefined) out.writeOffDate = out.writeOffDate ? isoDate(out.writeOffDate) : null;
+  out.createdAt = isoDate(out.createdAt);
+  out.updatedAt = isoDate(out.updatedAt);
+  if ('assignedToEmployee' in out) out.assignedToEmployee = briefEmp(out.assignedToEmployee);
+  if ('branch' in out && out.branch) out.branch = { id: out.branch.id, name: out.branch.name };
+  delete out.assignedToEmployeeIdRaw;
+  return out;
+}
+function publicVM(vm: any): any {
+  return {
+    ...vm,
+    createdAt: isoDate(vm.createdAt),
+    updatedAt: isoDate(vm.updatedAt),
+    hostServer: vm.hostServer ? publicEquipmentBrief(vm.hostServer) : (vm.hostServer === null ? null : vm.hostServer),
+    responsibleEmployee: briefEmp(vm.responsibleEmployee),
+    serviceResponsibleEmployee: briefEmp(vm.serviceResponsibleEmployee),
+    networkInterfaces: (vm.networkInterfaces || []).map((ni: any) => ({ ...ni, createdAt: isoDate(ni.createdAt), updatedAt: isoDate(ni.updatedAt) })),
+    services: (vm.services || []).map((sv: any) => ({ ...sv, createdAt: isoDate(sv.createdAt), updatedAt: isoDate(sv.updatedAt) })),
+  };
+}
+
 const employeeInclude = { position: true, department: true, branch: true, equipment: true } as const;
 
 app.get('/api/employees', authMiddleware, async (c) => {
   const employees = await prisma.employee.findMany({ include: employeeInclude, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }] });
-  return c.json(employees);
+  return c.json(employees.map(publicEmployee));
 });
 
 app.get('/api/employees/:id', authMiddleware, async (c) => {
   const employee = await prisma.employee.findUnique({ where: { id: c.req.param('id') }, include: employeeInclude });
   if (!employee) return c.json({ error: 'Not found' }, 404);
-  return c.json(employee);
+  return c.json(publicEmployee(employee));
 });
 
 app.get('/api/employees/:id/history', authMiddleware, async (c) => {
@@ -747,7 +810,7 @@ app.get('/api/employees/:id/history', authMiddleware, async (c) => {
     where: { entityType: 'employee', entityId: c.req.param('id') },
     orderBy: { createdAt: 'asc' },
   });
-  return c.json(history);
+  return c.json(history.map(publicHistory));
 });
 
 app.post('/api/employees', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
@@ -780,7 +843,7 @@ app.post('/api/employees', authMiddleware, requireRole(['admin', 'materially_res
   await createHistoryEntry('employee', employee.id, currentUser.fullName);
   await writeAudit(currentUser, 'create', 'employee', employee.id, name, `Создан сотрудник "${name}"`, c.req.header('x-forwarded-for'));
 
-  return c.json(employee, 201);
+  return c.json(publicEmployee(employee), 201);
 });
 
 app.put('/api/employees/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
@@ -813,7 +876,7 @@ app.put('/api/employees/:id', authMiddleware, requireRole(['admin', 'materially_
     newData,
   });
 
-  return c.json(employee);
+  return c.json(publicEmployee(employee));
 });
 
 app.delete('/api/employees/:id', authMiddleware, requireRole(['admin']), async (c) => {
@@ -860,13 +923,13 @@ function normalizeDateField(v: any) {
 
 app.get('/api/equipment', authMiddleware, async (c) => {
   const items = await prisma.equipment.findMany({ include: equipmentInclude, orderBy: { createdAt: 'desc' } });
-  return c.json(items);
+  return c.json(items.map(publicEquipmentBrief));
 });
 
 app.get('/api/equipment/:id', authMiddleware, async (c) => {
   const item = await prisma.equipment.findUnique({ where: { id: c.req.param('id') }, include: equipmentInclude });
   if (!item) return c.json({ error: 'Not found' }, 404);
-  return c.json(item);
+  return c.json(publicEquipmentBrief(item));
 });
 
 app.get('/api/equipment/:id/history', authMiddleware, async (c) => {
@@ -874,7 +937,7 @@ app.get('/api/equipment/:id/history', authMiddleware, async (c) => {
     where: { entityType: 'equipment', entityId: c.req.param('id') },
     orderBy: { createdAt: 'asc' },
   });
-  return c.json(history);
+  return c.json(history.map(publicHistory));
 });
 
 app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
@@ -909,7 +972,7 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
   await createHistoryEntry('equipment', item.id, currentUser.fullName);
   await writeAudit(currentUser, 'create', 'equipment', item.id, item.name, `Добавлено оборудование "${item.name}" (инв. ${item.inventoryNumber})`, c.req.header('x-forwarded-for'));
 
-  return c.json(item, 201);
+  return c.json(publicEquipmentBrief(item), 201);
 });
 
 app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
@@ -946,7 +1009,7 @@ app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'materially_
     newData,
   });
 
-  return c.json(item);
+  return c.json(publicEquipmentBrief(item));
 });
 
 app.delete('/api/equipment/:id', authMiddleware, requireRole(['admin']), async (c) => {
@@ -1003,7 +1066,7 @@ app.post('/api/equipment/:id/assign', authMiddleware, requireRole(['admin', 'mat
   });
   await writeAudit(currentUser, 'assign', 'equipment', id, item.name, `Закреплено за сотрудником "${empName(employee)}"`, c.req.header('x-forwarded-for'));
 
-  return c.json(updated);
+  return c.json(publicEquipmentBrief(updated));
 });
 
 app.post('/api/equipment/:id/unassign', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
@@ -1041,7 +1104,7 @@ app.post('/api/equipment/:id/unassign', authMiddleware, requireRole(['admin', 'm
   });
   await writeAudit(currentUser, 'unassign', 'equipment', id, item.name, `Откреплено от сотрудника "${empName}"`, c.req.header('x-forwarded-for'));
 
-  return c.json(updated);
+  return c.json(publicEquipmentBrief(updated));
 });
 
 // ============================================================
@@ -1072,13 +1135,13 @@ const vmInclude = {
 
 app.get('/api/virtual-machines', authMiddleware, async (c) => {
   const vms = await prisma.virtualMachine.findMany({ include: vmInclude, orderBy: { createdAt: 'desc' } });
-  return c.json(vms);
+  return c.json(vms.map(publicVM));
 });
 
 app.get('/api/virtual-machines/:id', authMiddleware, async (c) => {
   const vm = await prisma.virtualMachine.findUnique({ where: { id: c.req.param('id') }, include: vmInclude });
   if (!vm) return c.json({ error: 'Not found' }, 404);
-  return c.json(vm);
+  return c.json(publicVM(vm));
 });
 
 app.get('/api/virtual-machines/:id/history', authMiddleware, async (c) => {
@@ -1086,7 +1149,7 @@ app.get('/api/virtual-machines/:id/history', authMiddleware, async (c) => {
     where: { entityType: 'virtualmachine', entityId: c.req.param('id') },
     orderBy: { createdAt: 'asc' },
   });
-  return c.json(history);
+  return c.json(history.map(publicHistory));
 });
 
 app.post('/api/virtual-machines', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
@@ -1115,7 +1178,7 @@ app.post('/api/virtual-machines', authMiddleware, requireRole(['admin', 'materia
   await createHistoryEntry('virtualmachine', vm.id, currentUser.fullName);
   await writeAudit(currentUser, 'create', 'virtualmachine', vm.id, vm.name, `Добавлена ВМ "${vm.name}" (${vm.hostname})`, c.req.header('x-forwarded-for'));
 
-  return c.json(vm, 201);
+  return c.json(publicVM(vm), 201);
 });
 
 app.put('/api/virtual-machines/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
@@ -1147,7 +1210,7 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(['admin', 'mate
     newData,
   });
 
-  return c.json(vm);
+  return c.json(publicVM(vm));
 });
 
 app.delete('/api/virtual-machines/:id', authMiddleware, requireRole(['admin']), async (c) => {
@@ -1297,25 +1360,37 @@ const directoryConfigs: DirConfig[] = [
 
 for (const cfg of directoryConfigs) {
   app.get(`/api/${cfg.route}`, authMiddleware, async (c) => {
-    const items = await (prisma as any)[cfg.model].findMany({ orderBy: { name: 'asc' } });
-    return c.json(items);
+    // Справочники видны всем пользователям организации владельца справочника
+    const viewer = await prisma.user.findUnique({ where: { id: c.get('user').userId }, select: { role: true, organizationId: true } });
+    const items: any[] = await (prisma as any)[cfg.model].findMany({ orderBy: { name: 'asc' } });
+    const visible = items.filter((it) =>
+      viewer?.role === 'admin' || !it.organizationId || it.organizationId === viewer?.organizationId
+    );
+    return c.json(visible.map(publicDirectory));
   });
 
   app.post(`/api/${cfg.route}`, authMiddleware, requireRole(['admin']), async (c) => {
     const schema = z.object({
       name: z.string().min(1),
       description: z.string().optional().nullable(),
+      organizationId: z.string().uuid().optional().nullable(),
       ...(cfg.model === 'branch' ? { address: z.string().min(1) } : {}),
     });
     const parsed = schema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
 
     const currentUser = c.get('user');
-    const exists = await (prisma as any)[cfg.model].findUnique({ where: { name: parsed.data.name } });
+    const orgWhere: any = { name: parsed.data.name };
+    if (currentUser.organizationId) orgWhere.organizationId = currentUser.organizationId;
+    const exists = await (prisma as any)[cfg.model].findFirst({ where: orgWhere });
     if (exists) return c.json({ error: `Запись «${parsed.data.name}» уже существует` }, 409);
 
     const item = await (prisma as any)[cfg.model].create({
-      data: { ...parsed.data, updatedById: currentUser.userId },
+      data: {
+        ...parsed.data,
+        organizationId: currentUser.organizationId ?? null,
+        updatedById: currentUser.userId,
+      },
     });
 
     await createHistoryEntry(cfg.model, item.id, currentUser.fullName);
@@ -1337,7 +1412,9 @@ for (const cfg of directoryConfigs) {
     if (!old) return c.json({ error: 'Not found' }, 404);
 
     if (parsed.data.name && parsed.data.name !== old.name) {
-      const clash = await (prisma as any)[cfg.model].findUnique({ where: { name: parsed.data.name } });
+      const clashWhere: any = { name: parsed.data.name };
+      if (old.organizationId) clashWhere.organizationId = old.organizationId;
+      const clash = await (prisma as any)[cfg.model].findFirst({ where: clashWhere });
       if (clash) return c.json({ error: `Запись «${parsed.data.name}» уже существует` }, 409);
     }
 

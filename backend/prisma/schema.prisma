@@ -55,46 +55,55 @@ enum Role {
 // Справочники
 // ============================================================
 model Department {
-  id          String     @id @default(uuid())
-  name        String     @unique
-  description String?
-  createdAt   DateTime   @default(now()) @map("created_at")
-  updatedAt   DateTime   @updatedAt @map("updated_at")
-  updatedById String?    @map("updated_by")
+  id              String     @id @default(uuid())
+  name            String
+  description     String?
+  organizationId  String?    @map("organization_id")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+  updatedById     String?    @map("updated_by")
 
   updatedBy   User?      @relation("DepartmentUpdater", fields: [updatedById], references: [id])
   employees   Employee[]
 
+  @@unique([organizationId, name])
+  @@index([organizationId])
   @@map("departments")
 }
 
 model Position {
-  id          String     @id @default(uuid())
-  name        String     @unique
-  description String?
-  createdAt   DateTime   @default(now()) @map("created_at")
-  updatedAt   DateTime   @updatedAt @map("updated_at")
-  updatedById String?    @map("updated_by")
+  id              String     @id @default(uuid())
+  name            String
+  description     String?
+  organizationId  String?    @map("organization_id")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+  updatedById     String?    @map("updated_by")
 
   updatedBy   User?      @relation("PositionUpdater", fields: [updatedById], references: [id])
   employees   Employee[]
 
+  @@unique([organizationId, name])
+  @@index([organizationId])
   @@map("positions")
 }
 
 model Branch {
-  id          String     @id @default(uuid())
-  name        String     @unique
-  address     String
-  description String?
-  createdAt   DateTime   @default(now()) @map("created_at")
-  updatedAt   DateTime   @updatedAt @map("updated_at")
-  updatedById String?    @map("updated_by")
+  id              String     @id @default(uuid())
+  name            String
+  address         String
+  description     String?
+  organizationId  String?    @map("organization_id")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+  updatedById     String?    @map("updated_by")
 
   updatedBy   User?      @relation("BranchUpdater", fields: [updatedById], references: [id])
   employees   Employee[]
   equipment   Equipment[]
 
+  @@unique([organizationId, name])
+  @@index([organizationId])
   @@map("branches")
 }
 
