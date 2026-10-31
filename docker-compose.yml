@@ -47,10 +47,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      # backend должен быть запущен до старта nginx — иначе первые /api/*
-      # запросы (например, регистрация) давали бы 502 Bad Gateway
-      backend:
-        condition: service_started
     ports:
       - "${BACKEND_PORT:-4000}:4000"
     networks:
