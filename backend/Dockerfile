@@ -61,18 +61,20 @@ ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY
 
-# Сначала ставим ровно те 42 пакета, что нужны в рантайме (детерминированно).
+# Сначала ставим ровно те пакеты, что нужны в рантайме (детерминированно).
+# ВНИМАНИЕ: этот слой остаётся «голым» (@prisma/client без кода клиента) — он нужен
+# только для кэширования npm-слоя. Сгенерированный клиент накладывается COPY'ями ниже.
 COPY package*.json .npmrc ./
 RUN npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund
 
-# Затем перегенерируем Prisma Client ПОВЕРХ prod-узлов (он сам является dependency,
-# поэтому generate не требует devDependencies) — это известный рабочий порядок:
-# tsc собирает код до генерации, клиент генерируется заново уже в runtime-слое.
-# ВАЖНО: prisma CLI в builder-слое ставится полностью (dev), но в runtime он
-# подтягивается как транзитивная зависимость @prisma/engines — проверяем это ниже.
+# Переносим СГЕНЕРИРОВАННЫЙ Prisma Client из builder-слоя (генерация выполнена выше,
+# где CLI prisma доступен как devDependency). Это исправление цикла рестартов: если бы
+# generate вызывался в prod-слое через npx, CLI `prisma` там отсутствовал бы (его ставят
+# только как devDependency) → «Cannot find module '@prisma/client'» при каждом старте.
+# COPY перетирает «голый» @prisma/client сгенерированным кодом и добавляет node_modules/.prisma.
 COPY --from=builder /app/prisma ./prisma
-RUN npx prisma generate \
- && echo "✓ prisma generate выполнен в runtime-слое"
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
 COPY --from=builder /app/dist ./dist
 

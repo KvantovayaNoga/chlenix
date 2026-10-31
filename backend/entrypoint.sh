@@ -31,7 +31,10 @@ echo "🔍 DATABASE_URL: $(printf '%s' "$DATABASE_URL" | sed -E 's|://([^:/]+):[
 # package.json/node_modules) и является CommonJS (.cjs обходит "type":"module").
 APP_DIR=$(CDPATH= cd -P -- "$(dirname "$0")" 2>/dev/null && pwd) || APP_DIR=$(pwd)
 cd "$APP_DIR"
-cat > ./wait-db.cjs <<'EOF'
+# Ждём, пока другой экземпляр entrypoint (например, параллельный рестарт контейнера)
+# допишет файл — читаем только полностью записанный скрипт.
+[ -f /app/wait-db.cjs ] && rm -f /app/wait-db.cjs
+cat > ./wait-db.cjs.tmp <<'EOF'
 // CommonJS-обёртка (расширение .cjs обходит "type": "module" в package.json).
 // ВАЖНО: выводим e.code тоже — внутренние ошибки модуля иначе маскируются.
 (async () => {
@@ -47,6 +50,7 @@ cat > ./wait-db.cjs <<'EOF'
   }
 })();
 EOF
+mv -f ./wait-db.cjs.tmp ./wait-db.cjs
 
 # Проверка целостности клиента (уже из APP_DIR — резолвинг идёт от app/node_modules).
 # Пишем диагностику в файл, а не в $(...) — вложенные кавычки node -e внутри
