@@ -23,6 +23,7 @@ type Env = {
       email: string;
       role: string;
       fullName: string;
+      organizationId: string | null;
     };
   };
 };
@@ -256,6 +257,13 @@ async function resolveRef(model: 'employee' | 'branch' | 'department' | 'positio
   }
 }
 
+// Безопасно разрешает внешние ключи: undefined остаётся undefined (поле не меняется/не задаётся),
+// пустое/несуществующее значение -> null
+async function resolveRefOrNull(model: 'employee' | 'branch' | 'department' | 'position' | 'equipment', id: unknown): Promise<string | null | undefined> {
+  if (id === undefined) return undefined;
+  return await resolveRef(model, id);
+}
+
 // Приводит дату (Date | ISO-строка) к ISO-формату для ответов API
 function isoDate(v: unknown): string {
   return v instanceof Date ? v.toISOString() : String(v ?? '');
@@ -326,6 +334,7 @@ async function issueToken(user: any) {
     email: user.email,
     role: user.role,
     fullName: user.fullName,
+    organizationId: user.organizationId ?? null,
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
@@ -668,7 +677,34 @@ app.post('/api/organizations', authMiddleware, requireRole(['admin']), async (c)
   }
 
   const org = await prisma.organization.create({
-    data: { ...parsed.data, createdById: currentUser.userId, updatedById: currentUser.userId },
+    data: {
+      name: parsed.data.name,
+      legalForm: parsed.data.legalForm,
+      shortName: parsed.data.shortName,
+      inn: parsed.data.inn,
+      ogrn: parsed.data.ogrn,
+      legalAddress: parsed.data.legalAddress,
+      kpp: parsed.data.kpp ?? null,
+      actualAddress: parsed.data.actualAddress ?? null,
+      postalCode: parsed.data.postalCode ?? null,
+      city: parsed.data.city ?? null,
+      phone: parsed.data.phone ?? null,
+      email: parsed.data.email ?? null,
+      website: parsed.data.website ?? null,
+      directorName: parsed.data.directorName ?? null,
+      bankName: parsed.data.bankName ?? null,
+      checkingAccount: parsed.data.checkingAccount ?? null,
+      correspondentAccount: parsed.data.correspondentAccount ?? null,
+      bik: parsed.data.bik ?? null,
+      taxSystem: parsed.data.taxSystem ?? null,
+      industry: parsed.data.industry ?? null,
+      employeeCount: parsed.data.employeeCount ?? null,
+      foundedDate: parsed.data.foundedDate ?? null,
+      logo: parsed.data.logo ?? null,
+      notes: parsed.data.notes ?? null,
+      createdById: currentUser.userId,
+      updatedById: currentUser.userId,
+    },
   });
 
   await createHistoryEntry('organization', org.id, currentUser.fullName);
@@ -830,7 +866,18 @@ app.post('/api/employees', authMiddleware, requireRole(['admin', 'materially_res
 
   const employee = await prisma.employee.create({
     data: {
-      ...data,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      middleName: data.middleName ?? null,
+      email: data.email ?? null,
+      workPhone: data.workPhone ?? null,
+      internalPhone: data.internalPhone ?? null,
+      personalPhone: data.personalPhone ?? null,
+      hireDate: data.hireDate,
+      isEmployed: data.isEmployed ?? true,
+      floor: data.floor ?? null,
+      room: data.room ?? null,
+      notes: data.notes ?? null,
       positionId,
       departmentId,
       branchId,
@@ -907,9 +954,6 @@ const equipmentSchema = z.object({
   branchId: z.string().min(1),
   floor: z.string().optional().nullable(),
   room: z.string().optional().nullable(),
-  cpuCores: z.number().int().nullable().optional(),
-  ramGB: z.number().int().nullable().optional(),
-  diskGB: z.number().int().nullable().optional(),
   notes: z.string().optional().nullable(),
 });
 
@@ -959,7 +1003,16 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
 
   const item = await prisma.equipment.create({
     data: {
-      ...data,
+      name: data.name,
+      category: data.category,
+      serialNumber: data.serialNumber,
+      inventoryNumber: data.inventoryNumber,
+      brand: data.brand ?? null,
+      model: data.model ?? null,
+      condition: data.condition ?? 'good',
+      floor: data.floor ?? null,
+      room: data.room ?? null,
+      notes: data.notes ?? null,
       branchId,
       assignedToEmployeeId,
       purchaseDate: normalizeDateField(data.purchaseDate),
@@ -1166,7 +1219,15 @@ app.post('/api/virtual-machines', authMiddleware, requireRole(['admin', 'materia
 
   const vm = await prisma.virtualMachine.create({
     data: {
-      ...data,
+      name: data.name,
+      hostname: data.hostname,
+      type: data.type ?? 'virtual',
+      os: data.os ?? null,
+      status: data.status ?? 'running',
+      notes: data.notes ?? null,
+      cpuCores: data.cpuCores ?? 2,
+      ramGB: data.ramGB ?? 4,
+      diskGB: data.diskGB ?? 50,
       hostServerId,
       responsibleEmployeeId,
       serviceResponsibleEmployeeId,
@@ -1241,7 +1302,15 @@ app.post('/api/virtual-machines/:vmId/network-interfaces', authMiddleware, requi
   if (!vm) return c.json({ error: 'ВМ не найдена' }, 404);
 
   const ni = await prisma.networkInterface.create({
-    data: { ...parsed.data, virtualMachineId: vmId, updatedById: currentUser.userId },
+    data: {
+      name: parsed.data.name,
+      macAddress: parsed.data.macAddress,
+      ipAddress: parsed.data.ipAddress,
+      isPublic: parsed.data.isPublic ?? false,
+      notes: parsed.data.notes ?? null,
+      virtualMachineId: vmId,
+      updatedById: currentUser.userId ?? undefined,
+    },
   });
 
   await writeAudit(currentUser, 'create', 'virtualmachine', vmId, vm.name, `Добавлен сетевой интерфейс "${ni.name}" (${ni.ipAddress})`, c.req.header('x-forwarded-for'));
@@ -1265,7 +1334,7 @@ app.put('/api/network-interfaces/:id', authMiddleware, requireRole(['admin', 'ma
 
   const ni = await prisma.networkInterface.update({
     where: { id },
-    data: { ...parsed.data, updatedById: currentUser.userId },
+    data: { ...parsed.data, updatedById: currentUser.userId ?? undefined },
   });
 
   await writeAudit(currentUser, 'update', 'virtualmachine', old.virtualMachineId, '', `Изменён сетевой интерфейс "${ni.name}"`, c.req.header('x-forwarded-for'));
@@ -1300,7 +1369,15 @@ app.post('/api/virtual-machines/:vmId/services', authMiddleware, requireRole(['a
   if (!vm) return c.json({ error: 'ВМ не найдена' }, 404);
 
   const service = await prisma.service.create({
-    data: { ...parsed.data, virtualMachineId: vmId, updatedById: currentUser.userId },
+    data: {
+      name: parsed.data.name,
+      version: parsed.data.version ?? null,
+      port: parsed.data.port ?? null,
+      description: parsed.data.description ?? null,
+      status: parsed.data.status ?? 'active',
+      virtualMachineId: vmId,
+      updatedById: currentUser.userId ?? undefined,
+    },
   });
 
   await writeAudit(currentUser, 'create', 'virtualmachine', vmId, vm.name, `Добавлен сервис "${service.name}"`, c.req.header('x-forwarded-for'));
@@ -1324,7 +1401,7 @@ app.put('/api/services/:id', authMiddleware, requireRole(['admin', 'materially_r
 
   const service = await prisma.service.update({
     where: { id },
-    data: { ...parsed.data, updatedById: currentUser.userId },
+    data: { ...parsed.data, updatedById: currentUser.userId ?? undefined },
   });
 
   await writeAudit(currentUser, 'update', 'virtualmachine', old.virtualMachineId, '', `Изменён сервис "${service.name}"`, c.req.header('x-forwarded-for'));
@@ -1387,7 +1464,9 @@ for (const cfg of directoryConfigs) {
 
     const item = await (prisma as any)[cfg.model].create({
       data: {
-        ...parsed.data,
+        name: parsed.data.name,
+        description: parsed.data.description ?? null,
+        ...(cfg.model === 'branch' ? { address: parsed.data.address } : {}),
         organizationId: currentUser.organizationId ?? null,
         updatedById: currentUser.userId,
       },

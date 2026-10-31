@@ -1,58 +1,14 @@
+// ============================================================
+// Хранилище данных приложения.
+// Все данные хранятся в серверной БД (PostgreSQL) через REST API.
+// В памяти клиента находится только кэш для отображения.
+// ============================================================
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import type { Employee, Equipment, Assignment, EquipmentCategory, DashboardStats, VirtualMachine, NetworkInterface, Service, AuditLogEntry, Department, Position, Branch, HistoryEntry, Organization } from '../types';
-import { useAuthStore } from './authStore';
-
-const now = new Date().toISOString();
-
-// Helper: добавление записи в аудит
-function addAuditLog(
-  state: DataState,
-  action: AuditLogEntry['action'],
-  entityType: string,
-  entityId: string,
-  entityName: string,
-  details: string
-): AuditLogEntry[] {
-  const currentUser = useAuthStore.getState().currentUser;
-  const entry: AuditLogEntry = {
-    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-    userId: currentUser?.id || null,
-    userName: currentUser?.fullName || 'Система',
-    action,
-    entityType,
-    entityId,
-    entityName,
-    details,
-    timestamp: new Date().toISOString(),
-  };
-  return [...state.auditLog, entry];
-}
-
-// Helper: создание записи истории
-function createHistoryEntry(
-  action: HistoryEntry['action'],
-  fieldName?: string,
-  oldValue?: string,
-  newValue?: string
-): HistoryEntry {
-  const currentUser = useAuthStore.getState().currentUser;
-  return {
-    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-    action,
-    fieldName,
-    oldValue,
-    newValue,
-    changedBy: currentUser?.fullName || 'Система',
-    changedAt: new Date().toISOString(),
-  };
-}
-
-// ============================================================
-// Продакшн-режим: сервис стартует пустым.
-// Все данные (справочники, сотрудники, оборудование, ВМ, сервисы)
-// заполняет администратор организации через интерфейс.
-// ============================================================
+import { api } from '../api/client';
+import type {
+  Employee, Equipment, Assignment, VirtualMachine, NetworkInterface, Service,
+  AuditLogEntry, Department, Position, Branch, Organization, DashboardStats,
+} from '../types';
 
 interface DataState {
   organizations: Organization[];
@@ -65,407 +21,324 @@ interface DataState {
   virtualMachines: VirtualMachine[];
   services: Service[];
   auditLog: AuditLogEntry[];
+  loaded: boolean;
+  loading: boolean;
+  error: string | null;
+
+  loadAll: () => Promise<void>;
+  clearError: () => void;
 
   // Organizations
-  addOrganization: (data: Omit<Organization, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy' | 'createdBy'>) => Organization;
-  updateOrganization: (id: string, data: Partial<Organization>) => void;
-  deleteOrganization: (id: string) => void;
+  addOrganization: (data: Partial<Organization>) => Promise<Organization | null>;
+  updateOrganization: (id: string, data: Partial<Organization>) => Promise<boolean>;
+  deleteOrganization: (id: string) => Promise<boolean>;
   getOrganizationById: (id: string) => Organization | undefined;
   getCurrentUserOrganization: () => Organization | undefined;
 
   // Departments
-  addDepartment: (data: Omit<Department, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy'>) => void;
-  updateDepartment: (id: string, data: Partial<Department>) => void;
-  deleteDepartment: (id: string) => void;
+  addDepartment: (data: Partial<Department>) => Promise<boolean>;
+  updateDepartment: (id: string, data: Partial<Department>) => Promise<boolean>;
+  deleteDepartment: (id: string) => Promise<boolean>;
 
   // Positions
-  addPosition: (data: Omit<Position, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy'>) => void;
-  updatePosition: (id: string, data: Partial<Position>) => void;
-  deletePosition: (id: string) => void;
+  addPosition: (data: Partial<Position>) => Promise<boolean>;
+  updatePosition: (id: string, data: Partial<Position>) => Promise<boolean>;
+  deletePosition: (id: string) => Promise<boolean>;
 
   // Branches
-  addBranch: (data: Omit<Branch, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy'>) => void;
-  updateBranch: (id: string, data: Partial<Branch>) => void;
-  deleteBranch: (id: string) => void;
+  addBranch: (data: Partial<Branch>) => Promise<boolean>;
+  updateBranch: (id: string, data: Partial<Branch>) => Promise<boolean>;
+  deleteBranch: (id: string) => Promise<boolean>;
 
   // Employees
-  addEmployee: (data: Omit<Employee, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy'>) => void;
-  updateEmployee: (id: string, data: Partial<Employee>) => void;
-  deleteEmployee: (id: string) => void;
+  addEmployee: (data: Partial<Employee>) => Promise<boolean>;
+  updateEmployee: (id: string, data: Partial<Employee>) => Promise<boolean>;
+  deleteEmployee: (id: string) => Promise<boolean>;
   getEmployeeById: (id: string) => Employee | undefined;
 
   // Equipment
-  addEquipment: (data: Omit<Equipment, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy'>) => void;
-  updateEquipment: (id: string, data: Partial<Equipment>) => void;
-  deleteEquipment: (id: string) => void;
+  addEquipment: (data: Partial<Equipment>) => Promise<boolean>;
+  updateEquipment: (id: string, data: Partial<Equipment>) => Promise<boolean>;
+  deleteEquipment: (id: string) => Promise<boolean>;
   getEquipmentById: (id: string) => Equipment | undefined;
   getEquipmentByEmployee: (employeeId: string) => Equipment[];
   getUnassignedEquipment: () => Equipment[];
-  assignEquipment: (equipmentId: string, employeeId: string) => void;
-  unassignEquipment: (equipmentId: string) => void;
+  assignEquipment: (equipmentId: string, employeeId: string) => Promise<boolean>;
+  unassignEquipment: (equipmentId: string) => Promise<boolean>;
 
   // VMs
-  addVM: (data: Omit<VirtualMachine, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy'>) => void;
-  updateVM: (id: string, data: Partial<VirtualMachine>) => void;
-  deleteVM: (id: string) => void;
+  addVM: (data: Partial<VirtualMachine>) => Promise<boolean>;
+  updateVM: (id: string, data: Partial<VirtualMachine>) => Promise<boolean>;
+  deleteVM: (id: string) => Promise<boolean>;
   getVMById: (id: string) => VirtualMachine | undefined;
   getVMsByHost: (hostId: string) => VirtualMachine[];
   getVMsByResponsible: (employeeId: string) => VirtualMachine[];
-  addNetworkInterface: (vmId: string, iface: Omit<NetworkInterface, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy'>) => void;
-  removeNetworkInterface: (vmId: string, ifaceId: string) => void;
+  addNetworkInterface: (vmId: string, iface: Partial<NetworkInterface>) => Promise<boolean>;
+  removeNetworkInterface: (vmId: string, ifaceId: string) => Promise<boolean>;
 
   // Services
-  addService: (data: Omit<Service, 'id' | 'createdAt' | 'updatedAt' | 'updatedBy'>) => void;
-  updateService: (id: string, data: Partial<Service>) => void;
-  deleteService: (id: string) => void;
+  addService: (data: Partial<Service>) => Promise<boolean>;
+  updateService: (id: string, data: Partial<Service>) => Promise<boolean>;
+  deleteService: (id: string) => Promise<boolean>;
   getServicesByVM: (vmId: string) => Service[];
 
   // Stats
   getDashboardStats: () => DashboardStats;
 }
 
-export const useDataStore = create<DataState>()(
-  persist(
-    (set, get) => ({
-      organizations: [],
-      departments: [],
-      positions: [],
-      branches: [],
-      employees: [],
-      equipment: [],
-      assignments: [],
-      virtualMachines: [],
-      services: [],
-      auditLog: [],
+let loadPromise: Promise<void> | null = null;
 
-      // Organizations
-      addOrganization: (data) => {
-        const currentUser = useAuthStore.getState().currentUser;
-        const historyEntry = createHistoryEntry('created');
-        const newOrganization: Organization = {
-          ...data,
-          id: 'org' + Date.now().toString(),
-          createdBy: currentUser?.id || 'system',
-          createdAt: new Date().toISOString().split('T')[0],
-          updatedAt: new Date().toISOString(),
-          updatedBy: currentUser?.id || null,
-          history: [historyEntry],
-        };
-        set((state) => ({ organizations: [...state.organizations, newOrganization] }));
-        // Привязываем создавшего пользователя к организации
-        if (currentUser) {
-          useAuthStore.getState().setOrganizationForUser(currentUser.id, newOrganization.id);
-        }
-        set((state) => ({
-          auditLog: addAuditLog(state, 'create', 'organization', newOrganization.id, newOrganization.name, `Создана организация "${newOrganization.name}"`),
-        }));
-        return newOrganization;
-      },
-      updateOrganization: (id, data) => {
-        set((state) => {
-          const oldOrg = state.organizations.find((o) => o.id === id);
-          const historyEntry = createHistoryEntry('updated');
-          const changes: string[] = [];
-          if (oldOrg) {
-            if (data.name && data.name !== oldOrg.name) changes.push(`наименование: "${oldOrg.name}" → "${data.name}"`);
-            if (data.inn && data.inn !== oldOrg.inn) changes.push(`ИНН: "${oldOrg.inn}" → "${data.inn}"`);
-            if (data.legalAddress && data.legalAddress !== oldOrg.legalAddress) changes.push('юридический адрес');
-            if (data.directorName && data.directorName !== oldOrg.directorName) changes.push(`руководитель: "${oldOrg.directorName}" → "${data.directorName}"`);
-          }
-          return {
-            organizations: state.organizations.map((o) =>
-              o.id === id
-                ? {
-                    ...o,
-                    ...data,
-                    updatedAt: new Date().toISOString(),
-                    updatedBy: useAuthStore.getState().currentUser?.id || null,
-                    history: [...(o.history || []), { ...historyEntry, fieldName: changes.length > 0 ? changes.join(', ') : 'данные обновлены' }],
-                  }
-                : o
-            ),
-            auditLog: addAuditLog(state, 'update', 'organization', id, oldOrg?.name || '', `Обновлена организация "${oldOrg?.name || ''}"`),
-          };
+async function run(set: any, fn: () => Promise<unknown>): Promise<boolean> {
+  try {
+    await fn();
+    set({ error: null });
+    return true;
+  } catch (e: any) {
+    set({ error: e?.message || 'Ошибка сервера' });
+    return false;
+  }
+}
+
+export const useDataStore = create<DataState>((set, get) => ({
+  organizations: [],
+  departments: [],
+  positions: [],
+  branches: [],
+  employees: [],
+  equipment: [],
+  assignments: [],
+  virtualMachines: [],
+  services: [],
+  auditLog: [],
+  loaded: false,
+  loading: false,
+  error: null,
+
+  loadAll: async () => {
+    if (loadPromise) return loadPromise;
+    set({ loading: true });
+    loadPromise = (async () => {
+      try {
+        const [organizations, departments, positions, branches, employees, equipment, virtualMachines, auditLog] = await Promise.all([
+          api.get<Organization[]>('/organizations'),
+          api.get<Department[]>('/departments'),
+          api.get<Position[]>('/positions'),
+          api.get<Branch[]>('/branches'),
+          api.get<Employee[]>('/employees'),
+          api.get<Equipment[]>('/equipment'),
+          api.get<VirtualMachine[]>('/virtual-machines'),
+          api.get<AuditLogEntry[]>('/audit-logs').catch(() => [] as AuditLogEntry[]),
+        ]);
+        const services: Service[] = virtualMachines.flatMap((vm) => vm.services || []);
+        set({
+          organizations, departments, positions, branches, employees, equipment, virtualMachines,
+          services, auditLog, loaded: true, loading: false, error: null,
         });
-      },
-      deleteOrganization: (id) => {
-        set((state) => {
-          const org = state.organizations.find((o) => o.id === id);
-          // Отвязываем пользователей от организации
-          useAuthStore.getState().users
-            .filter((u) => u.organizationId === id)
-            .forEach((u) => useAuthStore.getState().setOrganizationForUser(u.id, null));
-          return {
-            organizations: state.organizations.filter((o) => o.id !== id),
-            auditLog: addAuditLog(state, 'delete', 'organization', id, org?.name || '', `Удалена организация "${org?.name || ''}"`),
-          };
-        });
-      },
-      getOrganizationById: (id) => get().organizations.find((o) => o.id === id),
-      getCurrentUserOrganization: () => {
-        const currentUser = useAuthStore.getState().currentUser;
-        if (!currentUser?.organizationId) return undefined;
-        return get().organizations.find((o) => o.id === currentUser.organizationId);
-      },
+      } catch (e: any) {
+        set({ loading: false, error: e?.message || 'Не удалось загрузить данные с сервера' });
+      } finally {
+        loadPromise = null;
+      }
+    })();
+    return loadPromise;
+  },
 
-      // Departments
-      addDepartment: (data) => {
-        const newItem: Department = { ...data, id: 'd' + Date.now().toString(), createdAt: new Date().toISOString().split('T')[0], updatedAt: new Date().toISOString(), updatedBy: useAuthStore.getState().currentUser?.id || null };
-        set((state) => ({ departments: [...state.departments, newItem] }));
-      },
-      updateDepartment: (id, data) => {
-        set((state) => ({ departments: state.departments.map((d) => d.id === id ? { ...d, ...data, updatedAt: new Date().toISOString(), updatedBy: useAuthStore.getState().currentUser?.id || null } : d) }));
-      },
-      deleteDepartment: (id) => {
-        set((state) => ({ departments: state.departments.filter((d) => d.id !== id) }));
-      },
+  clearError: () => set({ error: null }),
 
-      // Positions
-      addPosition: (data) => {
-        const newItem: Position = { ...data, id: 'p' + Date.now().toString(), createdAt: new Date().toISOString().split('T')[0], updatedAt: new Date().toISOString(), updatedBy: useAuthStore.getState().currentUser?.id || null };
-        set((state) => ({ positions: [...state.positions, newItem] }));
-      },
-      updatePosition: (id, data) => {
-        set((state) => ({ positions: state.positions.map((p) => p.id === id ? { ...p, ...data, updatedAt: new Date().toISOString(), updatedBy: useAuthStore.getState().currentUser?.id || null } : p) }));
-      },
-      deletePosition: (id) => {
-        set((state) => ({ positions: state.positions.filter((p) => p.id !== id) }));
-      },
+  // ---------- Organizations ----------
+  addOrganization: async (data) => {
+    let created: Organization | null = null;
+    const ok = await run(set, async () => {
+      created = await api.post<Organization>('/organizations', data);
+      set((s: DataState) => ({ organizations: [...s.organizations, created!] }));
+    });
+    return ok ? created : null;
+  },
 
-      // Branches
-      addBranch: (data) => {
-        const newItem: Branch = { ...data, id: 'b' + Date.now().toString(), createdAt: new Date().toISOString().split('T')[0], updatedAt: new Date().toISOString(), updatedBy: useAuthStore.getState().currentUser?.id || null };
-        set((state) => ({ branches: [...state.branches, newItem] }));
-      },
-      updateBranch: (id, data) => {
-        set((state) => ({ branches: state.branches.map((b) => b.id === id ? { ...b, ...data, updatedAt: new Date().toISOString(), updatedBy: useAuthStore.getState().currentUser?.id || null } : b) }));
-      },
-      deleteBranch: (id) => {
-        set((state) => ({ branches: state.branches.filter((b) => b.id !== id) }));
-      },
+  updateOrganization: async (id, data) => {
+    const ok = await run(set, async () => {
+      const updated = await api.put<Organization>(`/organizations/${id}`, data);
+      set((s: DataState) => ({ organizations: s.organizations.map((o) => (o.id === id ? updated : o)) }));
+    });
+    return ok;
+  },
 
-      // Employees
-      addEmployee: (data) => {
-        const newEmployee: Employee = { ...data, id: Date.now().toString(), createdAt: new Date().toISOString().split('T')[0], updatedAt: new Date().toISOString(), updatedBy: useAuthStore.getState().currentUser?.id || null };
-        set((state) => ({ employees: [...state.employees, newEmployee] }));
-      },
-      updateEmployee: (id, data) => {
-        set((state) => ({ employees: state.employees.map((e) => e.id === id ? { ...e, ...data, updatedAt: new Date().toISOString(), updatedBy: useAuthStore.getState().currentUser?.id || null } : e) }));
-      },
-      deleteEmployee: (id) => {
-        set((state) => ({ employees: state.employees.filter((e) => e.id !== id), equipment: state.equipment.map((eq) => eq.assignedToEmployeeId === id ? { ...eq, assignedToEmployeeId: null } : eq) }));
-      },
-      getEmployeeById: (id) => get().employees.find((e) => e.id === id),
+  deleteOrganization: async (id) => {
+    const ok = await run(set, async () => {
+      await api.delete(`/organizations/${id}`);
+      set((s: DataState) => ({ organizations: s.organizations.filter((o) => o.id !== id) }));
+    });
+    return ok;
+  },
 
-      // Equipment
-      addEquipment: (data) => {
-        const historyEntry = createHistoryEntry('created');
-        const newEquipment: Equipment = { 
-          ...data, 
-          id: Date.now().toString(), 
-          createdAt: new Date().toISOString().split('T')[0], 
-          updatedAt: new Date().toISOString(), 
-          updatedBy: useAuthStore.getState().currentUser?.id || null,
-          history: [historyEntry]
-        };
-        set((state) => ({ equipment: [...state.equipment, newEquipment] }));
-      },
-      updateEquipment: (id, data) => {
-        set((state) => {
-          const oldEquipment = state.equipment.find(eq => eq.id === id);
-          const historyEntry = createHistoryEntry('updated');
-          return {
-            equipment: state.equipment.map((eq) => {
-              if (eq.id === id) {
-                // Сравниваем изменения и записываем в историю
-                const changes: string[] = [];
-                if (data.name && data.name !== eq.name) changes.push(`наименование: "${eq.name}" → "${data.name}"`);
-                if (data.serialNumber && data.serialNumber !== eq.serialNumber) changes.push(`серийный номер: "${eq.serialNumber}" → "${data.serialNumber}"`);
-                if (data.condition && data.condition !== eq.condition) changes.push(`состояние: "${eq.condition}" → "${data.condition}"`);
-                if (data.notes !== undefined && data.notes !== eq.notes) changes.push(`примечания`);
-                
-                const updatedHistory = [
-                  ...(eq.history || []),
-                  { ...historyEntry, fieldName: changes.length > 0 ? changes.join(', ') : 'данные обновлены' }
-                ];
-                
-                return { ...eq, ...data, updatedAt: new Date().toISOString(), updatedBy: useAuthStore.getState().currentUser?.id || null, history: updatedHistory };
-              }
-              return eq;
-            })
-          };
-        });
-      },
-      deleteEquipment: (id) => {
-        set((state) => ({ equipment: state.equipment.filter((eq) => eq.id !== id), assignments: state.assignments.filter((a) => a.equipmentId !== id) }));
-      },
-      getEquipmentById: (id) => get().equipment.find((eq) => eq.id === id),
-      getEquipmentByEmployee: (employeeId) => get().equipment.filter((eq) => eq.assignedToEmployeeId === employeeId),
-      getUnassignedEquipment: () => get().equipment.filter((eq) => eq.assignedToEmployeeId === null),
-      assignEquipment: (equipmentId, employeeId) => {
-        const assignment: Assignment = { id: Date.now().toString(), equipmentId, employeeId, assignedBy: useAuthStore.getState().currentUser?.id || 'system', assignedDate: new Date().toISOString().split('T')[0], returnedDate: null, notes: '' };
-        const currentUser = useAuthStore.getState().currentUser;
-        const newEmployee = get().employees.find(e => e.id === employeeId);
-        
-        set((state) => {
-          const oldEquipment = state.equipment.find(eq => eq.id === equipmentId);
-          // Ищем сотрудника даже если он уволен (isEmployed: false)
-          const oldEmployee = oldEquipment?.assignedToEmployeeId 
-            ? state.employees.find(e => e.id === oldEquipment.assignedToEmployeeId) 
-            : null;
-          
-          // Формируем oldValue - ФИО сотрудника или "не закреплено"
-          const oldValue = oldEmployee 
-            ? `${oldEmployee.lastName} ${oldEmployee.firstName}${oldEmployee.middleName ? ' ' + oldEmployee.middleName : ''}`
-            : 'не закреплено';
-          
-          // Формируем newValue - ФИО нового сотрудника
-          const newValue = newEmployee 
-            ? `${newEmployee.lastName} ${newEmployee.firstName}${newEmployee.middleName ? ' ' + newEmployee.middleName : ''}`
-            : employeeId;
-          
-          // Создаём запись истории с oldValue и newValue
-          const historyEntry = createHistoryEntry(
-            'assigned',
-            'закреплено за',
-            oldValue,
-            newValue
-          );
-          
-          return {
-            equipment: state.equipment.map((eq) => {
-              if (eq.id === equipmentId) {
-                const updatedHistory = [...(eq.history || []), historyEntry];
-                return { ...eq, assignedToEmployeeId: employeeId, updatedAt: new Date().toISOString(), updatedBy: currentUser?.id || null, history: updatedHistory };
-              }
-              return eq;
-            }),
-            assignments: [...state.assignments, assignment]
-          };
-        });
-      },
-      unassignEquipment: (equipmentId) => {
-        const currentUser = useAuthStore.getState().currentUser;
-        const historyEntry = createHistoryEntry('unassigned', 'откреплено');
-        
-        set((state) => {
-          const oldEquipment = state.equipment.find(eq => eq.id === equipmentId);
-          // Ищем сотрудника даже если он уволен (isEmployed: false)
-          const oldEmployee = oldEquipment?.assignedToEmployeeId 
-            ? state.employees.find(e => e.id === oldEquipment.assignedToEmployeeId) 
-            : null;
-          
-          // Формируем oldValue - ФИО сотрудника
-          const oldValue = oldEmployee 
-            ? `${oldEmployee.lastName} ${oldEmployee.firstName}${oldEmployee.middleName ? ' ' + oldEmployee.middleName : ''}`
-            : undefined;
-          
-          const entryWithOldValue = { ...historyEntry, oldValue };
-          
-          return {
-            equipment: state.equipment.map((eq) => {
-              if (eq.id === equipmentId) {
-                const updatedHistory = [...(eq.history || []), entryWithOldValue];
-                return { ...eq, assignedToEmployeeId: null, updatedAt: new Date().toISOString(), updatedBy: currentUser?.id || null, history: updatedHistory };
-              }
-              return eq;
-            }),
-            assignments: state.assignments.map((a) => a.equipmentId === equipmentId && !a.returnedDate ? { ...a, returnedDate: new Date().toISOString().split('T')[0] } : a)
-          };
-        });
-      },
+  getOrganizationById: (id) => get().organizations.find((o) => o.id === id),
 
-      // VMs
-      addVM: (data) => {
-        const historyEntry = createHistoryEntry('created');
-        const newVM: VirtualMachine = { 
-          ...data, 
-          id: 'vm' + Date.now().toString(), 
-          createdAt: new Date().toISOString().split('T')[0], 
-          updatedAt: new Date().toISOString(), 
-          updatedBy: useAuthStore.getState().currentUser?.id || null,
-          history: [historyEntry]
-        };
-        set((state) => ({ virtualMachines: [...state.virtualMachines, newVM] }));
-      },
-      updateVM: (id, data) => {
-        set((state) => {
-          const historyEntry = createHistoryEntry('updated');
-          return {
-            virtualMachines: state.virtualMachines.map((vm) => {
-              if (vm.id === id) {
-                const changes: string[] = [];
-                if (data.name && data.name !== vm.name) changes.push(`имя: "${vm.name}" → "${data.name}"`);
-                if (data.status && data.status !== vm.status) changes.push(`статус: "${vm.status}" → "${data.status}"`);
-                if (data.cpuCores !== undefined && data.cpuCores !== vm.cpuCores) changes.push(`CPU: ${vm.cpuCores} → ${data.cpuCores}`);
-                if (data.ramGB !== undefined && data.ramGB !== vm.ramGB) changes.push(`RAM: ${vm.ramGB}GB → ${data.ramGB}GB`);
-                
-                const updatedHistory = [
-                  ...(vm.history || []),
-                  { ...historyEntry, fieldName: changes.length > 0 ? changes.join(', ') : 'данные обновлены' }
-                ];
-                
-                return { ...vm, ...data, updatedAt: new Date().toISOString(), updatedBy: useAuthStore.getState().currentUser?.id || null, history: updatedHistory };
-              }
-              return vm;
-            })
-          };
-        });
-      },
-      deleteVM: (id) => {
-        set((state) => ({ virtualMachines: state.virtualMachines.filter((vm) => vm.id !== id), services: state.services.filter((s) => s.virtualMachineId !== id) }));
-      },
-      getVMById: (id) => get().virtualMachines.find((vm) => vm.id === id),
-      getVMsByHost: (hostId) => get().virtualMachines.filter((vm) => vm.hostServerId === hostId),
-      getVMsByResponsible: (employeeId) => get().virtualMachines.filter((vm) => vm.responsibleEmployeeId === employeeId || vm.serviceResponsibleEmployeeId === employeeId),
-      addNetworkInterface: (vmId, iface) => {
-        const newIface: NetworkInterface = { ...iface, id: 'ni' + Date.now().toString(), createdAt: new Date().toISOString().split('T')[0], updatedAt: new Date().toISOString(), updatedBy: useAuthStore.getState().currentUser?.id || null };
-        set((state) => ({ virtualMachines: state.virtualMachines.map((vm) => vm.id === vmId ? { ...vm, networkInterfaces: [...vm.networkInterfaces, newIface], updatedAt: new Date().toISOString(), updatedBy: useAuthStore.getState().currentUser?.id || null } : vm) }));
-      },
-      removeNetworkInterface: (vmId, ifaceId) => {
-        set((state) => ({ virtualMachines: state.virtualMachines.map((vm) => vm.id === vmId ? { ...vm, networkInterfaces: vm.networkInterfaces.filter(i => i.id !== ifaceId), updatedAt: new Date().toISOString(), updatedBy: useAuthStore.getState().currentUser?.id || null } : vm) }));
-      },
+  getCurrentUserOrganization: () => {
+    // Организация текущего пользователя определяется по токену сессии на сервере;
+    // на клиенте берём единственную организацию (в системе она одна).
+    const orgs = get().organizations;
+    return orgs.length > 0 ? orgs[0] : undefined;
+  },
 
-      // Services
-      addService: (data) => {
-        const newService: Service = { ...data, id: 'svc' + Date.now().toString(), createdAt: new Date().toISOString().split('T')[0], updatedAt: new Date().toISOString(), updatedBy: useAuthStore.getState().currentUser?.id || null };
-        set((state) => ({ services: [...state.services, newService] }));
-      },
-      updateService: (id, data) => {
-        set((state) => ({ services: state.services.map((s) => s.id === id ? { ...s, ...data, updatedAt: new Date().toISOString(), updatedBy: useAuthStore.getState().currentUser?.id || null } : s) }));
-      },
-      deleteService: (id) => {
-        set((state) => ({ services: state.services.filter((s) => s.id !== id) }));
-      },
-      getServicesByVM: (vmId) => get().services.filter((s) => s.virtualMachineId === vmId),
+  // ---------- Directories ----------
+  addDepartment: async (data) => run(set, async () => {
+    const item = await api.post<Department>('/departments', data);
+    set((s: DataState) => ({ departments: [...s.departments, item].sort((a, b) => a.name.localeCompare(b.name)) }));
+  }),
+  updateDepartment: async (id, data) => run(set, async () => {
+    const item = await api.put<Department>(`/departments/${id}`, data);
+    set((s: DataState) => ({ departments: s.departments.map((d) => (d.id === id ? item : d)) }));
+  }),
+  deleteDepartment: async (id) => run(set, async () => {
+    await api.delete(`/departments/${id}`);
+    set((s: DataState) => ({ departments: s.departments.filter((d) => d.id !== id) }));
+  }),
 
-      // Stats
-      getDashboardStats: () => {
-        const { employees, equipment, virtualMachines, departments } = get();
-        const activeEmployees = employees.filter((e) => e.isEmployed).length;
-        const assignedEquipment = equipment.filter((eq) => eq.assignedToEmployeeId).length;
-        const unassignedEquipment = equipment.filter((eq) => !eq.assignedToEmployeeId).length;
-        const needsRepair = equipment.filter((eq) => eq.condition === 'needs_repair').length;
-        const writtenOff = equipment.filter((eq) => eq.condition === 'written_off').length;
-        const totalServers = equipment.filter((eq) => eq.category === 'server').length;
-        const totalVMs = virtualMachines.length;
-        const runningVMs = virtualMachines.filter((vm) => vm.status === 'running').length;
+  addPosition: async (data) => run(set, async () => {
+    const item = await api.post<Position>('/positions', data);
+    set((s: DataState) => ({ positions: [...s.positions, item].sort((a, b) => a.name.localeCompare(b.name)) }));
+  }),
+  updatePosition: async (id, data) => run(set, async () => {
+    const item = await api.put<Position>(`/positions/${id}`, data);
+    set((s: DataState) => ({ positions: s.positions.map((p) => (p.id === id ? item : p)) }));
+  }),
+  deletePosition: async (id) => run(set, async () => {
+    await api.delete(`/positions/${id}`);
+    set((s: DataState) => ({ positions: s.positions.filter((p) => p.id !== id) }));
+  }),
 
-        const byCategory = equipment.reduce((acc, eq) => {
-          acc[eq.category] = (acc[eq.category] || 0) + 1;
-          return acc;
-        }, {} as Record<EquipmentCategory, number>);
+  addBranch: async (data) => run(set, async () => {
+    const item = await api.post<Branch>('/branches', data);
+    set((s: DataState) => ({ branches: [...s.branches, item].sort((a, b) => a.name.localeCompare(b.name)) }));
+  }),
+  updateBranch: async (id, data) => run(set, async () => {
+    const item = await api.put<Branch>(`/branches/${id}`, data);
+    set((s: DataState) => ({ branches: s.branches.map((b) => (b.id === id ? item : b)) }));
+  }),
+  deleteBranch: async (id) => run(set, async () => {
+    await api.delete(`/branches/${id}`);
+    set((s: DataState) => ({ branches: s.branches.filter((b) => b.id !== id) }));
+  }),
 
-        const byDepartment = employees.reduce((acc, emp) => {
-          const dept = departments.find(d => d.id === emp.departmentId);
-          const deptName = dept?.name || 'Не указан';
-          acc[deptName] = (acc[deptName] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>);
+  // ---------- Employees ----------
+  addEmployee: async (data) => run(set, async () => {
+    await api.post('/employees', data);
+    await reloadEmployees(set, get);
+  }),
+  updateEmployee: async (id, data) => run(set, async () => {
+    await api.put(`/employees/${id}`, data);
+    await reloadEmployees(set, get);
+  }),
+  deleteEmployee: async (id) => run(set, async () => {
+    await api.delete(`/employees/${id}`);
+    set((s: DataState) => ({ employees: s.employees.filter((e) => e.id !== id) }));
+  }),
+  getEmployeeById: (id) => get().employees.find((e) => e.id === id),
 
-        return { totalEmployees: employees.length, activeEmployees, totalEquipment: equipment.length, assignedEquipment, unassignedEquipment, needsRepair, writtenOff, totalServers, totalVMs, runningVMs, byCategory, byDepartment };
-      },
-    }),
-    { name: 'data-storage-v2' }
-  )
-);
+  // ---------- Equipment ----------
+  addEquipment: async (data) => run(set, async () => {
+    await api.post('/equipment', data);
+    await reloadEquipment(set, get);
+  }),
+  updateEquipment: async (id, data) => run(set, async () => {
+    await api.put(`/equipment/${id}`, data);
+    await reloadEquipment(set, get);
+  }),
+  deleteEquipment: async (id) => run(set, async () => {
+    await api.delete(`/equipment/${id}`);
+    set((s: DataState) => ({ equipment: s.equipment.filter((e) => e.id !== id) }));
+  }),
+  getEquipmentById: (id) => get().equipment.find((e) => e.id === id),
+  getEquipmentByEmployee: (employeeId) => get().equipment.filter((e) => e.assignedToEmployeeId === employeeId),
+  getUnassignedEquipment: () => get().equipment.filter((e) => !e.assignedToEmployeeId),
+
+  assignEquipment: async (equipmentId, employeeId) => run(set, async () => {
+    await api.post(`/equipment/${equipmentId}/assign`, { employeeId });
+    await Promise.all([reloadEquipment(set, get), reloadEmployees(set, get)]);
+  }),
+  unassignEquipment: async (equipmentId) => run(set, async () => {
+    await api.post(`/equipment/${equipmentId}/unassign`, {});
+    await Promise.all([reloadEquipment(set, get), reloadEmployees(set, get)]);
+  }),
+
+  // ---------- Virtual Machines ----------
+  addVM: async (data) => run(set, async () => {
+    await api.post('/virtual-machines', data);
+    await reloadVMs(set, get);
+  }),
+  updateVM: async (id, data) => run(set, async () => {
+    await api.put(`/virtual-machines/${id}`, data);
+    await reloadVMs(set, get);
+  }),
+  deleteVM: async (id) => run(set, async () => {
+    await api.delete(`/virtual-machines/${id}`);
+    set((s: DataState) => ({
+      virtualMachines: s.virtualMachines.filter((v) => v.id !== id),
+      services: s.services.filter((sv) => sv.virtualMachineId !== id),
+    }));
+  }),
+  getVMById: (id) => get().virtualMachines.find((v) => v.id === id),
+  getVMsByHost: (hostId) => get().virtualMachines.filter((v) => v.hostServerId === hostId),
+  getVMsByResponsible: (employeeId) => get().virtualMachines.filter(
+    (v) => v.responsibleEmployeeId === employeeId || v.serviceResponsibleEmployeeId === employeeId,
+  ),
+
+  addNetworkInterface: async (vmId, iface) => run(set, async () => {
+    await api.post(`/virtual-machines/${vmId}/network-interfaces`, iface);
+    await reloadVMs(set, get);
+  }),
+  removeNetworkInterface: async (_vmId, ifaceId) => run(set, async () => {
+    await api.delete(`/network-interfaces/${ifaceId}`);
+    await reloadVMs(set, get);
+  }),
+
+  // ---------- Services ----------
+  addService: async (data) => run(set, async () => {
+    const vmId = (data as any).virtualMachineId;
+    await api.post(`/virtual-machines/${vmId}/services`, data);
+    await reloadVMs(set, get);
+  }),
+  updateService: async (id, data) => run(set, async () => {
+    await api.put(`/services/${id}`, data);
+    await reloadVMs(set, get);
+  }),
+  deleteService: async (id) => run(set, async () => {
+    await api.delete(`/services/${id}`);
+    await reloadVMs(set, get);
+  }),
+  getServicesByVM: (vmId) => get().services.filter((s) => s.virtualMachineId === vmId),
+
+  // ---------- Stats ----------
+  getDashboardStats: () => {
+    const { employees, equipment, virtualMachines, departments } = get();
+    const activeEmployees = employees.filter((e) => e.isEmployed).length;
+    const assignedEquipment = equipment.filter((eq) => eq.assignedToEmployeeId).length;
+    return {
+      totalEmployees: employees.length,
+      activeEmployees,
+      totalEquipment: equipment.length,
+      assignedEquipment,
+      unassignedEquipment: equipment.length - assignedEquipment,
+      totalVirtualMachines: virtualMachines.length,
+      activeVirtualMachines: virtualMachines.filter((v) => v.status === 'running').length,
+      totalDepartments: departments.length,
+    };
+  },
+} as any));
+
+async function reloadEmployees(set: any, get: () => DataState) {
+  const employees = await api.get<Employee[]>('/employees');
+  set({ employees });
+  await reloadEquipment(set, get);
+}
+
+async function reloadEquipment(set: any, _get: () => DataState) {
+  const equipment = await api.get<Equipment[]>('/equipment');
+  set({ equipment });
+}
+
+async function reloadVMs(set: any, _get: () => DataState) {
+  const virtualMachines = await api.get<VirtualMachine[]>('/virtual-machines');
+  const services: Service[] = virtualMachines.flatMap((vm) => vm.services || []);
+  set({ virtualMachines, services });
+}
