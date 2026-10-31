@@ -85,26 +85,52 @@ if [ "$DIAG" != "" ]; then
 fi
 
 echo "⏳ Ожидаем готовности PostgreSQL..."
-# Ждём, пока БД примет соединения (до 90 секунд)
+# Ждём, пока БД примет соединения (до 90 секунд).
+# ВАЖНО: аутентификация — детерминированная ошибка. Раньше «Authentication
+# failed» (рассинхрон паролей .env и тома postgres_data) ждал все 90 секунд
+# и плодил одинаковые строки в логах вместо мгновенной подсказки о решении.
 i=0
 MAX_WAIT=90
-while ! node ./wait-db.cjs; do
+AUTH_FAILS=0
+LAST_ERR=""
+while true; do
+  LAST_ERR=$(node ./wait-db.cjs 2>&1 >/dev/null) && break
   i=$((i+1))
+
+  case "$LAST_ERR" in
+    *"Authentication failed"*|*"password authentication"*)
+      AUTH_FAILS=$((AUTH_FAILS+1))
+      if [ "$AUTH_FAILS" -ge 3 ]; then
+        echo "❌ PostgreSQL ОТКЛОНЯЕТ ПАРОЛЬ пользователя \"${POSTGRES_USER:-chlenix}\"."
+        echo "   Это НЕ тайминг: пароль в DATABASE_URL (.env) не совпадает с паролем,"
+        echo "   записанным в том postgres_data при ПЕРВОМ создании контейнера."
+        echo "   (postgres задаёт пароль только при инициализации пустого тома;"
+        echo "    последующая смена POSTGRES_PASSWORD в .env его не обновляет.)"
+        echo ""
+        echo "   Решение A — если данных в базе ещё нет / не жалко (чистый старт):"
+        echo "     docker compose stop backend"
+        echo "     docker volume rm chlenix_postgres_data"
+        echo "     ./deploy.sh docker"
+        echo "   Решение B — если данные нужны: привести пароль БД к значению из .env"
+        echo "     (backend при этом должен быть остановлен):"
+        echo "     PGPASS=\$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2)"
+        echo "     docker exec -i chlenix-postgres psql -U ${POSTGRES_USER:-chlenix} -d postgres \\"
+        echo "       -c \"ALTER USER ${POSTGRES_USER:-chlenix} WITH PASSWORD '\$PGPASS';\""
+        echo "     docker compose up -d backend"
+        exit 1
+      fi
+      ;;
+  esac
+
   # Раз в ~15 секунд печатаем диагностику сети до postgres (иначе логи молча повторяются)
   if [ $((i % 15)) -eq 0 ]; then
     echo "   ...ждём ${i}s; диагностика: getent hosts postgres -> $(getent hosts postgres || echo 'DNS НЕ резолвится')"
   fi
   if [ "$i" -gt "$MAX_WAIT" ]; then
     echo "❌ PostgreSQL недоступен в течение ${MAX_WAIT} секунд."
-    echo "   Наиболее вероятные причины:"
-    echo "   1) Пароль в DATABASE_URL не совпадает с фактическим паролем БД."
-    echo "      Если вы меняли POSTGRES_PASSWORD в .env ПОСЛЕ первого запуска,"
-    echo "      старый пароль «зашит» в томе postgres_data. Исправление:"
-    echo "        docker volume rm chlenix_postgres_data   # ДАННЫЕ БУДУТ УДАЛЕНЫ!"
-    echo "        ./deploy.sh docker"
-    echo "   2) Неверные POSTGRES_USER/POSTGRES_DB в .env."
-    echo "   3) Контейнер postgres аварийно завершается:"
-    echo "        docker ps -a && docker logs chlenix-postgres --tail 30"
+    echo "   Последняя ошибка подключения:"
+    echo "     ${LAST_ERR}"
+    echo "   Проверьте: docker ps -a && docker logs chlenix-postgres --tail 30"
     exit 1
   fi
   sleep 1

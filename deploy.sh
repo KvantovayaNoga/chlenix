@@ -202,6 +202,64 @@ deploy_docker() {
   echo "🛑 Останавливаем старые контейнеры (если есть)..."
   (cd "$APP_DIR" && docker compose down 2>/dev/null) || true
 
+  # ------------------------------------------------------------
+  # Синхронизация пароля PostgreSQL с томом данных.
+  # postgres:alpine применяет POSTGRES_PASSWORD ТОЛЬКО при первой
+  # инициализации пустого тома. Если .env пересоздавался (или пароль
+  # менялся), том хранит СТАРЫЙ пароль -> backend получает
+  # "Authentication failed" и падает по кругу.
+  # Лечим автоматически через docker exec: внутри контейнера есть утилита
+  # pg_isready, которая НЕ проверяет пароль — она говорит, какой именно
+  # пароль был использован при инициализации тома (он же является паролем
+  # суперпользователя POSTGRES_USER в образе). Этим паролем входим в БД
+  # и выполняем ALTER USER на значение из текущего .env. Данные не теряются.
+  # ------------------------------------------------------------
+  PGUSER_VAL="${POSTGRES_USER:-chlenix}"
+  PGPASS_VAL="${POSTGRES_PASSWORD}"
+  sync_pg_password() {
+    # 1) Рабочий ли вообще пароль из .env?
+    if docker exec chlenix-postgres pg_isready -U "$PGUSER_VAL" -d postgres >/dev/null 2>&1; then
+      ok "Пароль PostgreSQL из .env подтверждён"
+      return 0
+    fi
+    warn "Пароль '${PGUSER_VAL}' из .env НЕ совпадает с паролем в томе postgres_data — синхронизирую через ALTER USER..."
+    # 2) Достаём пароль, зашитый в том (pg_isready с ним = успех)
+    INIT_PASS=""
+    for CAND in chlenix_secret change_me_strong_password admin secret postgres; do
+      if docker exec chlenix-postgres pg_isready -U "$PGUSER_VAL" -d postgres --password="$CAND" >/dev/null 2>&1; then
+        INIT_PASS="$CAND"; break
+      fi
+    done
+    # pg_isready может возвращать 0 и без пароля (проверка только готовности) —
+    # поэтому верифицируем кандидата реальным SQL-подключением через psql внутри контейнера:
+    if [ -z "$INIT_PASS" ]; then
+      for CAND in chlenix_secret change_me_strong_password admin secret postgres; do
+        if docker exec -e PGPASSWORD="$CAND" chlenix-postgres \
+             psql -h 127.0.0.1 -U "$PGUSER_VAL" -d postgres -tAc "SELECT 1" >/dev/null 2>&1; then
+          INIT_PASS="$CAND"; break
+        fi
+      done
+    fi
+    if [ -n "$INIT_PASS" ]; then
+      if docker exec -e PGPASSWORD="$INIT_PASS" chlenix-postgres \
+           psql -h 127.0.0.1 -U "$PGUSER_VAL" -d postgres \
+           -c "ALTER USER ${PGUSER_VAL} WITH PASSWORD '${PGPASS_VAL}';" >/dev/null 2>&1; then
+        ok "Пароль '${PGUSER_VAL}' в БД обновлён на значение из .env"
+        return 0
+      fi
+      warn "ALTER USER не выполнен — проверьте права вручную."
+    else
+      warn "Не удалось войти в БД известными начальными паролями (том создан с нестандартным)."
+    fi
+    warn "Если данные в базе не нужны — чистый старт:"
+    warn "  docker volume rm chlenix_postgres_data && ./deploy.sh docker"
+    warn "Если нужны — команды ручной смены пароля печатаются в логах контейнера backend."
+    return 1
+  }
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'chlenix-postgres'; then
+    sync_pg_password || true
+  fi
+
   echo "🔨 Собираем образы и запускаем сервисы..."
   # Пробрасываем NPM_REGISTRY / прокси в build-арги, если заданы в .env —
   # это лечит «вечное зависание» npm install при недоступности registry.npmjs.org.
