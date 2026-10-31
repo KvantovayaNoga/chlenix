@@ -68,6 +68,14 @@ services:
         HTTP_PROXY: ${HTTP_PROXY:-}
     container_name: chlenix-frontend
     restart: unless-stopped
+    healthcheck:
+      # Проверка собственного лёгкого эндпоинта nginx (/health), а не /api —
+      # так статус frontend не зависит от состояния backend
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     depends_on:
       - backend
     ports:
