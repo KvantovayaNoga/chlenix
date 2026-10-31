@@ -48,15 +48,19 @@ if (!JWT_SECRET_RAW && process.env.NODE_ENV === 'production') {
 }
 const JWT_SECRET = new TextEncoder().encode(JWT_SECRET_RAW || 'dev_only_secret_do_not_use_in_production');
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
-const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost';
+// CORS: '*' (по умолчанию) либо список точных origins через запятую.
+// Запросы идут через nginx с тем же origin, что и фронтенд, поэтому
+// значение по умолчанию безопасно для same-site депоя за прокси.
+const CORS_ORIGIN_RAW = process.env.CORS_ORIGIN || '*';
+const corsOrigins = CORS_ORIGIN_RAW.split(',').map((s) => s.trim()).filter(Boolean);
 
 // ============================================================
 // Middleware
 // ============================================================
 app.use('*', logger());
 app.use('/api/*', cors({
-  origin: CORS_ORIGIN,
-  credentials: true,
+  origin: corsOrigins.includes('*') ? '*' : corsOrigins,
+  credentials: !corsOrigins.includes('*'),
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
 }));

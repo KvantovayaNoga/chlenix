@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
@@ -28,6 +29,14 @@ function DefaultAuthenticatedRedirect() {
 
 function App() {
   const { isAuthenticated } = useAuthStore();
+  const navigate = useNavigate();
+
+  // При истечении сессии (401 от API) перенаправляем на страницу входа
+  useEffect(() => {
+    const onUnauthorized = () => navigate('/login', { replace: true });
+    window.addEventListener('chlenix:unauthorized', onUnauthorized);
+    return () => window.removeEventListener('chlenix:unauthorized', onUnauthorized);
+  }, [navigate]);
 
   return (
     <BrowserRouter>

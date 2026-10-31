@@ -13,7 +13,11 @@ const OPTIONS: Array<{ value: ThemePreference; label: string; icon: typeof Sun }
   { value: 'system', label: 'Системная', icon: Monitor },
 ];
 
-export function ThemeToggle() {
+interface ThemeToggleProps {
+  compact?: boolean; // режим свёрнутого сайдбара — только иконки
+}
+
+export function ThemeToggle({ compact = false }: ThemeToggleProps) {
   const theme = useThemeStore((s) => s.theme);
   const setLocalTheme = useThemeStore((s) => s.setTheme);
   const persistTheme = useAuthStore((s) => s.setTheme);
@@ -26,7 +30,9 @@ export function ThemeToggle() {
 
   return (
     <div
-      className="inline-flex items-center rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 p-0.5"
+      className={`inline-flex items-center rounded-lg border p-0.5 ${
+        compact ? 'border-slate-700 bg-slate-800 flex-col' : 'border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800'
+      }`}
       role="group"
       aria-label="Переключатель темы оформления"
     >
@@ -43,10 +49,10 @@ export function ThemeToggle() {
               active
                 ? 'bg-white dark:bg-gray-600 text-indigo-600 dark:text-indigo-300 shadow-sm'
                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
-            }`}
+            } ${compact ? 'justify-center px-2' : ''}`}
           >
             <Icon className="h-4 w-4" />
-            <span className="hidden sm:inline">{label}</span>
+            {!compact && <span className="hidden sm:inline">{label}</span>}
           </button>
         );
       })}

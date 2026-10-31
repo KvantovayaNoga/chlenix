@@ -2,6 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useDataStore } from '../store/dataStore';
 import { useState } from 'react';
+import { ThemeToggle } from './ThemeToggle';
 import {
   LayoutDashboard,
   Users,
@@ -139,6 +140,11 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
+
+      {/* Тема оформления */}
+      <div className={`px-4 pt-4 ${isMinimized ? 'flex justify-center' : ''}`}>
+        <ThemeToggle compact={isMinimized} />
+      </div>
 
       {/* Logout */}
       <div className="p-4 border-t border-slate-700">

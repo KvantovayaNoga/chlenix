@@ -142,6 +142,17 @@ ensure_env() {
   if grep -Eq "^(JWT_SECRET=CHANGE_ME|POSTGRES_PASSWORD=change_me)" "$APP_DIR/.env"; then
     die "В .env остались плейсхолдеры секретов — задайте реальные значения!"
   fi
+
+  # Миграция устаревших значений по умолчанию: абсолютный http://localhost/api
+  # «зашивался» в сборку и ломал доступ с других машин (ошибка «Сервер недоступен»).
+  if grep -q "^VITE_API_URL=http://localhost/api" "$APP_DIR/.env"; then
+    sed -i.bak "s|^VITE_API_URL=.*|VITE_API_URL=/api|" "$APP_DIR/.env" && rm -f "$APP_DIR/.env.bak"
+    ok "VITE_API_URL в .env обновлён на '/api' (nginx-прокси, работает по любому адресу сервера)"
+  fi
+  if grep -q "^CORS_ORIGIN=http://localhost$" "$APP_DIR/.env"; then
+    sed -i.bak "s|^CORS_ORIGIN=.*|CORS_ORIGIN=*|" "$APP_DIR/.env" && rm -f "$APP_DIR/.env.bak"
+    ok "CORS_ORIGIN в .env обновлён на '*' (доступ по IP/домену сервера)"
+  fi
 }
 
 wait_for_api() { # url...
@@ -192,10 +203,27 @@ deploy_docker() {
   [ -n "${HTTPS_PROXY:-}" ]  && BUILD_ARGS="$BUILD_ARGS --build-arg HTTPS_PROXY=${HTTPS_PROXY}"
   [ -n "${HTTP_PROXY:-}" ]   && BUILD_ARGS="$BUILD_ARGS --build-arg HTTP_PROXY=${HTTP_PROXY}"
   # shellcheck disable=SC2086
-  (cd "$APP_DIR" && docker compose up -d --build $BUILD_ARGS)
+  if ! (cd "$APP_DIR" && docker compose up -d --build $BUILD_ARGS); then
+    warn "Сборка упала — повторяем с принудительной пересборкой слоёв (--no-cache)..."
+    # shellcheck disable=SC2086
+    (cd "$APP_DIR" && docker compose build --no-cache $BUILD_ARGS && docker compose up -d $BUILD_ARGS) \
+      || die "Сборка образов не удалась. См. вывод выше."
+  fi
 
   echo "⏳ Ожидаем готовности backend..."
   wait_for_api "http://localhost:${HTTP_PORT:-80}/api/health" "http://localhost:${BACKEND_PORT:-4000}/api/health"
+
+  # Контроль: страница входа отдаётся, а API проксируется nginx в backend.
+  if curl -sf "http://localhost:${HTTP_PORT:-80}/login" >/dev/null 2>&1; then
+    ok "Фронтенд отдаёт страницу входа (через nginx)"
+  else
+    warn "Страница /login недоступна — проверьте: docker compose logs frontend"
+  fi
+  if curl -sf "http://localhost:${HTTP_PORT:-80}/api/health" >/dev/null 2>&1; then
+    ok "API доступен через nginx по пути /api (браузер будет использовать именно его)"
+  else
+    warn "Путь /api через nginx не отвечает — проверьте: docker compose logs frontend backend"
+  fi
 
   echo ""
   (cd "$APP_DIR" && docker compose ps)
