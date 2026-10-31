@@ -68,13 +68,18 @@ RUN npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit 
 # Затем перегенерируем Prisma Client ПОВЕРХ prod-узлов (он сам является dependency,
 # поэтому generate не требует devDependencies) — это известный рабочий порядок:
 # tsc собирает код до генерации, клиент генерируется заново уже в runtime-слое.
+# ВАЖНО: prisma CLI в builder-слое ставится полностью (dev), но в runtime он
+# подтягивается как транзитивная зависимость @prisma/engines — проверяем это ниже.
 COPY --from=builder /app/prisma ./prisma
-RUN npx prisma generate
+RUN npx prisma generate \
+ && echo "✓ prisma generate выполнен в runtime-слое"
 
 COPY --from=builder /app/dist ./dist
 
-# Canary runtime-образа: битый образ упадёт на сборке, а не циклом рестартов.
-RUN node -e "const {PrismaClient}=require('@prisma/client'); if(typeof PrismaClient!=='function') process.exit(1); console.log('✓ @prisma/client OK in runtime image')"
+# Canary runtime-образа: НЕ require('@prisma/client') «в лоб» (Node маскирует
+# внутренние ошибки модуля как «Cannot find module»), а с выводом e.code —
+# битый образ упадёт на сборке с точной причиной, а не циклом рестартов.
+RUN node -e "try{const c=require('@prisma/client'); if(typeof c.PrismaClient!=='function'){console.error('PrismaClient не функция');process.exit(1)}}catch(e){console.error((e&&e.code||'')+' | '+(e&&e.message||e));process.exit(1)}; console.log('✓ @prisma/client OK in runtime image')"
 
 # Создаем папку для миграций если её нет
 RUN mkdir -p /app/prisma/migrations
