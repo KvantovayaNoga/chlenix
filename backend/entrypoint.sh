@@ -36,13 +36,26 @@ cat > /tmp/wait-db.cjs <<'EOF'
 })();
 EOF
 
+# --- Проверка целостности Prisma Client (защита от «Cannot find module») ---
+if ! node -e "require('@prisma/client')" 2>/dev/null; then
+  echo "⚠️  @prisma/client отсутствует или сломан — перегенерируем на месте..."
+  ls node_modules/.prisma/client/index.js >/dev/null 2>&1 || echo "   (нет сгенерированного клиента в node_modules/.prisma)"
+  npx prisma generate && echo "✓ Prisma Client перегенерирован" \
+  || { echo "❌ Не удалось перегенерировать Prisma Client. Скорее всего образ собран без dev-зависимостей/prisma CLI."; exit 1; }
+fi
+
 echo "⏳ Ожидаем готовности PostgreSQL..."
 # Ждём, пока БД примет соединения (до 90 секунд)
 i=0
-until node /tmp/wait-db.cjs; do
+MAX_WAIT=90
+while ! node /tmp/wait-db.cjs; do
   i=$((i+1))
-  if [ "$i" -gt 90 ]; then
-    echo "❌ PostgreSQL недоступен в течение 90 секунд."
+  # Раз в ~15 секунд печатаем диагностику сети до postgres (иначе логи молча повторяются)
+  if [ $((i % 15)) -eq 0 ]; then
+    echo "   ...ждём ${i}s; диагностика: getent hosts postgres -> $(getent hosts postgres || echo 'DNS НЕ резолвится')"
+  fi
+  if [ "$i" -gt "$MAX_WAIT" ]; then
+    echo "❌ PostgreSQL недоступен в течение ${MAX_WAIT} секунд."
     echo "   Наиболее вероятные причины:"
     echo "   1) Пароль в DATABASE_URL не совпадает с фактическим паролем БД."
     echo "      Если вы меняли POSTGRES_PASSWORD в .env ПОСЛЕ первого запуска,"
