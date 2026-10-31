@@ -18,9 +18,8 @@ interface ThemeToggleProps {
 }
 
 export function ThemeToggle({ compact = false }: ThemeToggleProps) {
-  const theme = useThemeStore((s) => s.theme);
-  const setLocalTheme = useThemeStore((s) => s.setTheme);
-  const persistTheme = useAuthStore((s) => s.setTheme);
+  const { theme, setTheme: setLocalTheme } = useThemeStore();
+  const { setTheme: persistTheme } = useAuthStore();
 
   const choose = (value: ThemePreference) => {
     // мгновенно применяем локально, затем сохраняем в БД

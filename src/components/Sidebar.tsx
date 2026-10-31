@@ -32,7 +32,8 @@ const roleColors = {
 
 export function Sidebar() {
   const { currentUser, logout, canManageUsers } = useAuthStore();
-  const organization = useDataStore((s) => s.organizations.find((o) => o.id === currentUser?.organizationId));
+  const { organizations } = useDataStore();
+  const organization = organizations.find((o) => o.id === currentUser?.organizationId);
   const navigate = useNavigate();
   const [isMinimized, setIsMinimized] = useState(false);
 
