@@ -20,7 +20,7 @@ import { AboutPage } from './pages/AboutPage';
 
 // После авторизации: если у пользователя нет организации — сначала предлагаем создать
 function DefaultAuthenticatedRedirect() {
-  const { currentUser } = useAuthStore();
+  const currentUser = useAuthStore((s) => s.currentUser);
   if (currentUser && !currentUser.organizationId) {
     return <Navigate to="/organization/create" replace />;
   }
@@ -28,7 +28,7 @@ function DefaultAuthenticatedRedirect() {
 }
 
 function App() {
-  const { isAuthenticated } = useAuthStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const navigate = useNavigate();
 
   // При истечении сессии (401 от API) перенаправляем на страницу входа
