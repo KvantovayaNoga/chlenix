@@ -2,7 +2,9 @@
 // Клиент REST API Chlenix (данные хранятся в PostgreSQL на сервере)
 // ============================================================
 
-export const API_URL = import.meta.env.VITE_API_URL || '/api';
+// По умолчанию API доступен по относительному пути /api — nginx проксирует
+// его на backend-контейнер. Это делает сборку независимой от адреса сервера.
+export const API_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 
 const TOKEN_KEY = 'chlenix_token';
 

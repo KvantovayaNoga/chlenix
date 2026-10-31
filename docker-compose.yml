@@ -60,7 +60,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost/api}
+        VITE_API_URL: ${VITE_API_URL:-/api}
         # Если registry.npmjs.org недоступен с сервера — укажите зеркало в .env:
         #   NPM_REGISTRY=https://registry.npmmirror.com
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
@@ -69,7 +69,6 @@ services:
     container_name: chlenix-frontend
     restart: unless-stopped
     environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost/api}
     depends_on:
       - backend
     ports:
