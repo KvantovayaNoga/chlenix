@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { Building2, UserPlus, Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react';
 
 export function RegisterPage() {
@@ -17,7 +18,7 @@ export function RegisterPage() {
   const isFirstUser = users.length === 0;
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -31,7 +32,7 @@ export function RegisterPage() {
       return;
     }
 
-    const result = register(formData.email, formData.password, formData.fullName);
+    const result = await register(formData.email, formData.password, formData.fullName);
     if (result.success) {
       // После регистрации сразу предлагаем создать организацию
       navigate(formData.createOrganization ? '/organization/create' : '/dashboard');
@@ -45,19 +46,22 @@ export function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-indigo-50 to-slate-100 dark:from-slate-900 dark:via-indigo-950 dark:to-slate-900 flex items-center justify-center p-4">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-500 rounded-2xl mb-4 shadow-xl shadow-indigo-500/30">
             <Building2 className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white">Chlenix</h1>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Chlenix</h1>
           <p className="text-slate-400 mt-2">Регистрация в системе</p>
         </div>
 
         {/* Form */}
-        <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 border border-gray-700">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 border border-gray-200 dark:border-gray-700">
           <h2 className="text-2xl font-bold text-gray-200 mb-2">Создать аккаунт</h2>
           {isFirstUser && (
             <div className="mb-5 p-3 bg-indigo-900/30 border border-indigo-700/60 rounded-xl text-indigo-200 text-sm flex items-start gap-2">
@@ -65,13 +69,13 @@ export function RegisterPage() {
               Вы первый пользователь в системе — после регистрации вы автоматически получите роль администратора организации.
             </div>
           )}
-          <p className="text-gray-400 text-sm mb-6 flex items-start gap-2">
+          <p className="text-gray-600 dark:text-gray-400 text-sm mb-6 flex items-start gap-2">
             <ArrowRight className="w-4 h-4 text-indigo-400 mt-0.5 flex-shrink-0" />
             После регистрации вы сможете создать свою организацию и начать учёт активов.
           </p>
           
           {error && (
-            <div className="mb-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-red-300 text-sm">
+            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-300 text-sm">
               {error}
             </div>
           )}
@@ -85,7 +89,7 @@ export function RegisterPage() {
                 type="text"
                 value={formData.fullName}
                 onChange={(e) => handleChange('fullName', e.target.value)}
-                className="w-full px-4 py-3 border border-gray-600 bg-gray-700 text-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none placeholder-gray-500"
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none placeholder-gray-400 dark:placeholder-gray-500"
                 placeholder="Иванов Иван Иванович"
                 required
               />
@@ -99,7 +103,7 @@ export function RegisterPage() {
                 type="email"
                 value={formData.email}
                 onChange={(e) => handleChange('email', e.target.value)}
-                className="w-full px-4 py-3 border border-gray-600 bg-gray-700 text-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none placeholder-gray-500"
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none placeholder-gray-400 dark:placeholder-gray-500"
                 placeholder="your@email.com"
                 required
               />
@@ -114,14 +118,14 @@ export function RegisterPage() {
                   type={showPassword ? 'text' : 'password'}
                   value={formData.password}
                   onChange={(e) => handleChange('password', e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-600 bg-gray-700 text-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none pr-12 placeholder-gray-500"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none pr-12 placeholder-gray-400 dark:placeholder-gray-500"
                   placeholder="Минимум 6 символов"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
@@ -136,7 +140,7 @@ export function RegisterPage() {
                 type="password"
                 value={formData.confirmPassword}
                 onChange={(e) => handleChange('confirmPassword', e.target.value)}
-                className="w-full px-4 py-3 border border-gray-600 bg-gray-700 text-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none placeholder-gray-500"
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none placeholder-gray-400 dark:placeholder-gray-500"
                 placeholder="Повторите пароль"
                 required
               />
@@ -170,9 +174,9 @@ export function RegisterPage() {
           </form>
 
           <div className="mt-6 text-center">
-            <p className="text-gray-400 text-sm">
+            <p className="text-gray-600 dark:text-gray-400 text-sm">
               Уже есть аккаунт?{' '}
-              <Link to="/login" className="text-indigo-400 hover:text-indigo-300 font-medium">
+              <Link to="/login" className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium">
                 Войти
               </Link>
             </p>

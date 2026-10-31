@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { Shield, ShieldCheck, Eye, X, CheckCircle, XCircle, Edit, Trash2, Plus, Search, Filter, History, Save } from 'lucide-react';
-import type { User, UserRole } from '../types';
+import type { User, UserRole, HistoryEntry } from '../types';
+import { api } from '../api/client';
 import { HistoryLog } from '../components/HistoryLog';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
 
@@ -28,6 +29,8 @@ export function UsersPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [viewingHistory, setViewingHistory] = useState<User | null>(null);
+  const [historyData, setHistoryData] = useState<HistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
@@ -176,7 +179,7 @@ export function UsersPage() {
                     {isAdmin && <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{new Date(user.createdAt).toLocaleDateString('ru-RU')}</td>}
                     <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => setViewingHistory(user)} className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30" title="История изменений"><History className="w-4 h-4" /></button>
+                        <button onClick={() => openHistory(user)} className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30" title="История изменений"><History className="w-4 h-4" /></button>
                         {canEditUser(user) && <button onClick={() => setEditingUser(user)} className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30"><Edit className="w-4 h-4" /></button>}
                         {user.id !== currentUser?.id && <button onClick={() => { if (confirm('Удалить?')) deleteUser(user.id); }} className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30"><Trash2 className="w-4 h-4" /></button>}
                       </div>
@@ -205,7 +208,11 @@ export function UsersPage() {
               </button>
             </div>
             <div className="p-6">
-              <HistoryLog history={viewingHistory.history || []} />
+              {historyLoading ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">Загрузка истории…</p>
+              ) : (
+                <HistoryLog history={historyData} />
+              )}
             </div>
           </div>
         </div>
@@ -215,6 +222,19 @@ export function UsersPage() {
 
   function canEditUser(user: User) {
     return currentUser?.role === 'admin' || user.id === currentUser?.id;
+  }
+
+  async function openHistory(user: User) {
+    setViewingHistory(user);
+    setHistoryLoading(true);
+    try {
+      const history = await api.get<HistoryEntry[]>(`/users/${user.id}/history`);
+      setHistoryData(history);
+    } catch {
+      setHistoryData([]);
+    } finally {
+      setHistoryLoading(false);
+    }
   }
 }
 
