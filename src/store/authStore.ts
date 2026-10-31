@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { User, UserRole, ThemePreference } from '../types';
 import { api, getToken, setToken, ApiError } from '../api/client';
+import { syncThemeFromProfile } from './themeStore';
 
 interface AuthState {
   currentUser: User | null;
@@ -52,6 +53,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ bootstrapping: true });
     try {
       const user = await api.get<User>('/auth/me');
+      syncThemeFromProfile(user.theme);
       set({ currentUser: user, isAuthenticated: true, initialized: true, bootstrapping: false });
     } catch {
       setToken(null);
@@ -63,6 +65,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const res = await api.post<{ token: string; user: User }>('/auth/login', { email, password });
       setToken(res.token);
+      syncThemeFromProfile(res.user.theme);
       set({ currentUser: res.user, isAuthenticated: true, initialized: true });
       return { success: true };
     } catch (e) {
@@ -74,6 +77,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const res = await api.post<{ token: string; user: User }>('/auth/register', { email, password, fullName });
       setToken(res.token);
+      syncThemeFromProfile(res.user.theme);
       set({ currentUser: res.user, isAuthenticated: true, initialized: true });
       return { success: true };
     } catch (e) {
@@ -132,7 +136,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const updated = await api.patch<User>('/users/me/theme', { theme });
       set({ currentUser: updated });
     } catch {
-      // при недоступности сервера тема применится локально до следующей синхронизации
+      // при недоступности сервера тема останется применённой локально до следующей синхронизации
     }
   },
 

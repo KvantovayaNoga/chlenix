@@ -7,9 +7,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
-  // Надёжнее опираться на currentUser: при hard-refresh zustand persist
-  // восстанавливает состояние асинхронно, и isAuthenticated может кратковременно
-  // расходиться с currentUser.
+  // Опора на currentUser: сессия восстанавливается асинхронно при bootstrap
   const { currentUser } = useAuthStore();
 
   if (!currentUser) {
