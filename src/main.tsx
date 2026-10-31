@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 import App from "./App.tsx";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AuthProvider } from "./store/authStore";
 import { DataProvider } from "./store/dataStore";
 import { ThemeProvider, readCachedTheme, applyThemeToDocument } from "./store/themeStore";
@@ -11,6 +12,7 @@ applyThemeToDocument(readCachedTheme());
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
+    <ErrorBoundary>
     <ThemeProvider>
       <AuthProvider>
         <DataProvider>
@@ -18,5 +20,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         </DataProvider>
       </AuthProvider>
     </ThemeProvider>
+  </ErrorBoundary>
   </React.StrictMode>,
 );

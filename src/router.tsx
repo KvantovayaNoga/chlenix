@@ -26,10 +26,58 @@ interface RouterCtx {
 
 const RouterContext = createContext<RouterCtx | null>(null);
 
+// Значение по умолчанию: если хук роутера вызывается вне <Router> (например,
+// компонент смонтирован до готовности дерева или в тестовой обёртке), он не
+// должен ронять всё приложение — страница оставалась пустой (только фон).
+// Вместо броска ошибки возвращаем «теневой» контекст, синхронизированный с
+// window.history и popstate. Внутри <Router> всегда используется настоящий
+// контекст — этот объект служит только страховкой от падения рендера.
+// Подписчики «теневого» роутера (вне <Router>): при popstate/navigate
+// заставляем компоненты перерендериться, чтобы fallback оставался живым.
+const fallbackListeners = new Set<() => void>();
+let fallbackVersion = 0;
+
+function bumpFallback() {
+  fallbackVersion++;
+  fallbackListeners.forEach((l) => l());
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('popstate', bumpFallback);
+}
+
+const fallbackRouter: RouterCtx = {
+  get path() { void fallbackVersion; return window.location.pathname || '/'; },
+  get search() { void fallbackVersion; return window.location.search || ''; },
+  navigate: (to: string, opts?: { replace?: boolean }) => {
+    const url = to || '/';
+    if (opts?.replace) window.history.replaceState(null, '', url);
+    else window.history.pushState(null, '', url);
+    bumpFallback();
+  },
+  setSearch: (init?: string | URLSearchParams, opts?: { replace?: boolean }) => {
+    const qs = init == null ? '' : (typeof init === 'string' ? init : init.toString());
+    const normalized = qs && !qs.startsWith('?') ? `?${qs}` : qs;
+    const url = window.location.pathname + normalized + window.location.hash;
+    if (opts?.replace) window.history.replaceState(null, '', url);
+    else window.history.pushState(null, '', url);
+    bumpFallback();
+  },
+};
+
 function useRouter(): RouterCtx {
   const ctx = useContext(RouterContext);
-  if (!ctx) throw new Error('useRouter must be used within <Router>');
-  return ctx;
+  // Страховка: если хук оказался вне <Router>, не роняем всё приложение
+  // (из-за броска здесь страница оставалась пустой — только фон).
+  // Подписка на bumpFallback нужна, чтобы fallback-роутер перерисовывался
+  // при popstate/навигации так же, как настоящий провайдер.
+  const [, force] = useState(0);
+  useEffect(() => {
+    if (ctx) return;
+    fallbackListeners.add(force as unknown as () => void);
+    return () => { fallbackListeners.delete(force as unknown as () => void); };
+  }, [ctx]);
+  return ctx ?? fallbackRouter;
 }
 
 export function useNavigate(): NavigateFunction {
@@ -83,7 +131,8 @@ function matchPath(pattern: string, pathname: string): Record<string, string> | 
 const ParamsContext = createContext<Record<string, string>>({});
 
 export function useParams(): Record<string, string> {
-  return useContext(ParamsContext);
+  // значение по умолчанию {} — вне маршрута не роняем рендер
+  return useContext(ParamsContext) ?? {};
 }
 
 // ---------- контекст родительского элемента (для Outlet) ----------

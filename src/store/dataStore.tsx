@@ -412,12 +412,79 @@ export function DataProvider({ children }: { children: ReactNode }) {
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 
-// Совместимое имя хука. Вызов без аргумента возвращает всё состояние
-// (как раньше useDataStore()); вызов с селектором — выбранное поле.
+const asyncNoop = async (..._a: unknown[]) => undefined;
+
+// Пустое резервное состояние: если хук вызван вне <DataProvider>,
+// рендер продолжается с пустыми данными вместо падения (страховка от
+// «только фон» на продакшен-сборке). Провайдеры всегда смонтированы в main.tsx.
+const EMPTY_DATA_STATE: DataState = {
+  organizations: [],
+  departments: [],
+  positions: [],
+  branches: [],
+  employees: [],
+  equipment: [],
+  virtualMachines: [],
+  services: [],
+  auditLog: [],
+  loaded: false,
+  loading: false,
+  error: null,
+  loadAll: asyncNoop as unknown as DataState['loadAll'],
+  clearError: () => {},
+  addOrganization: asyncNoop as unknown as DataState['addOrganization'],
+  updateOrganization: asyncNoop as unknown as DataState['updateOrganization'],
+  deleteOrganization: asyncNoop as unknown as DataState['deleteOrganization'],
+  getOrganizationById: (() => undefined) as unknown as DataState['getOrganizationById'],
+  getCurrentUserOrganization: (() => undefined) as unknown as DataState['getCurrentUserOrganization'],
+  addDepartment: asyncNoop as unknown as DataState['addDepartment'],
+  updateDepartment: asyncNoop as unknown as DataState['updateDepartment'],
+  deleteDepartment: asyncNoop as unknown as DataState['deleteDepartment'],
+  addPosition: asyncNoop as unknown as DataState['addPosition'],
+  updatePosition: asyncNoop as unknown as DataState['updatePosition'],
+  deletePosition: asyncNoop as unknown as DataState['deletePosition'],
+  addBranch: asyncNoop as unknown as DataState['addBranch'],
+  updateBranch: asyncNoop as unknown as DataState['updateBranch'],
+  deleteBranch: asyncNoop as unknown as DataState['deleteBranch'],
+  addEmployee: asyncNoop as unknown as DataState['addEmployee'],
+  updateEmployee: asyncNoop as unknown as DataState['updateEmployee'],
+  deleteEmployee: asyncNoop as unknown as DataState['deleteEmployee'],
+  getEmployeeById: (() => undefined) as unknown as DataState['getEmployeeById'],
+  addEquipment: asyncNoop as unknown as DataState['addEquipment'],
+  updateEquipment: asyncNoop as unknown as DataState['updateEquipment'],
+  deleteEquipment: asyncNoop as unknown as DataState['deleteEquipment'],
+  getEquipmentById: (() => undefined) as unknown as DataState['getEquipmentById'],
+  getEquipmentByEmployee: (() => []) as unknown as DataState['getEquipmentByEmployee'],
+  getUnassignedEquipment: (() => []) as unknown as DataState['getUnassignedEquipment'],
+  assignEquipment: asyncNoop as unknown as DataState['assignEquipment'],
+  unassignEquipment: asyncNoop as unknown as DataState['unassignEquipment'],
+  addVM: asyncNoop as unknown as DataState['addVM'],
+  updateVM: asyncNoop as unknown as DataState['updateVM'],
+  deleteVM: asyncNoop as unknown as DataState['deleteVM'],
+  getVMById: (() => undefined) as unknown as DataState['getVMById'],
+  getVMsByHost: (() => []) as unknown as DataState['getVMsByHost'],
+  getVMsByResponsible: (() => []) as unknown as DataState['getVMsByResponsible'],
+  addNetworkInterface: asyncNoop as unknown as DataState['addNetworkInterface'],
+  removeNetworkInterface: asyncNoop as unknown as DataState['removeNetworkInterface'],
+  addService: asyncNoop as unknown as DataState['addService'],
+  updateService: asyncNoop as unknown as DataState['updateService'],
+  deleteService: asyncNoop as unknown as DataState['deleteService'],
+  getServicesByVM: (() => []) as unknown as DataState['getServicesByVM'],
+  getDashboardStats: (() => ({
+    totalEmployees: 0, activeEmployees: 0, totalEquipment: 0, assignedEquipment: 0,
+    totalServers: 0, onlineServers: 0, offlineServers: 0, totalVMs: 0, runningVMs: 0,
+    stoppedVMs: 0, totalServices: 0, healthyServices: 0, problematicServices: 0,
+    totalOrganizations: 0, totalDepartments: 0,
+  })) as unknown as DataState['getDashboardStats'],
+};
+
+// Совместимое имя хука. Вызов без аргумента возвращает всё состояние;
+// вызов с селектором — выбранное поле.
 export function useDataStore(): DataState;
 export function useDataStore<T>(selector: (state: DataState) => T): T;
 export function useDataStore<T>(selector?: (state: DataState) => T): DataState | T {
   const ctx = useContext(DataContext);
-  if (!ctx) throw new Error('useDataStore must be used within DataProvider');
-  return selector ? selector(ctx) : ctx;
+  // Fallback вместо броска: отсутствие провайдера не должно обрывать рендер.
+  const value = ctx ?? EMPTY_DATA_STATE;
+  return selector ? selector(value) : value;
 }

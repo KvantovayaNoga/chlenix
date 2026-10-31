@@ -202,12 +202,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-// Совместимое имя хука. Вызов без аргумента возвращает всё состояние
-// (как раньше useAuthStore()); вызов с селектором — выбранное поле.
+// Резервное состояние на случай, если хук вызван вне <AuthProvider>:
+// рендер не должен обрываться ошибкой (иначе страница — только фон).
+const authFallback: AuthState = {
+  currentUser: null,
+  users: [],
+  isAuthenticated: false,
+  initialized: true,
+  bootstrapping: false,
+  bootstrap: async () => {},
+  login: async () => ({ success: false, error: 'Сервер недоступен' }),
+  register: async () => ({ success: false, error: 'Сервер недоступен' }),
+  logout: () => {},
+  refreshUsers: async () => {},
+  addUser: async () => ({ success: false, error: 'Сервер недоступен' }),
+  updateUser: async () => ({ success: false, error: 'Сервер недоступен' }),
+  deleteUser: async () => ({ success: false, error: 'Сервер недоступен' }),
+  setTheme: async () => {},
+  getUserRole: () => null,
+  canEdit: () => false,
+  canManageUsers: () => false,
+  hasOrganization: () => false,
+};
+
+// Совместимое имя хука. Вызов без аргумента возвращает всё состояние;
+// вызов с селектором — выбранное поле.
 export function useAuthStore(): AuthState;
 export function useAuthStore<T>(selector: (state: AuthState) => T): T;
 export function useAuthStore<T>(selector?: (state: AuthState) => T): AuthState | T {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuthStore must be used within AuthProvider');
-  return selector ? selector(ctx) : ctx;
+  const value = ctx ?? authFallback;
+  return selector ? selector(value) : value;
 }

@@ -73,10 +73,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 }
 
 // Совместимое имя хука (используется в компонентах как раньше)
+const fallbackTheme: ThemeContextValue = {
+  theme: readCachedTheme(),
+  setTheme: (next) => { cacheTheme(next); applyThemeToDocument(next); },
+};
+
 export function useThemeStore(): ThemeContextValue {
   const ctx = useContext(ThemeContext);
-  if (!ctx) throw new Error('useThemeStore must be used within ThemeProvider');
-  return ctx;
+  // не роняем приложение, если компонент оказался вне ThemeProvider
+  return ctx ?? fallbackTheme;
 }
 
 // Синхронизация темы с профилем пользователя (после bootstrap/логина):
