@@ -32,11 +32,12 @@ function App() {
   const navigate = useNavigate();
 
   // При истечении сессии (401 от API) перенаправляем на страницу входа
+  // (состояние авторизации очищается в AuthProvider)
   useEffect(() => {
     const onUnauthorized = () => navigate('/login', { replace: true });
     window.addEventListener('chlenix:unauthorized', onUnauthorized);
     return () => window.removeEventListener('chlenix:unauthorized', onUnauthorized);
-  }, [navigate]);
+  }, [isAuthenticated, navigate]);
 
   return (
     <BrowserRouter>
