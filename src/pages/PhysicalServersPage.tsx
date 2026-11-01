@@ -109,10 +109,9 @@ export function PhysicalServersPage() {
           server={editingServer}
           onClose={() => { setShowAddModal(false); setEditingServer(null); }}
           onSave={(data) => {
-            if (editingServer) { updateEquipment(editingServer.id, data); }
+            if (editingServer) { updateEquipment(editingServer.id, normalizeServerPayload(data, false)); }
             else {
-              const category = data.serverRole === 'storage' ? 'storage' : 'server';
-              addEquipment({ ...data, category } as any);
+              addEquipment(normalizeServerPayload(data, true) as any);
             }
             setShowAddModal(false); setEditingServer(null);
           }}
