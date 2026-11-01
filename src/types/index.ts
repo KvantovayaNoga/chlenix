@@ -34,7 +34,7 @@ export type OrganizationLegalForm = 'OOO' | 'AO' | 'PAO' | 'IAO' | 'IPO' | 'PT' 
 export interface Organization {
   id: string;
   name: string;                 // Наименование организации
-  legalForm: OrganizationLegalForm; // Организационно-правовая форма
+  legalForm: string | null;     // ОПФ — свободный текст (вводится вручную)
   shortName: string;            // Краткое наименование
   inn: string;                  // ИНН
   kpp: string;                  // КПП (может отсутствовать, например у ИП)
@@ -47,7 +47,9 @@ export interface Organization {
   email: string;                // Email
   website: string;              // Сайт
   directorName: string;         // Руководитель (ФИО)
-  accountantName: string;       // Главный бухгалтер (ФИО)
+  /** @deprecated Главный бухгалтер больше не указывается в карточке организации —
+   * он определяется по штатному расписанию (должность среди сотрудников). */
+  accountantName?: string;
   bankName: string;             // Наименование банка
   checkingAccount: string;      // Расчётный счёт
   correspondentAccount: string; // Корреспондентский счёт
@@ -112,7 +114,7 @@ export interface Employee {
   hireDate: string;
   isEmployed: boolean;
   // Рабочее место
-  branchId: string;
+  branchId: string | null;      // филиал необязателен
   floor: string;
   room: string;
   notes: string;

@@ -622,31 +622,38 @@ app.delete('/api/users/:id', authMiddleware, requireRole(['admin']), async (c) =
 // ============================================================
 // Organizations Routes
 // ============================================================
+// Свободные текстовые поля организации (ОПФ вводится вручную, главный бухгалтер упразднён)
+const orgText = z.preprocess(
+  (v) => (typeof v === 'string' ? (v.trim() === '' ? null : v.trim()) : v ?? null),
+  z.string().max(500).nullable().optional(),
+);
+
 const organizationSchema = z.object({
   name: z.string().min(2),
-  legalForm: z.string().min(1),
-  shortName: z.string().min(1),
+  legalForm: orgText,          // ОПФ — произвольный текст (вводится руками)
+  shortName: orgText,
   inn: z.string().min(4),
-  kpp: z.string().optional().nullable(),
+  kpp: orgText,
   ogrn: z.string().min(4),
-  legalAddress: z.string().min(3),
-  actualAddress: z.string().optional().nullable(),
-  postalCode: z.string().optional().nullable(),
-  city: z.string().optional().nullable(),
-  phone: z.string().optional().nullable(),
-  email: z.string().optional().nullable(),
-  website: z.string().optional().nullable(),
-  directorName: z.string().optional().nullable(),
-  bankName: z.string().optional().nullable(),
-  checkingAccount: z.string().optional().nullable(),
-  correspondentAccount: z.string().optional().nullable(),
-  bik: z.string().optional().nullable(),
-  taxSystem: z.string().optional().nullable(),
-  industry: z.string().optional().nullable(),
-  employeeCount: z.number().int().nullable().optional(),
-  foundedDate: z.string().optional().nullable(),
-  logo: z.string().optional().nullable(),
-  notes: z.string().optional().nullable(),
+  legalAddress: orgText,       // юридический адрес необязателен
+  actualAddress: orgText,
+  postalCode: orgText,
+  city: orgText,
+  phone: orgText,
+  email: z.string().email().nullable().optional().or(z.literal('')),
+  website: orgText,
+  directorName: orgText,
+  accountantName: orgText,     // устаревшее поле (главный бухгалтер берётся из штатного расписания)
+  bankName: orgText,
+  checkingAccount: orgText,
+  correspondentAccount: orgText,
+  bik: orgText,
+  taxSystem: orgText,
+  industry: orgText,
+  employeeCount: z.preprocess((v) => (v === '' || v === undefined ? null : v), z.number().int().nullable().optional()),
+  foundedDate: orgText,
+  logo: z.string().nullable().optional(),
+  notes: orgText,
 });
 
 function publicOrganization(o: any) {
@@ -693,19 +700,20 @@ app.post('/api/organizations', authMiddleware, requireRole(['admin']), async (c)
   const org = await prisma.organization.create({
     data: {
       name: parsed.data.name,
-      legalForm: parsed.data.legalForm,
-      shortName: parsed.data.shortName,
+      legalForm: parsed.data.legalForm ?? null,
+      shortName: parsed.data.shortName ?? parsed.data.name,
       inn: parsed.data.inn,
       ogrn: parsed.data.ogrn,
-      legalAddress: parsed.data.legalAddress,
+      legalAddress: parsed.data.legalAddress ?? null,
       kpp: parsed.data.kpp ?? null,
       actualAddress: parsed.data.actualAddress ?? null,
       postalCode: parsed.data.postalCode ?? null,
       city: parsed.data.city ?? null,
       phone: parsed.data.phone ?? null,
-      email: parsed.data.email ?? null,
+      email: typeof parsed.data.email === 'string' && parsed.data.email ? parsed.data.email : null,
       website: parsed.data.website ?? null,
       directorName: parsed.data.directorName ?? null,
+      accountantName: parsed.data.accountantName ?? null,
       bankName: parsed.data.bankName ?? null,
       checkingAccount: parsed.data.checkingAccount ?? null,
       correspondentAccount: parsed.data.correspondentAccount ?? null,
@@ -724,8 +732,9 @@ app.post('/api/organizations', authMiddleware, requireRole(['admin']), async (c)
   await createHistoryEntry('organization', org.id, currentUser.fullName);
   await writeAudit(currentUser, 'create', 'organization', org.id, org.name, `Создана организация "${org.name}"`, c.req.header('x-forwarded-for'));
 
-  // Создавший становится привязанным к организации
+  // Создавший и все пользователи без организации привязываются к ней
   await prisma.user.update({ where: { id: currentUser.userId }, data: { organizationId: org.id } });
+  await prisma.user.updateMany({ where: { organizationId: null }, data: { organizationId: org.id } });
 
   return c.json(publicOrganization(org), 201);
 });
@@ -788,12 +797,16 @@ const employeeSchema = z.object({
   middleName: z.string().optional().nullable(),
   positionId: z.string().min(1),
   departmentId: z.string().min(1),
-  branchId: z.string().min(1),
-  email: z.string().email().optional().nullable(),
+  // Филиал необязателен (создавать филиалы не обязательно — сотрудник может быть без филиала)
+  branchId: z.string().optional().nullable(),
+  email: z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), z.string().email().nullable().optional()),
   workPhone: z.string().optional().nullable(),
   internalPhone: z.string().optional().nullable(),
   personalPhone: z.string().optional().nullable(),
-  hireDate: z.coerce.date(),
+  hireDate: z.preprocess(
+    (v) => (v === '' || v === undefined || v === null ? new Date() : v),
+    z.coerce.date(),
+  ),
   isEmployed: z.boolean().optional(),
   floor: z.string().optional().nullable(),
   room: z.string().optional().nullable(),
@@ -873,9 +886,10 @@ app.post('/api/employees', authMiddleware, requireRole(['admin', 'materially_res
 
   const positionId = await resolveRef('position', data.positionId);
   const departmentId = await resolveRef('department', data.departmentId);
-  const branchId = await resolveRef('branch', data.branchId);
-  if (!positionId || !departmentId || !branchId) {
-    return c.json({ error: 'Справочники (должность/отдел/филиал) выбраны некорректно' }, 400);
+  // Филиал необязателен: пустое/некорректное значение => null (сотрудник без филиала)
+  const branchId = await resolveRefOrNull('branch', data.branchId ?? undefined) ?? null;
+  if (!positionId || !departmentId) {
+    return c.json({ error: 'Справочники (должность/отдел) выбраны некорректно' }, 400);
   }
 
   const employee = await prisma.employee.create({
@@ -922,7 +936,7 @@ app.put('/api/employees/:id', authMiddleware, requireRole(['admin', 'materially_
   if (newData.hireDate && !(newData.hireDate instanceof Date)) newData.hireDate = new Date(newData.hireDate);
   if ('positionId' in newData) newData.positionId = await resolveRef('position', newData.positionId) ?? old.positionId;
   if ('departmentId' in newData) newData.departmentId = await resolveRef('department', newData.departmentId) ?? old.departmentId;
-  if ('branchId' in newData) newData.branchId = await resolveRef('branch', newData.branchId) ?? old.branchId;
+  if ('branchId' in newData) newData.branchId = await resolveRefOrNull('branch', newData.branchId ?? undefined) ?? null;
   newData.updatedById = currentUser.userId;
 
   const employee = await prisma.employee.update({ where: { id }, data: newData, include: employeeInclude });

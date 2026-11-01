@@ -3,20 +3,6 @@ import { useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { useDataStore } from '../store/dataStore';
 import { Building2, ArrowLeft, Save, Eye, EyeOff } from 'lucide-react';
-import type { OrganizationLegalForm } from '../types';
-
-const legalForms: { value: OrganizationLegalForm; label: string }[] = [
-  { value: 'OOO', label: 'ООО — Общество с ограниченной ответственностью' },
-  { value: 'AO', label: 'АО — Акционерное общество' },
-  { value: 'PAO', label: 'ПАО — Публичное акционерное общество' },
-  { value: 'IAO', label: 'АО (непубличное)' },
-  { value: 'PT', label: 'Товарищество на вере (полное товарищество)' },
-  { value: 'GP', label: 'Производственный кооператив (артель)' },
-  { value: 'ANO', label: 'АНО — Автономная некоммерческая организация' },
-  { value: 'FGBU', label: 'ФГБУ — Федеральное государственное бюджетное учреждение' },
-  { value: 'MBU', label: 'МБУ — Муниципальное бюджетное учреждение' },
-  { value: 'IP', label: 'ИП — Индивидуальный предприниматель' },
-];
 
 const taxSystems = [
   'ОСНО (общая система налогообложения)',
