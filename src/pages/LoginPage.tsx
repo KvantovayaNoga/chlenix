@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Link, useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { Building2, LogIn, Eye, EyeOff } from 'lucide-react';
-import { ThemeToggle } from '../components/ThemeToggle';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
@@ -28,10 +27,6 @@ export function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 via-indigo-50 to-slate-100 dark:from-slate-900 dark:via-indigo-950 dark:to-slate-900 flex items-center justify-center p-4">
-      {/* Переключатель темы */}
-      <div className="absolute top-4 right-4">
-        <ThemeToggle />
-      </div>
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">

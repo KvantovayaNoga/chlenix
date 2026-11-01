@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
-import { ThemeToggle } from '../components/ThemeToggle';
 import { Building2, UserPlus, Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react';
 
 export function RegisterPage() {
@@ -47,9 +46,6 @@ export function RegisterPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 via-indigo-50 to-slate-100 dark:from-slate-900 dark:via-indigo-950 dark:to-slate-900 flex items-center justify-center p-4">
-      <div className="absolute top-4 right-4">
-        <ThemeToggle />
-      </div>
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
