@@ -171,6 +171,10 @@ model Equipment {
   branchId              String          @map("branch_id")
   floor                 String?
   room                  String?
+  // Роль в системе виртуализации: хост гипервизора / СХД / консоль управления / автономный
+  serverRole            String?         @map("server_role")
+  // Название гипервизора, если это хост (VMware ESXi, Proxmox VE, Hyper-V…)
+  hypervisorName        String?         @map("hypervisor_name")
   notes                 String?
   createdAt             DateTime        @default(now()) @map("created_at")
   updatedAt             DateTime        @updatedAt @map("updated_at")
@@ -199,6 +203,7 @@ enum EquipmentCategory {
   peripheral
   furniture
   server
+  storage
   virtual_machine
   network
   phone
@@ -230,6 +235,8 @@ model VirtualMachine {
   responsibleEmployeeId       String?   @map("responsible_employee_id")
   serviceResponsibleEmployeeId String?  @map("service_responsible_employee_id")
   status                      VMStatus  @default(running)
+  // Роль ВМ в системе виртуализации (например, консоль управления — vCenter как ВМ)
+  serverRole                  String?   @map("server_role")
   notes                       String?
   createdAt                   DateTime  @default(now()) @map("created_at")
   updatedAt                   DateTime  @updatedAt @map("updated_at")

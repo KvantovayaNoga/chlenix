@@ -5,7 +5,8 @@ import { useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { HistoryLog } from '../components/HistoryLog';
-import type { Equipment } from '../types';
+import type { Equipment, ServerRole } from '../types';
+import { serverRoleLabels, serverRoleOptions, hypervisorSuggestions } from '../utils/virtualization';
 
 export function PhysicalServersPage() {
   const { equipment, branches, addEquipment, updateEquipment, deleteEquipment, getVMsByHost } = useDataStore();
@@ -15,7 +16,9 @@ export function PhysicalServersPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [viewingHistory, setViewingHistory] = useState<Equipment | null>(null);
 
-  const servers = equipment.filter(eq => eq.category === 'server');
+  // Серверы организации: категория «Сервер» или «СХД», либо любой единице
+  // выставлена роль в системе виртуализации (хост/СХД/консоль управления).
+  const servers = equipment.filter(eq => eq.category === 'server' || eq.category === ('storage' as any) || !!eq.serverRole);
   const getBranchName = (id: string) => {
     const branch = branches.find(b => b.id === id);
     return branch?.name || '—';
@@ -49,8 +52,18 @@ export function PhysicalServersPage() {
                 <div className="flex items-center gap-3">
                   <div className="bg-red-50 dark:bg-red-900/30 p-3 rounded-lg"><Server className="w-6 h-6 text-red-600 dark:text-red-400" /></div>
                   <div>
-                    <h3 className="font-semibold text-gray-800 dark:text-gray-100">{server.name}</h3>
+                    <h3 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                      {server.name}
+                      {server.serverRole && server.serverRole !== 'standalone' && (
+                        <span className={`text-xs font-normal px-2 py-0.5 rounded-full ${serverRoleLabels[server.serverRole].color}`}>
+                          {serverRoleLabels[server.serverRole].label}
+                        </span>
+                      )}
+                    </h3>
                     <p className="text-sm text-gray-500 dark:text-gray-400">{server.brand} {server.model}</p>
+                    {server.hypervisorName && (
+                      <p className="text-xs text-purple-600 dark:text-purple-400 mt-0.5">Гипервизор: {server.hypervisorName}</p>
+                    )}
                   </div>
                 </div>
                 {canEdit() && (
@@ -97,7 +110,10 @@ export function PhysicalServersPage() {
           onClose={() => { setShowAddModal(false); setEditingServer(null); }}
           onSave={(data) => {
             if (editingServer) { updateEquipment(editingServer.id, data); }
-            else { addEquipment({ ...data, category: 'server' } as any); }
+            else {
+              const category = data.serverRole === 'storage' ? 'storage' : 'server';
+              addEquipment({ ...data, category } as any);
+            }
             setShowAddModal(false); setEditingServer(null);
           }}
           branches={branches}
@@ -114,6 +130,8 @@ function ServerModal({ server, onClose, onSave, branches }: any) {
     condition: server?.condition || 'good', assignedToEmployeeId: server?.assignedToEmployeeId || null,
     branchId: server?.branchId || '', floor: server?.floor || '', room: server?.room || '',
     cpuCores: server?.cpuCores || null, ramGB: server?.ramGB || null, diskGB: server?.diskGB || null,
+    serverRole: (server?.serverRole || '') as ServerRole | '',
+    hypervisorName: server?.hypervisorName || '',
     notes: server?.notes || '',
   });
 
@@ -139,6 +157,33 @@ function ServerModal({ server, onClose, onSave, branches }: any) {
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Филиал *</label><select value={formData.branchId} onChange={(e) => setFormData(p => ({ ...p, branchId: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required><option value="">Выберите филиал</option>{branches.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Этаж</label><input type="text" value={formData.floor} onChange={(e) => setFormData(p => ({ ...p, floor: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Необязательно" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Кабинет/помещение</label><input type="text" value={formData.room} onChange={(e) => setFormData(p => ({ ...p, room: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Серверная" /></div>
+          </div>
+          {/* Система виртуализации: роль сервера и гипервизор */}
+          <div className="border border-purple-100 dark:border-purple-900/50 rounded-xl p-4 bg-purple-50/40 dark:bg-purple-900/10 space-y-3">
+            <p className="text-sm font-semibold text-purple-700 dark:text-purple-300">Система виртуализации</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Роль в инфраструктуре</label>
+                <select
+                  value={formData.serverRole}
+                  onChange={(e) => setFormData(p => ({ ...p, serverRole: e.target.value as ServerRole | '' }))}
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                >
+                  {serverRoleOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              {(formData.serverRole === 'hypervisor_host' || formData.serverRole === 'management_console') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Гипервизор / платформа</label>
+                  <input list="hypervisor-suggestions" type="text" value={formData.hypervisorName} onChange={(e) => setFormData(p => ({ ...p, hypervisorName: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="VMware ESXi, Proxmox VE…" />
+                  <datalist id="hypervisor-suggestions">{hypervisorSuggestions.map(h => <option key={h} value={h} />)}</datalist>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Например: два сервера — хосты гипервизора, один — СХД, а консоль управления (vCenter, Proxmox VE) — физический сервер или ВМ.
+              После указания роли в сайдбаре появится раздел «Платформа виртуализации».
+            </p>
           </div>
           <EmployeeSearch
             value={formData.assignedToEmployeeId}

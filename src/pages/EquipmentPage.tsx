@@ -3,7 +3,7 @@ import { useDataStore } from '../store/dataStore';
 import { useAuthStore } from '../store/authStore';
 import {
   Search, Plus, Monitor, Server, Armchair, MousePointerClick, Network, Phone, Package,
-  X, Edit, Trash2, Cpu, Clock, User, History, Filter, Save,
+  X, Edit, Trash2, Cpu, Clock, User, History, Filter, Save, HardDrive,
 } from 'lucide-react';
 import type { Equipment, EquipmentCategory } from '../types';
 import { HistoryLog } from '../components/HistoryLog';
@@ -12,13 +12,13 @@ import { FilterManager, SavedFilter } from '../components/FilterManager';
 
 const categoryLabels: Record<EquipmentCategory, string> = {
   computer: 'Компьютеры', monitor: 'Мониторы', peripheral: 'Периферия', furniture: 'Мебель',
-  server: 'Серверы', virtual_machine: 'Виртуальные машины', network: 'Сетевое оборудование',
+  server: 'Серверы', storage: 'СХД', virtual_machine: 'Виртуальные машины', network: 'Сетевое оборудование',
   phone: 'Телефоны', other: 'Прочее',
 };
 
 const categoryIcons: Record<EquipmentCategory, React.ElementType> = {
   computer: Monitor, monitor: Monitor, peripheral: MousePointerClick, furniture: Armchair,
-  server: Server, virtual_machine: Cpu, network: Network, phone: Phone, other: Package,
+  server: Server, storage: HardDrive, virtual_machine: Cpu, network: Network, phone: Phone, other: Package,
 };
 
 const conditionLabels = {

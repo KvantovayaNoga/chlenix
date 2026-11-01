@@ -18,7 +18,9 @@ import {
   BookMarked,
   Plus,
   ArrowLeftRight,
+  Layers,
 } from 'lucide-react';
+import { hasVirtualizationFeature } from '../utils/virtualization';
 
 const roleLabels = {
   admin: 'Администратор',
@@ -34,7 +36,10 @@ const roleColors = {
 
 export function Sidebar() {
   const { currentUser, logout, canManageUsers, myOrganizations } = useAuthStore();
-  const { organizations } = useDataStore();
+  const { organizations, equipment, virtualMachines } = useDataStore();
+  // «Платформа виртуализации» изначально скрыта: пункт появляется в сайдбаре,
+  // когда хотя бы у одного сервера/ВМ выставлена роль в системе виртуализации.
+  const showVirtualization = hasVirtualizationFeature(equipment, virtualMachines);
   const organization = organizations.find((o) => o.id === currentUser?.organizationId);
   const hasOrganization = !!currentUser?.organizationId;
   const navigate = useNavigate();
@@ -71,6 +76,9 @@ export function Sidebar() {
           { to: '/equipment', label: 'Оборудование', icon: Monitor },
           { to: '/servers/physical', label: 'Физические серверы', icon: Server },
           { to: '/servers', label: 'Виртуальные машины', icon: Cpu },
+          ...(showVirtualization
+            ? [{ to: '/servers/virtualization', label: 'Платформа виртуализации', icon: Layers }]
+            : []),
         ]
       : []),
   ];

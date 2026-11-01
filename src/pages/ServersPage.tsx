@@ -6,7 +6,8 @@ import { useSearchParams } from '../router';
 import {
   Cpu, Network, Globe, Plus, Edit, Trash2, X, Server, Activity, Search, Filter, Save,
 } from 'lucide-react';
-import type { VirtualMachine, NetworkInterface, Service } from '../types';
+import type { VirtualMachine, NetworkInterface, Service, ServerRole } from '../types';
+import { serverRoleLabels, serverRoleOptions } from '../utils/virtualization';
 import { parsePortList } from '../types';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
@@ -252,7 +253,12 @@ export function ServersPage() {
                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${status.color}`}>{status.label}</span>
                     {publicIPs.length > 0 && <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 flex items-center gap-1"><Globe className="w-3 h-3" />{publicIPs.length} белый IP</span>}
                   </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 font-mono">{vm.hostname} • {vm.os}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 font-mono">
+                    {vm.hostname} • {vm.os}
+                    {vm.serverRole && vm.serverRole !== 'standalone' && (
+                      <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${serverRoleLabels[vm.serverRole].color}`}>{serverRoleLabels[vm.serverRole].label}</span>
+                    )}
+                  </p>
                 </div>
                 {canEdit() && (
                   <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
@@ -480,6 +486,7 @@ function VMEditModal({ vm, onClose, onSave, servers, employees }: any) {
     os: vm?.os || '', cpuCores: vm?.cpuCores || 2, ramGB: vm?.ramGB || 4, diskGB: vm?.diskGB || 50,
     responsibleEmployeeId: vm?.responsibleEmployeeId || null, serviceResponsibleEmployeeId: vm?.serviceResponsibleEmployeeId || null,
     status: vm?.status || 'running', notes: vm?.notes || '',
+    serverRole: (vm?.serverRole || '') as ServerRole | '',
   });
 
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
@@ -501,6 +508,13 @@ function VMEditModal({ vm, onClose, onSave, servers, employees }: any) {
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RAM (ГБ)</label><input type="number" value={formData.ramGB} onChange={(e) => setFormData(p => ({ ...p, ramGB: +e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" min="1" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Диск (ГБ)</label><input type="number" value={formData.diskGB} onChange={(e) => setFormData(p => ({ ...p, diskGB: +e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" min="1" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Статус</label><select value={formData.status} onChange={(e) => setFormData(p => ({ ...p, status: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">{Object.entries(vmStatusLabels).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Роль в системе виртуализации</label>
+              <select value={formData.serverRole} onChange={(e) => setFormData(p => ({ ...p, serverRole: e.target.value as ServerRole | '' }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                {serverRoleOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Например: консоль управления гипервизором (vCenter / Proxmox VE), размещённая как ВМ.</p>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <EmployeeSearch

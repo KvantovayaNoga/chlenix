@@ -15,6 +15,7 @@ import { EmployeeDetailPage } from './pages/EmployeeDetailPage';
 import { EquipmentPage } from './pages/EquipmentPage';
 import { ServersPage } from './pages/ServersPage';
 import { PhysicalServersPage } from './pages/PhysicalServersPage';
+import { VirtualizationPlatformPage } from './pages/VirtualizationPlatformPage';
 import { UsersPage } from './pages/UsersPage';
 import { UserProfilePage } from './pages/UserProfilePage';
 import { DirectoriesPage } from './pages/DirectoriesPage';
@@ -60,6 +61,7 @@ function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/servers" element={<ServersPage />} />
           <Route path="/servers/physical" element={<PhysicalServersPage />} />
+          <Route path="/servers/virtualization" element={<VirtualizationPlatformPage />} />
           <Route path="/employees" element={<EmployeesPage />} />
           <Route path="/employees/:id" element={<EmployeeDetailPage />} />
           <Route path="/equipment" element={<EquipmentPage />} />
