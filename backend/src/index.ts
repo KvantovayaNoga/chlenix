@@ -497,11 +497,15 @@ app.post('/api/auth/switch-organization', authMiddleware, async (c) => {
     data: { organizationId: target.id },
   });
 
-  // Перевыпускаем токен с новой организацией — клиент заменит его в localStorage
+  // Перевыпускаем токен с новой организацией — клиент заменит его в localStorage.
+  // ВАЖНО: вместе с пользователем возвращаем и accessibleOrganizations — иначе фронт
+  // перезапишет currentUser без этого поля, и кнопка «Сменить организацию» в сайдбаре
+  // исчезнет до перезагрузки страницы (страница /login тоже отдаёт это поле).
   const token = await issueToken(user);
+  const accessibleOrganizations = await getAccessibleOrgs(user.id);
   await writeAudit(me, 'update', 'user', user.id, user.fullName, `Переключение на организацию «${target.name}»`, c.req.header('x-forwarded-for'));
 
-  return c.json({ token, user: publicUser(user) });
+  return c.json({ token, user: { ...publicUser(user), accessibleOrganizations } });
 });
 
 // Сохранение выбора темы оформления в БД (light | dark | system)
