@@ -138,13 +138,13 @@ export function UserProfilePage() {
 
   return (
     <div>
-      <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-800 dark:text-gray-800 dark:text-gray-200 mb-6">
+      <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-800 dark:text-gray-200 mb-6">
         <ArrowLeft className="w-5 h-5" />
         <span>Назад</span>
       </button>
 
       <div className="max-w-2xl">
-        <div className="bg-white dark:bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-200 dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
           <div className="flex items-start justify-between mb-6">
             <div className="flex items-center gap-4">
               <div className="relative group">
@@ -210,7 +210,7 @@ export function UserProfilePage() {
                 />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-800 dark:text-gray-200">{user.fullName}</h1>
+                <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-200">{user.fullName}</h1>
                 <p className="text-gray-400 mt-1">{user.email}</p>
                 <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-medium ${
                   user.role === 'admin' ? 'bg-red-100 text-red-700' :
@@ -233,37 +233,37 @@ export function UserProfilePage() {
           {isEditing ? (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-600 dark:text-gray-600 dark:text-gray-300 mb-2">Аватар</label>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">Аватар</label>
                 <AvatarUpload
                   currentAvatar={editData.avatar}
                   onAvatarChange={(avatar) => setEditData({ ...editData, avatar })}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-600 dark:text-gray-600 dark:text-gray-300 mb-1">ФИО</label>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">ФИО</label>
                 <input
                   type="text"
                   value={editData.fullName}
                   onChange={(e) => setEditData({ ...editData, fullName: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-800 dark:text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-600 dark:text-gray-600 dark:text-gray-300 mb-1">Email</label>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Email</label>
                 <input
                   type="email"
                   value={editData.email}
                   onChange={(e) => setEditData({ ...editData, email: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-800 dark:text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-600 dark:text-gray-600 dark:text-gray-300 mb-1">Новый пароль (оставьте пустым, чтобы не менять)</label>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Новый пароль (оставьте пустым, чтобы не менять)</label>
                 <input
                   type="password"
                   value={editData.password}
                   onChange={(e) => setEditData({ ...editData, password: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-800 dark:text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="••••••••"
                 />
               </div>
@@ -271,7 +271,7 @@ export function UserProfilePage() {
                 <button onClick={handleSave} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
                   Сохранить
                 </button>
-                <button onClick={() => setIsEditing(false)} className="px-5 py-2.5 border border-gray-600 rounded-lg text-gray-600 dark:text-gray-600 dark:text-gray-300 hover:bg-gray-700">
+                <button onClick={() => setIsEditing(false)} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
                   Отмена
                 </button>
               </div>
@@ -279,28 +279,28 @@ export function UserProfilePage() {
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-gray-700 rounded-lg p-4">
+                <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4">
                   <div className="flex items-center gap-2 text-gray-400 text-sm mb-1">
                     <Mail className="w-4 h-4" />
                     Email
                   </div>
-                  <p className="text-gray-800 dark:text-gray-800 dark:text-gray-200">{user.email}</p>
+                  <p className="text-gray-800 dark:text-gray-200">{user.email}</p>
                 </div>
-                <div className="bg-gray-700 rounded-lg p-4">
+                <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4">
                   <div className="flex items-center gap-2 text-gray-400 text-sm mb-1">
                     <Shield className="w-4 h-4" />
                     Роль
                   </div>
-                  <p className="text-gray-800 dark:text-gray-800 dark:text-gray-200">{roleLabels[user.role]}</p>
+                  <p className="text-gray-800 dark:text-gray-200">{roleLabels[user.role]}</p>
                 </div>
-                <div className="bg-gray-700 rounded-lg p-4">
+                <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4">
                   <div className="flex items-center gap-2 text-gray-400 text-sm mb-1">
                     <Calendar className="w-4 h-4" />
                     Дата создания
                   </div>
-                  <p className="text-gray-800 dark:text-gray-800 dark:text-gray-200">{new Date(user.createdAt).toLocaleDateString('ru-RU')}</p>
+                  <p className="text-gray-800 dark:text-gray-200">{new Date(user.createdAt).toLocaleDateString('ru-RU')}</p>
                 </div>
-                <div className="bg-gray-700 rounded-lg p-4">
+                <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4">
                   <div className="flex items-center gap-2 text-gray-400 text-sm mb-1">
                     <UserIcon className="w-4 h-4" />
                     Статус
@@ -318,12 +318,12 @@ export function UserProfilePage() {
       {/* Модальное окно кадрирования */}
       {showCropModal && cropImage && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-white dark:bg-gray-800 rounded-xl p-6 max-w-2xl w-full">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-2xl w-full">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-800 dark:text-gray-200">Кадрирование аватара</h3>
+              <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-200">Кадрирование аватара</h3>
               <button
                 onClick={handleCancelCrop}
-                className="text-gray-400 hover:text-gray-800 dark:text-gray-800 dark:text-gray-200 transition-colors"
+                className="text-gray-400 hover:text-gray-800 dark:text-gray-200 transition-colors"
               >
                 <X className="w-6 h-6" />
               </button>
@@ -331,7 +331,7 @@ export function UserProfilePage() {
             
             <div 
               ref={containerRef}
-              className="relative bg-gray-700 rounded-lg overflow-hidden cursor-crosshair select-none mx-auto"
+              className="relative bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden cursor-crosshair select-none mx-auto"
               style={{ width: '400px', height: '400px' }}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}

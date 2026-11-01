@@ -124,7 +124,7 @@ export function AvatarUpload({ currentAvatar, onAvatarChange }: AvatarUploadProp
       <div className="space-y-4">
         <div 
           ref={containerRef}
-          className="relative bg-gray-700 rounded-lg overflow-hidden cursor-crosshair select-none"
+          className="relative bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden cursor-crosshair select-none"
           style={{ width: '400px', height: '400px' }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -193,7 +193,7 @@ export function AvatarUpload({ currentAvatar, onAvatarChange }: AvatarUploadProp
             />
           ) : (
             <div 
-              className="w-20 h-20 rounded-full bg-gray-700 border-2 border-gray-600 flex items-center justify-center cursor-pointer hover:border-indigo-500 transition-colors"
+              className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-700 border-2 border-gray-300 dark:border-gray-600 flex items-center justify-center cursor-pointer hover:border-indigo-500 transition-colors"
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload className="w-8 h-8 text-gray-400 group-hover:text-indigo-400 transition-colors" />

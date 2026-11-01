@@ -14,7 +14,7 @@ const taxSystems = [
 ];
 
 const inputCls =
-  'w-full px-4 py-3 border border-gray-600 bg-gray-700 text-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none placeholder-gray-500';
+  'w-full px-4 py-3 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none placeholder-gray-500';
 const labelCls = 'block text-sm font-medium text-gray-300 mb-1';
 
 export function CreateOrganizationPage() {

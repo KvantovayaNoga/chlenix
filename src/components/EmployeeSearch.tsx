@@ -54,12 +54,12 @@ export function EmployeeSearch({ value, onChange, label, placeholder = 'Поис
 
   return (
     <div ref={wrapperRef} className="relative">
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-600 dark:text-gray-600 dark:text-gray-300 mb-1">{label}</label>
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
       
       {selectedEmployee ? (
         <div className="flex items-center justify-between p-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700">
           <div>
-            <p className="text-sm font-medium text-gray-800 dark:text-gray-800 dark:text-gray-800 dark:text-gray-200">
+            <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
               {selectedEmployee.lastName} {selectedEmployee.firstName}
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400">{selectedEmployee.email}</p>
@@ -84,7 +84,7 @@ export function EmployeeSearch({ value, onChange, label, placeholder = 'Поис
             }}
             onFocus={() => setIsOpen(true)}
             placeholder={placeholder}
-            className="w-full pl-9 pr-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-800 dark:text-gray-800 dark:text-gray-200"
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
           />
         </div>
       )}
@@ -103,7 +103,7 @@ export function EmployeeSearch({ value, onChange, label, placeholder = 'Поис
                 onClick={() => handleSelect(emp)}
                 className="w-full text-left p-3 hover:bg-indigo-50 dark:hover:bg-gray-600 transition-colors border-b border-gray-100 dark:border-gray-600 last:border-b-0"
               >
-                <p className="text-sm font-medium text-gray-800 dark:text-gray-800 dark:text-gray-800 dark:text-gray-200">
+                <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
                   {emp.lastName} {emp.firstName} {emp.middleName}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">{emp.email}</p>

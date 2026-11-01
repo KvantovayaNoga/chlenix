@@ -33,9 +33,9 @@ export function FilterManager({
   };
 
   return (
-    <div className="bg-white dark:bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-200 dark:border-gray-700">
+    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-gray-800 dark:text-gray-800 dark:text-gray-200">Сохранённые фильтры</h3>
+        <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200">Сохранённые фильтры</h3>
         <button
           onClick={() => setIsSaving(!isSaving)}
           className="flex items-center gap-1 px-2 py-1 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors"
@@ -52,7 +52,7 @@ export function FilterManager({
             value={filterName}
             onChange={(e) => setFilterName(e.target.value)}
             placeholder="Название фильтра"
-            className="flex-1 px-2 py-1 text-sm bg-gray-700 border border-gray-600 rounded text-gray-800 dark:text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="flex-1 px-2 py-1 text-sm bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             autoFocus
           />
           <button
@@ -84,7 +84,7 @@ export function FilterManager({
             >
               <button
                 onClick={() => onLoadFilter(filter.filters)}
-                className="flex-1 text-left text-sm text-gray-800 dark:text-gray-800 dark:text-gray-200 hover:text-indigo-400 transition-colors"
+                className="flex-1 text-left text-sm text-gray-800 dark:text-gray-200 hover:text-indigo-400 transition-colors"
               >
                 {filter.name}
               </button>

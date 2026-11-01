@@ -10,6 +10,9 @@ export function DirectoriesPage() {
   const [activeTab, setActiveTab] = useState<'departments' | 'positions' | 'branches'>('departments');
   const [editingItem, setEditingItem] = useState<any>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  // Сообщение об ошибке/успехе прямо на странице (общий error из store может быть
+  // перезаписан фоновыми операциями, поэтому перехватываем результат конкретной операции)
+  const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
   const tabs = [
     { id: 'departments' as const, label: 'Отделы', icon: Building2, count: departments.length },
@@ -17,24 +20,47 @@ export function DirectoriesPage() {
     { id: 'branches' as const, label: 'Филиалы', icon: MapPin, count: branches.length },
   ];
 
-  const handleAdd = () => {
-    if (activeTab === 'departments') addDepartment({ name: '', description: '' });
-    else if (activeTab === 'positions') addPosition({ name: '', description: '' });
-    else addBranch({ name: '', address: '', description: '' });
-    setShowAddModal(false);
+  const { error: storeError } = useDataStore();
+
+  const showErr = (fallback: string) => {
+    setFeedback({ type: 'error', text: storeError || fallback });
   };
 
-  const handleEdit = (item: any) => {
-    if (activeTab === 'departments') updateDepartment(item.id, item);
-    else if (activeTab === 'positions') updatePosition(item.id, item);
-    else updateBranch(item.id, item);
-    setEditingItem(null);
+  const handleAdd = async (data: any): Promise<boolean> => {
+    let ok = false;
+    if (activeTab === 'departments') ok = await addDepartment({ name: data.name.trim(), description: data.description?.trim() || null });
+    else if (activeTab === 'positions') ok = await addPosition({ name: data.name.trim(), description: data.description?.trim() || null });
+    else ok = await addBranch({ name: data.name.trim(), address: data.address?.trim() || '', description: data.description?.trim() || null });
+    if (ok) {
+      setFeedback({ type: 'success', text: 'Запись добавлена в справочник' });
+      setShowAddModal(false);
+    } else {
+      showErr('Не удалось добавить запись. Проверьте, что вы авторизованы как администратор.');
+    }
+    return ok;
   };
 
-  const handleDelete = (id: string) => {
-    if (activeTab === 'departments') deleteDepartment(id);
-    else if (activeTab === 'positions') deletePosition(id);
-    else deleteBranch(id);
+  const handleEdit = async (item: any): Promise<boolean> => {
+    let ok = false;
+    const payload = { ...item, name: item.name.trim(), description: item.description?.trim() || null };
+    if (activeTab === 'departments') ok = await updateDepartment(item.id, payload);
+    else if (activeTab === 'positions') ok = await updatePosition(item.id, payload);
+    else ok = await updateBranch(item.id, { ...payload, address: item.address?.trim() || '' });
+    if (ok) {
+      setFeedback({ type: 'success', text: 'Изменения сохранены' });
+      setEditingItem(null);
+    } else {
+      showErr('Не удалось сохранить изменения');
+    }
+    return ok;
+  };
+
+  const handleDelete = async (id: string) => {
+    let ok = false;
+    if (activeTab === 'departments') ok = await deleteDepartment(id);
+    else if (activeTab === 'positions') ok = await deletePosition(id);
+    else ok = await deleteBranch(id);
+    if (!ok) showErr('Не удалось удалить запись (возможно, она используется в карточках сотрудников)');
   };
 
   return (
@@ -50,6 +76,16 @@ export function DirectoriesPage() {
           </button>
         )}
       </div>
+
+      {/* Сообщение об ошибке/успехе */}
+      {feedback && (
+        <div className={`mb-4 px-4 py-3 rounded-xl text-sm font-medium border ${feedback.type === 'error' ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300 border-red-200 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800'}`}>
+          <div className="flex items-center justify-between gap-4">
+            <span>{feedback.text}</span>
+            <button onClick={() => setFeedback(null)} className="shrink-0 opacity-70 hover:opacity-100"><X className="w-4 h-4" /></button>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 mb-6">
@@ -135,12 +171,14 @@ export function DirectoriesPage() {
       {/* Add/Edit Modal */}
       {(showAddModal || editingItem) && (
         <DirectoryModal
+          key={editingItem ? `edit-${editingItem.id}` : 'add'}
           item={editingItem}
           type={activeTab}
           onClose={() => { setShowAddModal(false); setEditingItem(null); }}
-          onSave={(data) => {
-            if (editingItem) handleEdit({ ...editingItem, ...data });
-            else handleAdd();
+          onSave={async (data: any) => {
+            // модалка закрывается сама только при успехе — при ошибке данные остаются в форме
+            if (editingItem) await handleEdit({ ...editingItem, ...data });
+            else await handleAdd(data);
           }}
         />
       )}
@@ -148,9 +186,17 @@ export function DirectoriesPage() {
   );
 }
 
-function DirectoryModal({ item, type, onClose, onSave }: any) {
+function DirectoryModal({ item, type, onClose, onSave }: { item: any; type: string; onClose: () => void; onSave: (data: any) => Promise<boolean> }) {
   const [formData, setFormData] = useState(item || { name: '', description: '', address: '' });
-  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
+  const [saving, setSaving] = useState(false);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    const ok = await onSave(formData);
+    // при неудаче оставляем модалку открытой с введёнными данными
+    if (!ok) setSaving(false);
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
