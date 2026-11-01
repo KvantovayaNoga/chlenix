@@ -106,6 +106,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const { isAuthenticated, currentUser, setCurrentUser } = useAuthStore();
 
+  // Ссылка на актуального пользователя для loadAll (стабильный колбэк + снимок orgId)
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
+
   // Актуальные списки для «геттеров» без пересоздания контекста
   const ref = useRef({ organizations, departments, positions, branches, employees, equipment, virtualMachines, services });
   ref.current = { organizations, departments, positions, branches, employees, equipment, virtualMachines, services };
@@ -143,6 +147,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const loadAll = useCallback(async () => {
     if (loadPromiseRef.current) return loadPromiseRef.current;
+    // Снимок активной организации на момент старта загрузки. Если в процессе
+    // await пользователь переключится/создаст организацию (поменяется JWT),
+    // ответ запросов относится к СТАРОЙ организации — применять его нельзя,
+    // иначе свежие списки перезапираются устаревшими (баг «штатное расписание
+    // пустое» / «данные другой организации»).
+    const orgAtStart = currentUser?.organizationId ?? null;
     setLoading(true);
     loadPromiseRef.current = (async () => {
       try {
@@ -156,6 +166,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
           api.get<VirtualMachine[]>('/virtual-machines'),
           api.get<AuditLogEntry[]>('/audit-logs').catch(() => [] as AuditLogEntry[]),
         ]);
+        if (orgAtStart !== (currentUserRef.current?.organizationId ?? null)) {
+          // Организация сменилась во время загрузки — отбрасываем устаревший ответ,
+          // useEffect по organizationId перезагрузит данные уже с новым токеном.
+          return;
+        }
         setOrganizations(orgs);
         setDepartments(deps);
         setPositions(poss);
@@ -175,7 +190,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     })();
     return loadPromiseRef.current;
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.organizationId]);
 
   // Загрузка данных после авторизации
   useEffect(() => {
@@ -254,10 +270,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [currentUser]);
 
   // ---------- Directories ----------
+  // ВАЖНО (баг «штатное расписание пустое»): бэкенд при создании организации
+  // перевыпускает JWT и привязывает пользователя к новой организации. Если в этот
+  // момент выполняется in-flight loadAll() (стартовый запрос данных), его ответ
+  // содержит справочники ПРЕЖНЕЙ организации и перезапишет очищенные списки —
+  // карусель «пусто после создания организации». Поэтому перед каждой мутацией
+  // справочников дожидаемся завершения загрузки: данные будут актуальны для
+  // текущего токена, а добавление записи не потеряется под ней.
   const addDepartment = useCallback((data: Partial<Department>) => run(async () => {
+    await loadAll();
     const item = await api.post<Department>('/departments', data);
     setDepartments((prev) => [...prev, item].sort((a, b) => a.name.localeCompare(b.name)));
-  }), [run]);
+  }), [run, loadAll]);
   const updateDepartment = useCallback((id: string, data: Partial<Department>) => run(async () => {
     const item = await api.put<Department>(`/departments/${id}`, data);
     setDepartments((prev) => prev.map((d) => (d.id === id ? item : d)));
@@ -268,9 +292,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }), [run]);
 
   const addPosition = useCallback((data: Partial<Position>) => run(async () => {
+    await loadAll();
     const item = await api.post<Position>('/positions', data);
     setPositions((prev) => [...prev, item].sort((a, b) => a.name.localeCompare(b.name)));
-  }), [run]);
+  }), [run, loadAll]);
   const updatePosition = useCallback((id: string, data: Partial<Position>) => run(async () => {
     const item = await api.put<Position>(`/positions/${id}`, data);
     setPositions((prev) => prev.map((p) => (p.id === id ? item : p)));
@@ -281,9 +306,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }), [run]);
 
   const addBranch = useCallback((data: Partial<Branch>) => run(async () => {
+    await loadAll();
     const item = await api.post<Branch>('/branches', data);
     setBranches((prev) => [...prev, item].sort((a, b) => a.name.localeCompare(b.name)));
-  }), [run]);
+  }), [run, loadAll]);
   const updateBranch = useCallback((id: string, data: Partial<Branch>) => run(async () => {
     const item = await api.put<Branch>(`/branches/${id}`, data);
     setBranches((prev) => prev.map((b) => (b.id === id ? item : b)));
