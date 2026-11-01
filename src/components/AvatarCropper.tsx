@@ -33,6 +33,7 @@ const MAX_ZOOM = 4;
 
 export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, title = 'Кадрирование аватара' }: AvatarCropperProps) {
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   // zoom >= 1 (1 = cover), tx/ty — смещение центра картинки относительно центра рамки в CSS px
   const [zoom, setZoom] = useState(1);
@@ -65,10 +66,40 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
     y: Math.min(maxOffsetY, Math.max(-maxOffsetY, y)),
   }), [maxOffsetX, maxOffsetY]);
 
-  // Колесо мыши — зум вокруг курсора (упрощённо: просто зум + клампинг позиции)
+  // Зум с сохранением точки под заданным экранным центром (курсор/центр рамки):
+  // иначе после колёсного зума позиция не пересчитывается и кадр «уезжает» —
+  // в аватар попадало не то, что видно в рамке (расхождение выбора и превью).
+  const applyZoom = (nextZoomRaw: number, centerClientX?: number, centerClientY?: number) => {
+    const nz = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoomRaw));
+    const el = frameRef.current;
+    if (!el || !natural) {
+      setZoom(nz);
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    const cx = centerClientX != null ? centerClientX - rect.left : rect.width / 2;
+    const cy = centerClientY != null ? centerClientY - rect.top : rect.height / 2;
+    // Точка кадра под центром зума в координатах исходного изображения (до clampPos —
+    // так же, как это делает getSourceRect при построении превью и экспорта).
+    const s = baseScale * zoom;
+    const x0 = -(pos.x + (frameSize - natural.w * baseScale) / 2) * zoom / s;
+    const y0 = -(pos.y + (frameSize - natural.h * baseScale) / 2) * zoom / s;
+    const fx = cx / frameSize; // доля ширины рамки под центром зума
+    const fy = cy / frameSize;
+    const px = x0 + fx * (frameSize / s);
+    const py = y0 + fy * (frameSize / s);
+    // Новый масштаб, при котором та же точка пикселей остаётся под тем же местом рамки
+    const sn = baseScale * nz;
+    const txNew = -(px * sn) / nz + fx * frameSize;
+    const tyNew = -(py * sn) / nz + fy * frameSize;
+    setZoom(nz);
+    setPos(clampPos(txNew - (frameSize - natural.w * baseScale) / 2, tyNew - (frameSize - natural.h * baseScale) / 2));
+  };
+
+  // Колесо мыши — зум вокруг курсора
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z * (e.deltaY < 0 ? 1.1 : 1 / 1.1))));
+    applyZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1), e.clientX, e.clientY);
   };
 
   // Drag (mouse + touch через pointer events)
@@ -100,7 +131,10 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
 
   // Обратное преобразование: какие пиксели ИСХОДНИКА попадают в квадрат рамки.
   // transform-origin: left top => экранный сдвиг = T*zoom, масштаб = baseScale*zoom.
-  const getSourceRect = () => {
+  // ВАЖНО: превью и экспорт используют ОДНУ И ТУ ЖЕ функцию (стабильная ссылка через
+  // useCallback) — иначе из-за устаревшего замыкания превью могло показывать один кадр,
+  // а в аватар попадал другой (расхождение «выбор на картинке ≠ результат»).
+  const getSourceRect = useCallback(() => {
     if (!natural) return null;
     const s = baseScale * zoom;            // CSS px на 1 px исходника
     const x0 = (-tx * zoom) / s;           // левый край кадра в px исходника
@@ -115,12 +149,12 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
     const sw = Math.min(side, natural.w);
     const sh = Math.min(side, natural.h);
     return { sx, sy, sw, sh };
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [natural, zoom, pos.x, pos.y, baseScale, frameSize]);
 
   const applyCrop = () => {
     const rect = getSourceRect();
     if (!rect || !natural) return;
-    const img = imgRef.current ?? new Image();
     const doDraw = (source: HTMLImageElement) => {
       const canvas = document.createElement('canvas');
       canvas.width = OUTPUT_SIZE;
@@ -144,10 +178,12 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
     }
   };
 
-  // Превью «что вижу, то получу»: мини-копия текущего кадра (обновляется после drag/zoom)
+  // Превью «что вижу, то получу»: мини-копия текущего кадра, построенная ровно той же
+  // функцией кадрирования, что и итоговый экспорт. Обновляется на каждый change
+  // позиции/зума (без debounce — превью не должно отставать от выбора).
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   useEffect(() => {
-    const t = setTimeout(() => {
+    const update = () => {
       const rect = getSourceRect();
       const img = imgRef.current;
       if (!rect || !img || !img.complete) return;
@@ -156,13 +192,17 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
       canvas.height = 96;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
+      ctx.clearRect(0, 0, 96, 96);
+      ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, 96, 96);
       try { setPreviewSrc(canvas.toDataURL('image/png')); } catch { /* noop */ }
-    }, 50);
-    return () => clearTimeout(t);
+    };
+    // requestAnimationFrame: к этому моменту <img> уже отрендерен с актуальными src/transform
+    const raf = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pos.x, pos.y, zoom, natural]);
+  }, [getSourceRect]);
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -184,6 +224,7 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
           {/* Область кадрирования: картинка заполняет квадрат, двигается и масштабируется */}
           <div
             className="relative overflow-hidden rounded-lg bg-gray-900/5 dark:bg-gray-900/40 select-none touch-none cursor-grab active:cursor-grabbing shrink-0"
+            ref={frameRef}
             style={{ width: frameSize, height: frameSize }}
             onWheel={handleWheel}
             onPointerDown={onPointerDown}
@@ -223,7 +264,7 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
                 <button
                   type="button"
                   className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200"
-                  onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z / 1.2))}
+                  onClick={() => applyZoom(zoom / 1.2)}
                   aria-label="Уменьшить"
                 ><ZoomOut className="w-4 h-4" /></button>
                 <input
@@ -233,16 +274,14 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
                   step={0.01}
                   value={zoom}
                   onChange={(e) => {
-                    const nz = Number(e.target.value);
-                    setZoom(nz);
-                    setPos((p) => clampPos(p.x, p.y));
+                    applyZoom(Number(e.target.value)); // зум относительно центра рамки, позиция пересчитывается
                   }}
                   className="flex-1 accent-indigo-600"
                 />
                 <button
                   type="button"
                   className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200"
-                  onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z * 1.2))}
+                  onClick={() => applyZoom(zoom * 1.2)}
                   aria-label="Увеличить"
                 ><ZoomIn className="w-4 h-4" /></button>
                 <button

@@ -135,6 +135,30 @@ export interface Employee {
   history?: HistoryEntry[];
 }
 
+// Роль сервера/оборудования в системе виртуализации.
+// Позволяет описать инфраструктуру: хосты гипервизора, СХД, консоли управления.
+export type ServerRole = 'hypervisor_host' | 'storage' | 'management_console' | 'standalone';
+
+// Признаки участия оборудования в платформе виртуализации (для сайдбара и страницы платформы)
+export interface VirtualizationMeta {
+  serverRole?: ServerRole | null;
+  isHypervisorHost: boolean;   // физический хост гипервизора
+  isStorage: boolean;          // СХД
+  isManagementConsole: boolean; // консоль управления (vCenter, Proxmox VE, Yandex Cloud Console…)
+  hypervisorName?: string;     // VMware ESXi / Proxmox VE / Hyper-V…
+}
+
+// Платформа виртуализации — агрегированный взгляд на инфраструктуру:
+// гипервизоры (хосты), СХД, консоли управления и ВМ на них.
+export interface VirtualizationPlatform {
+  hypervisor: string;                 // доминирующий гипервизор по участникам
+  hosts: Equipment[];                 // серверы-хосты (serverRole === 'hypervisor_host')
+  storage: Equipment[];               // СХД (serverRole === 'storage')
+  managementConsoles: VirtualMachine[]; // консоли управления — ВМ (например vCenter)
+  physicalConsoles: Equipment[];      // консоли управления — физические серверы
+  virtualMachines: VirtualMachine[];  // все ВМ, размещённые на этих хостах
+}
+
 // Категории техники/имущества
 export type EquipmentCategory =
   | 'computer'
@@ -142,6 +166,7 @@ export type EquipmentCategory =
   | 'peripheral'
   | 'furniture'
   | 'server'
+  | 'storage' // СХД системы виртуализации
   | 'virtual_machine'
   | 'network'
   | 'phone'
@@ -168,6 +193,10 @@ export interface Equipment {
   cpuCores: number | null;
   ramGB: number | null;
   diskGB: number | null;
+  /** Роль в системе виртуализации: хост гипервизора / СХД / консоль управления / автономный */
+  serverRole?: ServerRole | null;
+  /** Название гипервизора, если это хост (VMware ESXi, Proxmox VE, Hyper-V…) */
+  hypervisorName?: string | null;
   notes: string;
   createdAt: string;
   updatedAt: string;
@@ -219,6 +248,8 @@ export interface VirtualMachine {
   serviceResponsibleEmployeeId: string | null;
   networkInterfaces: NetworkInterface[];
   status: 'running' | 'stopped' | 'maintenance' | 'decommissioned';
+  /** Роль ВМ в системе виртуализации (например, консоль управления — vCenter как ВМ) */
+  serverRole?: ServerRole | null;
   notes: string;
   createdAt: string;
   updatedAt: string;
