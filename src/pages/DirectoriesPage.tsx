@@ -177,8 +177,8 @@ export function DirectoriesPage() {
           onClose={() => { setShowAddModal(false); setEditingItem(null); }}
           onSave={async (data: any) => {
             // модалка закрывается сама только при успехе — при ошибке данные остаются в форме
-            if (editingItem) await handleEdit({ ...editingItem, ...data });
-            else await handleAdd(data);
+            if (editingItem) return handleEdit({ ...editingItem, ...data });
+            return handleAdd(data);
           }}
         />
       )}
