@@ -158,7 +158,7 @@ interface RouteProps {
 const ROUTE_TYPE = Symbol.for('chlenix.Route');
 
 interface RouteComponent {
-  (): null;
+  (props: RouteProps): null;
   readonly __route: typeof ROUTE_TYPE;
 }
 

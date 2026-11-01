@@ -25,19 +25,6 @@ import {
 } from 'lucide-react';
 import type { Organization, OrganizationLegalForm } from '../types';
 
-const legalFormLabels: Record<string, string> = {
-  OOO: 'ООО',
-  AO: 'АО',
-  PAO: 'ПАО',
-  IAO: 'АО (непубличное)',
-  IPO: 'ИП',
-  PT: 'Полное товарищество',
-  GP: 'Производственный кооператив',
-  ANO: 'АНО',
-  FGBU: 'ФГБУ',
-  MBU: 'МБУ',
-  IP: 'ИП',
-};
 
 const inputCls =
   'w-full px-4 py-3 border border-gray-600 bg-gray-700 text-gray-800 dark:text-gray-800 dark:text-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none placeholder-gray-500';
@@ -125,7 +112,7 @@ export function OrganizationPage() {
               <div className="flex flex-wrap items-center gap-3">
                 <h1 className="text-2xl md:text-3xl font-bold text-white">{organization.name}</h1>
                 <span className="px-3 py-1 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full text-xs font-semibold">
-                  {legalFormLabels[organization.legalForm] || organization.legalForm}
+                  {organization.legalForm || '—'}
                 </span>
               </div>
               {organization.shortName && <p className="text-gray-400 mt-1">{organization.shortName}</p>}
@@ -346,11 +333,8 @@ function EditOrganizationForm({
         </div>
         <div>
           <label className={labelCls}>Организационно-правовая форма</label>
-          <select value={form.legalForm} onChange={(e) => handleChange('legalForm', e.target.value)} className={inputCls}>
-            {Object.entries(legalFormLabels).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </select>
+          {/* ОПФ — свободное текстовое поле: формы вписываются вручную */}
+          <input type="text" value={form.legalForm ?? ''} onChange={(e) => handleChange('legalForm', e.target.value)} placeholder="Например: ООО, АНО, ФГБУ…" className={inputCls} />
         </div>
         <div>
           <label className={labelCls}>Краткое наименование</label>

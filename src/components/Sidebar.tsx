@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Building2,
+  BookMarked,
 } from 'lucide-react';
 
 const roleLabels = {
@@ -53,6 +54,7 @@ export function Sidebar() {
     { to: '/dashboard', label: 'Обзор', icon: LayoutDashboard },
     { to: '/organization', label: organization ? organization.shortName || organization.name : 'Организация', icon: Building2 },
     { to: '/employees', label: 'Сотрудники', icon: Users },
+    { to: '/directories', label: 'Справочники', icon: BookMarked },
     { to: '/equipment', label: 'Оборудование', icon: Monitor },
     { to: '/servers/physical', label: 'Физические серверы', icon: Server },
     { to: '/servers', label: 'Виртуальные машины', icon: Cpu },
