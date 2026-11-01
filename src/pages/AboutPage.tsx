@@ -1,5 +1,10 @@
-import { Shield, ShieldCheck, Eye, Cpu, Database, Server, Users } from 'lucide-react';
+import { Shield, ShieldCheck, Eye, Cpu, Database, Server, Users, Building2 } from 'lucide-react';
 import type { UserRole } from '../types';
+import { useDataStore } from '../store/dataStore';
+
+// Версия приложения: единый источник — package.json (подставляется Vite при сборке).
+const APP_VERSION: string =
+  (import.meta as unknown as { env?: { VITE_APP_VERSION?: string } }).env?.VITE_APP_VERSION ?? '0.12';
 
 const roleLabels: Record<UserRole, string> = {
   admin: 'Администратор',
@@ -26,6 +31,10 @@ const roleColors: Record<UserRole, string> = {
 };
 
 export function AboutPage() {
+  // Реальные счётчики из данных текущей организации (без хардкода).
+  const { employees, equipment, virtualMachines, organizations } = useDataStore();
+  const physicalServers = equipment.filter((e) => e.category === 'server').length;
+
   return (
     <div className="max-w-4xl">
       <div className="mb-8">
@@ -41,32 +50,37 @@ export function AboutPage() {
           </div>
           <div>
             <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">Chlenix</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Версия 1.0.0</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Версия {APP_VERSION}</p>
           </div>
         </div>
         <p className="text-gray-600 dark:text-gray-300 mb-4">
           Chlenix — современная система учёта ИТ-активов, сотрудников и виртуальной инфраструктуры. 
           Предназначена для централизованного управления оборудованием, виртуальными машинами и сотрудниками организации.
         </p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
+          <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+            <Building2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400 mb-2" />
+            <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">{organizations.length}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Организаций</p>
+          </div>
           <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
             <Users className="w-5 h-5 text-blue-600 dark:text-blue-400 mb-2" />
-            <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">10+</p>
+            <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">{employees.length}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400">Сотрудников</p>
           </div>
           <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
             <Server className="w-5 h-5 text-red-600 dark:text-red-400 mb-2" />
-            <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">2</p>
+            <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">{physicalServers}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400">Физ. серверов</p>
           </div>
           <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
             <Cpu className="w-5 h-5 text-purple-600 dark:text-purple-400 mb-2" />
-            <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">12</p>
+            <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">{virtualMachines.length}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400">Виртуальных машин</p>
           </div>
           <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
             <Database className="w-5 h-5 text-green-600 dark:text-green-400 mb-2" />
-            <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">14</p>
+            <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">{equipment.length}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400">Единиц оборудования</p>
           </div>
         </div>
@@ -135,20 +149,19 @@ export function AboutPage() {
               <li>• React 19 + TypeScript 5.x</li>
               <li>• Vite 6</li>
               <li>• Tailwind CSS 4</li>
-              <li>• React Router 7</li>
-              <li>• Zustand</li>
-              <li>• Lucide React</li>
+              <li>• Собственный лёгкий роутер (без react-router)</li>
+              <li>• React Context + hooks (store: dataStore / authStore) — без Zustand</li>
+              <li>• Lucide React (иконки)</li>
             </ul>
           </div>
           <div>
             <h3 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Backend</h3>
             <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-              <li>• Node.js 22+</li>
-              <li>• Hono</li>
-              <li>• Prisma ORM</li>
-              <li>• PostgreSQL 16</li>
-              <li>• JWT</li>
-              <li>• Docker</li>
+              <li>• Node.js 22 + Hono</li>
+              <li>• Prisma ORM + PostgreSQL 16</li>
+              <li>• JWT-авторизация, роли и мультиорганизационность</li>
+              <li>• Docker Compose + nginx (SPA + прокси API)</li>
+              <li>• Zod-валидация на обоих концах</li>
             </ul>
           </div>
         </div>

@@ -626,7 +626,14 @@ app.put('/api/users/:id', authMiddleware, async (c) => {
     }
     updateData.email = body.email;
   }
-  if (typeof body.avatar === 'string' || body.avatar === null) updateData.avatar = body.avatar;
+  if (typeof body.avatar === 'string' || body.avatar === null) {
+    // data-URL аватара хранится в TEXT-поле. Ограничение ~1.5 МБ base64
+    // (256×256 JPEG от AvatarCropper ≈ 10–30 КБ; защита от загрузки оригинала целиком).
+    if (body.avatar !== null && body.avatar.length > 2_000_000) {
+      return c.json({ error: 'Аватар слишком большой (макс. ~1.5 МБ)' }, 413);
+    }
+    updateData.avatar = body.avatar === '' ? null : body.avatar;
+  }
   if (body.theme !== undefined) {
     const t = z.enum(['light', 'dark', 'system']).safeParse(body.theme);
     if (t.success) updateData.theme = t.data;

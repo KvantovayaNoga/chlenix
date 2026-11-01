@@ -106,10 +106,14 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
     const x0 = (-tx * zoom) / s;           // левый край кадра в px исходника
     const y0 = (-ty * zoom) / s;
     const side = frameSize / s;            // сторона квадрата в px исходника
-    const sx = Math.max(0, Math.min(Math.max(0, natural.w - side), x0));
-    const sy = Math.max(0, Math.min(Math.max(0, natural.h - side), y0));
-    const sw = Math.min(side, natural.w - sx);
-    const sh = Math.min(side, natural.h - sy);
+    // КЛАМПИНГ РАЗМЕРОМ КАДРА (side), а не стороной: при clampPos(±maxOffset)
+    // кадр гарантированно внутри изображения, поэтому x0/y0 уже корректны.
+    // Прежний клампинг позицией ломал соответствие «видимое == сохранённое»
+    // для изображений, чья cover-сторона больше стороны исходника.
+    const sx = Math.max(0, Math.min(natural.w - side, x0));
+    const sy = Math.max(0, Math.min(natural.h - side, y0));
+    const sw = Math.min(side, natural.w);
+    const sh = Math.min(side, natural.h);
     return { sx, sy, sw, sh };
   };
 
@@ -123,6 +127,10 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
       canvas.height = OUTPUT_SIZE;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
+      // Белый фон под JPEG (защита от чёрного фона у PNG с альфой)
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+      ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(source, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
       onCrop(canvas.toDataURL('image/jpeg', 0.92));
@@ -148,6 +156,7 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
       canvas.height = 96;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
+      ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, 96, 96);
       try { setPreviewSrc(canvas.toDataURL('image/png')); } catch { /* noop */ }
     }, 50);
