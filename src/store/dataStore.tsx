@@ -222,10 +222,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setOrganizations((prev) => prev.map((o) => (o.id === id ? updated : o)));
   }), [run]);
 
-  const deleteOrganization = useCallback((id: string) => run(async () => {
-    await api.delete(`/organizations/${id}`);
-    setOrganizations((prev) => prev.filter((o) => o.id !== id));
-  }), [run]);
+  const deleteOrganization = useCallback(async (id: string): Promise<boolean> => {
+    let ok = false;
+    await run(async () => {
+      // Бэкенд при удалении активной организации возвращает перевыпущенный JWT
+      // (с новой активной организацией или без неё) — применяем его сразу,
+      // иначе скоупы запросов останутся привязаны к удалённой организации.
+      const res = await api.delete<{ token?: string; user?: User }>(`/organizations/${id}`);
+      if (res?.token) setToken(res.token);
+      if (res?.user) setCurrentUser(res.user);
+      setOrganizations((prev) => prev.filter((o) => o.id !== id));
+      ok = true;
+    });
+    return ok;
+  }, [run]);
 
   const getOrganizationById = useCallback((id: string) => ref.current.organizations.find((o) => o.id === id), []);
 

@@ -844,28 +844,59 @@ app.delete('/api/organizations/:id', authMiddleware, requireRole(['admin']), asy
   const org = await prisma.organization.findUnique({ where: { id } });
   if (!org) return c.json({ error: 'Not found' }, 404);
 
-  const linkedUsers = await prisma.user.count({ where: { organizationId: id } });
-  if (linkedUsers > 0) {
-    return c.json({ error: 'От организации отвязаны не все пользователи' }, 400);
+  // Удаление организации со ВСЕМИ её данными (каскад подтверждается пользователем в UI).
+  // Порядок важен из-за FK-связей: сетевые интерфейсы и сервисы удаляются вместе с ВМ
+  // (onDelete: Cascade), истории передач — вместе с оборудованием.
+  await prisma.$transaction(async (tx) => {
+    const equipmentIds = (await tx.equipment.findMany({ where: { organizationId: id }, select: { id: true } })).map((e) => e.id);
+    const vmIds = (await tx.virtualMachine.findMany({ where: { organizationId: id }, select: { id: true } })).map((v) => v.id);
+    const employeeIds = (await tx.employee.findMany({ where: { organizationId: id }, select: { id: true } })).map((e) => e.id);
+    const entityIds = [...equipmentIds, ...vmIds, ...employeeIds];
+
+    // Справочники штатного расписания (FK сотрудников/оборудования снимаются ниже)
+    await tx.department.deleteMany({ where: { organizationId: id } });
+    await tx.position.deleteMany({ where: { organizationId: id } });
+    await tx.branch.deleteMany({ where: { organizationId: id } });
+
+    // Основные данные организации
+    await tx.employee.deleteMany({ where: { organizationId: id } });
+    await tx.equipment.deleteMany({ where: { organizationId: id } });
+    await tx.virtualMachine.deleteMany({ where: { organizationId: id } });
+
+    // История изменений объектов организации
+    if (entityIds.length > 0) {
+      await tx.historyRecord.deleteMany({ where: { entityId: { in: entityIds } } });
+    }
+
+    // Отвязываем пользователей, привязанных к этой организации
+    await tx.user.updateMany({ where: { organizationId: id }, data: { organizationId: null } });
+
+    // Карточка организации
+    await tx.historyRecord.deleteMany({ where: { entityType: 'organization', entityId: id } });
+    await tx.organization.delete({ where: { id } });
+  });
+
+  // Если удалили активную организацию — перевыпускаем JWT: на другую доступную
+  // организацию пользователя либо без организации (UI отправит на создание).
+  let token: string | null = null;
+  let user: any = null;
+  if (currentUser.organizationId === id) {
+    const me = await prisma.user.findUnique({ where: { id: currentUser.userId } });
+    if (me) {
+      const accessible = await getAccessibleOrgs(me.id);
+      if (accessible.length > 0) {
+        const updated = await prisma.user.update({ where: { id: me.id }, data: { organizationId: accessible[0].id } });
+        token = await issueToken(updated);
+        user = publicUser(updated);
+      } else {
+        token = await issueToken(me);
+        user = publicUser(me);
+      }
+    }
   }
 
-  // Данные организации (сотрудники/оборудование/ВМ) должны быть удалены или
-  // перенесены заранее — иначе PostgreSQL заблокирует удаление FK-связями.
-  const [empCount, eqCount, vmCount] = await Promise.all([
-    prisma.employee.count({ where: { organizationId: id } }),
-    prisma.equipment.count({ where: { organizationId: id } }),
-    prisma.virtualMachine.count({ where: { organizationId: id } }),
-  ]);
-  if (empCount + eqCount + vmCount > 0) {
-    return c.json({
-      error: `В организации есть данные: сотрудников ${empCount}, оборудования ${eqCount}, ВМ ${vmCount}. Сначала удалите их.`,
-    }, 409);
-  }
-
-  await prisma.historyRecord.deleteMany({ where: { entityType: 'organization', entityId: id } });
-  await prisma.organization.delete({ where: { id } });
-  await writeAudit(currentUser, 'delete', 'organization', id, org.name, `Удалена организация "${org.name}"`, c.req.header('x-forwarded-for'));
-  return c.json({ success: true });
+  await writeAudit(currentUser, 'delete', 'organization', id, org.name, `Удалена организация "${org.name}" (со всеми данными)`, c.req.header('x-forwarded-for'));
+  return c.json({ success: true, ...(token && user ? { token, user } : {}) });
 });
 
 // ============================================================

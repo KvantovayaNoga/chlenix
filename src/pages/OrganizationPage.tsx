@@ -82,9 +82,11 @@ export function OrganizationPage() {
   const navigate = useNavigate();
   const { currentUser, canEdit } = useAuthStore();
   const { users } = useAuthStore();
-  const { getCurrentUserOrganization, updateOrganization, deleteOrganization, employees, equipment } = useDataStore();
+  const { getCurrentUserOrganization, updateOrganization, deleteOrganization, employees, equipment, error: storeError } = useDataStore();
   const [isEditing, setIsEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const organization = currentUser?.organizationId ? getCurrentUserOrganization() : undefined;
 
@@ -213,15 +215,33 @@ export function OrganizationPage() {
               Отмена
             </button>
             <button
-              onClick={() => {
-                deleteOrganization(organization.id);
+              onClick={async () => {
+                setDeleting(true);
+                setDeleteError(null);
+                const ok = await deleteOrganization(organization.id);
+                setDeleting(false);
+                if (!ok) {
+                  // storeError содержит текст причины от бэкенда (например, конфликт данных)
+                  setDeleteError(storeError || 'Не удалось удалить организацию');
+                  return;
+                }
                 setConfirmDelete(false);
+                // После удаления бэкенд перевыпустил токен: если осталась другая
+                // организация — на неё переключится скоуп и данные перезагрузятся
+                // автоматически (useEffect в dataStore); редирект на главную.
+                navigate('/dashboard');
               }}
-              className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition-all"
+              disabled={deleting}
+              className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition-all disabled:opacity-60"
             >
-              Удалить
+              {deleting ? 'Удаление…' : 'Удалить'}
             </button>
           </div>
+          {deleteError && (
+            <div className="mt-3 px-4 py-2 bg-red-950/60 border border-red-800 rounded-xl text-red-300 text-sm">
+              {deleteError}
+            </div>
+          )}
         </div>
       )}
 
