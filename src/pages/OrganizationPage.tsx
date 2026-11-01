@@ -80,15 +80,31 @@ function InfoRow({ label, value }: { label: string; value?: string | number | nu
 
 export function OrganizationPage() {
   const navigate = useNavigate();
-  const { currentUser, canEdit } = useAuthStore();
+  const { currentUser, canEdit, switchOrganization } = useAuthStore();
   const { users } = useAuthStore();
-  const { getCurrentUserOrganization, updateOrganization, deleteOrganization, employees, equipment, error: storeError } = useDataStore();
+  const { organizations, updateOrganization, deleteOrganization, employees, equipment, error: storeError } = useDataStore();
+
+  const organization = currentUser?.organizationId
+    ? organizations.find((o) => o.id === currentUser.organizationId)
+    : undefined;
+  const [switchingOrg, setSwitchingOrg] = useState(false);
+
+  const handleSwitchOrg = async (orgId: string) => {
+    if (!orgId || orgId === currentUser?.organizationId || switchingOrg) return;
+    setSwitchingOrg(true);
+    try {
+      // authStore.switchOrganization перевыпускает JWT и обновляет currentUser;
+      // dataStore сам перезагрузит данные уже новой активной организации.
+      const res = await switchOrganization(orgId);
+      if (!res.success) alert(res.error || 'Не удалось переключить организацию');
+    } finally {
+      setSwitchingOrg(false);
+    }
+  };
   const [isEditing, setIsEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  const organization = currentUser?.organizationId ? getCurrentUserOrganization() : undefined;
 
   if (!organization) {
     return <EmptyOrganizationState onCreate={() => navigate('/organization/create')} />;
@@ -111,6 +127,38 @@ export function OrganizationPage() {
               )}
             </div>
             <div className="flex-1 min-w-0">
+              {/* Панель организаций: список всех доступных + переключение + создание новой.
+                  Раньше «Создать организацию» была видна только при пустом списке —
+                  вторую организацию создать было негде. */}
+              {organizations.length > 0 && (
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  {organizations.map((o) => {
+                    const active = o.id === organization.id;
+                    return (
+                      <button
+                        key={o.id}
+                        onClick={() => handleSwitchOrg(o.id)}
+                        disabled={active || switchingOrg}
+                        title={active ? 'Активная организация' : 'Переключиться на эту организацию'}
+                        className={
+                          'px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ' +
+                          (active
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/30 cursor-default'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-slate-300 border-gray-300 dark:border-gray-600 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300')
+                        }
+                      >
+                        {o.shortName || o.name}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => navigate('/organization/create')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-dashed border-indigo-400 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-all"
+                  >
+                    <Plus className="w-4 h-4" /> Создать организацию
+                  </button>
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-3">
                 <h1 className="text-2xl md:text-3xl font-bold text-gray-800 dark:text-white">{organization.name}</h1>
                 <span className="px-3 py-1 bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-500/30 rounded-full text-xs font-semibold">
