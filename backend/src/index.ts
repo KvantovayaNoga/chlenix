@@ -259,13 +259,19 @@ async function createHistoryEntry(entityType: string, entityId: string, changedB
   });
 }
 
-// Разрешает внешние ключи из строковых ID, возвращает null если записи нет
-async function resolveRef(model: 'employee' | 'branch' | 'department' | 'position' | 'equipment', id: unknown): Promise<string | null> {
+// Разрешает внешние ключи из строковых ID, возвращает null если записи нет.
+// Для справочников (branch/department/position) дополнительно проверяет
+// принадлежность организации: запись либо привязана к orgId, либо общая (null).
+async function resolveRef(model: 'employee' | 'branch' | 'department' | 'position' | 'equipment', id: unknown, orgId?: string | null): Promise<string | null> {
   if (typeof id !== 'string' || id.trim() === '') return null;
   const where = { id };
   try {
-    const found: any = await (prisma as any)[model].findUnique({ where, select: { id: true } });
-    return found ? found.id : null;
+    const found: any = await (prisma as any)[model].findUnique({ where, select: { id: true, organizationId: true } });
+    if (!found) return null;
+    if (orgId !== undefined && ['branch', 'department', 'position'].includes(model)) {
+      if (found.organizationId && orgId && found.organizationId !== orgId) return null;
+    }
+    return found.id;
   } catch {
     return null;
   }
@@ -273,9 +279,26 @@ async function resolveRef(model: 'employee' | 'branch' | 'department' | 'positio
 
 // Безопасно разрешает внешние ключи: undefined остаётся undefined (поле не меняется/не задаётся),
 // пустое/несуществующее значение -> null
-async function resolveRefOrNull(model: 'employee' | 'branch' | 'department' | 'position' | 'equipment', id: unknown): Promise<string | null | undefined> {
+async function resolveRefOrNull(model: 'employee' | 'branch' | 'department' | 'position' | 'equipment', id: unknown, orgId?: string | null): Promise<string | null | undefined> {
   if (id === undefined) return undefined;
-  return await resolveRef(model, id);
+  return await resolveRef(model, id, orgId);
+}
+
+// ============================================================
+// Мультиорганизационность: скоуп и смена активной организации
+// ============================================================
+// Активная организация пользователя: та, к которой привязан пользователь.
+async function getUserOrgScope(userId: string): Promise<{ orgId: string | null; role: string }> {
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true, role: true } });
+  return { orgId: u?.organizationId ?? null, role: u?.role ?? 'viewer' };
+}
+
+// Где может работать пользователь: собственные организации + (для админа) все организации системы.
+async function getAccessibleOrgs(userId: string): Promise<Array<{ id: string; name: string; isOwn: boolean }>> {
+  const me = await prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true, role: true } });
+  const all = await prisma.organization.findMany({ orderBy: { createdAt: 'asc' }, select: { id: true, name: true } });
+  if (me?.role === 'admin') return all.map((o) => ({ id: o.id, name: o.name, isOwn: o.id === me.organizationId }));
+  return all.filter((o) => o.id === me?.organizationId).map((o) => ({ id: o.id, name: o.name, isOwn: true }));
 }
 
 // Приводит дату (Date | ISO-строка) к ISO-формату для ответов API
@@ -426,7 +449,45 @@ app.get('/api/auth/me', authMiddleware, async (c) => {
   if (!user || !user.isActive) {
     return c.json({ error: 'Пользователь не найден или деактивирован' }, 401);
   }
-  return c.json(publicUser(user));
+  // Какие организации доступны пользователю (для переключателя в интерфейсе)
+  const accessibleOrganizations = await getAccessibleOrgs(user.id);
+  return c.json({ ...publicUser(user), accessibleOrganizations });
+});
+
+// ============================================================
+// Мультиорганизационность: создание/смена активной организации
+// ============================================================
+// GET /api/auth/my-organizations — список организаций, где может работать пользователь
+app.get('/api/auth/my-organizations', authMiddleware, async (c) => {
+  return c.json(await getAccessibleOrgs(c.get('user').userId));
+});
+
+// POST /api/auth/switch-organization — сменить активную организацию и перевыпустить JWT.
+// Администратор может переключаться между всеми организациями системы;
+// обычный пользователь — только между своими.
+app.post('/api/auth/switch-organization', authMiddleware, async (c) => {
+  const parsed = z.object({ organizationId: z.string().uuid() }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
+
+  const me = c.get('user');
+  const target = await prisma.organization.findUnique({ where: { id: parsed.data.organizationId } });
+  if (!target) return c.json({ error: 'Организация не найдена' }, 404);
+
+  const accessible = await getAccessibleOrgs(me.userId);
+  if (!accessible.some((o) => o.id === target.id)) {
+    return c.json({ error: 'Нет доступа к этой организации' }, 403);
+  }
+
+  const user = await prisma.user.update({
+    where: { id: me.userId },
+    data: { organizationId: target.id },
+  });
+
+  // Перевыпускаем токен с новой организацией — клиент заменит его в localStorage
+  const token = await issueToken(user);
+  await writeAudit(me, 'update', 'user', user.id, user.fullName, `Переключение на организацию «${target.name}»`, c.req.header('x-forwarded-for'));
+
+  return c.json({ token, user: publicUser(user) });
 });
 
 // Сохранение выбора темы оформления в БД (light | dark | system)
@@ -692,9 +753,11 @@ app.post('/api/organizations', authMiddleware, requireRole(['admin']), async (c)
   }
   const currentUser = c.get('user');
 
-  const existingCount = await prisma.organization.count();
-  if (existingCount > 0) {
-    return c.json({ error: 'Организация уже создана' }, 409);
+  // Мультиорганизационность: разрешено создавать несколько организаций.
+  // Защита от дубликата ИНН в системе.
+  const innDup = await prisma.organization.findFirst({ where: { inn: parsed.data.inn } });
+  if (innDup) {
+    return c.json({ error: `Организация с ИНН «${parsed.data.inn}» уже существует` }, 409);
   }
 
   const org = await prisma.organization.create({
@@ -732,11 +795,15 @@ app.post('/api/organizations', authMiddleware, requireRole(['admin']), async (c)
   await createHistoryEntry('organization', org.id, currentUser.fullName);
   await writeAudit(currentUser, 'create', 'organization', org.id, org.name, `Создана организация "${org.name}"`, c.req.header('x-forwarded-for'));
 
-  // Создавший и все пользователи без организации привязываются к ней
+  // Создавший переключается на новую организацию; пользователи без организации
+  // привязываются к ней (первичная инициализация системы).
   await prisma.user.update({ where: { id: currentUser.userId }, data: { organizationId: org.id } });
   await prisma.user.updateMany({ where: { organizationId: null }, data: { organizationId: org.id } });
 
-  return c.json(publicOrganization(org), 201);
+  const updatedMe = await prisma.user.findUnique({ where: { id: currentUser.userId } });
+  const token = await issueToken(updatedMe);
+
+  return c.json({ ...publicOrganization(org), token, user: publicUser(updatedMe) }, 201);
 });
 
 app.put('/api/organizations/:id', authMiddleware, requireRole(['admin']), async (c) => {
@@ -780,6 +847,19 @@ app.delete('/api/organizations/:id', authMiddleware, requireRole(['admin']), asy
   const linkedUsers = await prisma.user.count({ where: { organizationId: id } });
   if (linkedUsers > 0) {
     return c.json({ error: 'От организации отвязаны не все пользователи' }, 400);
+  }
+
+  // Данные организации (сотрудники/оборудование/ВМ) должны быть удалены или
+  // перенесены заранее — иначе PostgreSQL заблокирует удаление FK-связями.
+  const [empCount, eqCount, vmCount] = await Promise.all([
+    prisma.employee.count({ where: { organizationId: id } }),
+    prisma.equipment.count({ where: { organizationId: id } }),
+    prisma.virtualMachine.count({ where: { organizationId: id } }),
+  ]);
+  if (empCount + eqCount + vmCount > 0) {
+    return c.json({
+      error: `В организации есть данные: сотрудников ${empCount}, оборудования ${eqCount}, ВМ ${vmCount}. Сначала удалите их.`,
+    }, 409);
   }
 
   await prisma.historyRecord.deleteMany({ where: { entityType: 'organization', entityId: id } });
@@ -858,13 +938,21 @@ function publicVM(vm: any): any {
 const employeeInclude = { position: true, department: true, branch: true, equipment: true } as const;
 
 app.get('/api/employees', authMiddleware, async (c) => {
-  const employees = await prisma.employee.findMany({ include: employeeInclude, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }] });
+  const scope = await getUserOrgScope(c.get('user').userId);
+  const where: any = {};
+  if (scope.orgId) where.organizationId = scope.orgId; else where.organizationId = null;
+  const employees = await prisma.employee.findMany({ where, include: employeeInclude, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }] });
   return c.json(employees.map(publicEmployee));
 });
 
 app.get('/api/employees/:id', authMiddleware, async (c) => {
+  const scope = await getUserOrgScope(c.get('user').userId);
   const employee = await prisma.employee.findUnique({ where: { id: c.req.param('id') }, include: employeeInclude });
   if (!employee) return c.json({ error: 'Not found' }, 404);
+  // Мультиорганизационность: чужую организацию не показываем (админу — все)
+  if (employee.organizationId && employee.organizationId !== scope.orgId && scope.role !== 'admin') {
+    return c.json({ error: 'Нет доступа к этой организации' }, 403);
+  }
   return c.json(publicEmployee(employee));
 });
 
@@ -883,17 +971,20 @@ app.post('/api/employees', authMiddleware, requireRole(['admin', 'materially_res
   }
   const currentUser = c.get('user');
   const data = parsed.data;
+  const scope = await getUserOrgScope(currentUser.userId);
 
-  const positionId = await resolveRef('position', data.positionId);
-  const departmentId = await resolveRef('department', data.departmentId);
+  // Справочники должны принадлежать активной организации (или быть общими)
+  const positionId = await resolveRef('position', data.positionId, scope.orgId);
+  const departmentId = await resolveRef('department', data.departmentId, scope.orgId);
   // Филиал необязателен: пустое/некорректное значение => null (сотрудник без филиала)
-  const branchId = await resolveRefOrNull('branch', data.branchId ?? undefined) ?? null;
+  const branchId = await resolveRefOrNull('branch', data.branchId ?? undefined, scope.orgId) ?? null;
   if (!positionId || !departmentId) {
     return c.json({ error: 'Справочники (должность/отдел) выбраны некорректно' }, 400);
   }
 
   const employee = await prisma.employee.create({
     data: {
+      organizationId: scope.orgId,
       firstName: data.firstName,
       lastName: data.lastName,
       middleName: data.middleName ?? null,
@@ -932,11 +1023,16 @@ app.put('/api/employees/:id', authMiddleware, requireRole(['admin', 'materially_
   const old = await prisma.employee.findUnique({ where: { id } });
   if (!old) return c.json({ error: 'Not found' }, 404);
 
+  const scope = await getUserOrgScope(currentUser.userId);
+  if (old.organizationId && old.organizationId !== scope.orgId && scope.role !== 'admin') {
+    return c.json({ error: 'Нет доступа к этой организации' }, 403);
+  }
+
   const newData: any = { ...parsed.data };
   if (newData.hireDate && !(newData.hireDate instanceof Date)) newData.hireDate = new Date(newData.hireDate);
-  if ('positionId' in newData) newData.positionId = await resolveRef('position', newData.positionId) ?? old.positionId;
-  if ('departmentId' in newData) newData.departmentId = await resolveRef('department', newData.departmentId) ?? old.departmentId;
-  if ('branchId' in newData) newData.branchId = await resolveRefOrNull('branch', newData.branchId ?? undefined) ?? null;
+  if ('positionId' in newData) newData.positionId = await resolveRef('position', newData.positionId, scope.orgId) ?? old.positionId;
+  if ('departmentId' in newData) newData.departmentId = await resolveRef('department', newData.departmentId, scope.orgId) ?? old.departmentId;
+  if ('branchId' in newData) newData.branchId = await resolveRefOrNull('branch', newData.branchId ?? undefined, scope.orgId) ?? null;
   newData.updatedById = currentUser.userId;
 
   const employee = await prisma.employee.update({ where: { id }, data: newData, include: employeeInclude });
@@ -994,13 +1090,20 @@ function normalizeDateField(v: any) {
 }
 
 app.get('/api/equipment', authMiddleware, async (c) => {
-  const items = await prisma.equipment.findMany({ include: equipmentInclude, orderBy: { createdAt: 'desc' } });
+  const scope = await getUserOrgScope(c.get('user').userId);
+  const where: any = {};
+  if (scope.orgId) where.organizationId = scope.orgId; else where.organizationId = null;
+  const items = await prisma.equipment.findMany({ where, include: equipmentInclude, orderBy: { createdAt: 'desc' } });
   return c.json(items.map(publicEquipmentBrief));
 });
 
 app.get('/api/equipment/:id', authMiddleware, async (c) => {
+  const scope = await getUserOrgScope(c.get('user').userId);
   const item = await prisma.equipment.findUnique({ where: { id: c.req.param('id') }, include: equipmentInclude });
   if (!item) return c.json({ error: 'Not found' }, 404);
+  if (item.organizationId && item.organizationId !== scope.orgId && scope.role !== 'admin') {
+    return c.json({ error: 'Нет доступа к этой организации' }, 403);
+  }
   return c.json(publicEquipmentBrief(item));
 });
 
@@ -1019,6 +1122,7 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
   }
   const currentUser = c.get('user');
   const data = parsed.data;
+  const scope = await getUserOrgScope(currentUser.userId);
 
   const branchId = await resolveRef('branch', data.branchId);
   if (!branchId) return c.json({ error: 'Филиал выбран некорректно' }, 400);
@@ -1031,6 +1135,7 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
 
   const item = await prisma.equipment.create({
     data: {
+      organizationId: scope.orgId,
       name: data.name,
       category: data.category,
       serialNumber: data.serialNumber,

@@ -111,13 +111,14 @@ model Branch {
 // Сотрудники
 // ============================================================
 model Employee {
-  id            String    @id @default(uuid())
-  firstName     String    @map("first_name")
-  lastName      String    @map("last_name")
-  middleName    String?   @map("middle_name")
-  positionId    String    @map("position_id")
-  departmentId  String    @map("department_id")
-  branchId      String?   @map("branch_id")
+  id              String    @id @default(uuid())
+  organizationId  String?   @map("organization_id")
+  firstName       String    @map("first_name")
+  lastName        String    @map("last_name")
+  middleName      String?   @map("middle_name")
+  positionId      String    @map("position_id")
+  departmentId    String    @map("department_id")
+  branchId        String?   @map("branch_id")
   email         String?
   workPhone     String?   @map("work_phone")
   internalPhone String?   @map("internal_phone")
@@ -132,6 +133,7 @@ model Employee {
   updatedById   String?   @map("updated_by")
 
   // Связи
+  organization Organization? @relation(fields: [organizationId], references: [id])
   position     Position   @relation(fields: [positionId], references: [id])
   department   Department @relation(fields: [departmentId], references: [id])
   branch       Branch?    @relation(fields: [branchId], references: [id])
@@ -146,6 +148,7 @@ model Employee {
   @@index([positionId])
   @@index([branchId])
   @@index([isEmployed])
+  @@index([organizationId])
   @@map("employees")
 }
 
@@ -154,6 +157,7 @@ model Employee {
 // ============================================================
 model Equipment {
   id                    String          @id @default(uuid())
+  organizationId        String?         @map("organization_id")
   name                  String
   category              EquipmentCategory
   serialNumber          String          @map("serial_number")
@@ -173,6 +177,7 @@ model Equipment {
   updatedById           String?         @map("updated_by")
 
   // Связи
+  organization        Organization? @relation(fields: [organizationId], references: [id])
   assignedToEmployee  Employee?   @relation("AssignedEquipment", fields: [assignedToEmployeeId], references: [id])
   branch              Branch      @relation(fields: [branchId], references: [id])
   updatedBy           User?       @relation("EquipmentUpdater", fields: [updatedById], references: [id])
@@ -184,6 +189,7 @@ model Equipment {
   @@index([assignedToEmployeeId])
   @@index([condition])
   @@index([branchId])
+  @@index([organizationId])
   @@map("equipment")
 }
 
@@ -212,6 +218,7 @@ enum Condition {
 // ============================================================
 model VirtualMachine {
   id                          String    @id @default(uuid())
+  organizationId              String?   @map("organization_id")
   name                        String
   hostname                    String
   type                        VMType    @default(virtual)
@@ -229,6 +236,7 @@ model VirtualMachine {
   updatedById                 String?   @map("updated_by")
 
   // Связи
+  organization              Organization? @relation(fields: [organizationId], references: [id])
   hostServer              Equipment?  @relation("HostServer", fields: [hostServerId], references: [id])
   responsibleEmployee     Employee?   @relation("VMInfraResponsible", fields: [responsibleEmployeeId], references: [id])
   serviceResponsibleEmployee Employee? @relation("VMServiceResponsible", fields: [serviceResponsibleEmployeeId], references: [id])
@@ -237,6 +245,7 @@ model VirtualMachine {
   networkInterfaces       NetworkInterface[]
   services                Service[]
 
+  @@index([organizationId])
   @@index([hostServerId])
   @@index([responsibleEmployeeId])
   @@index([serviceResponsibleEmployeeId])
@@ -399,7 +408,10 @@ model Organization {
   updatedAt           DateTime @updatedAt @map("updated_at")
   updatedById         String?  @map("updated_by")
 
-  users     User[]
+  users        User[]
+  employees    Employee[]
+  equipment    Equipment[]
+  virtualMachines VirtualMachine[]
 
   @@index([inn])
   @@map("organizations")
