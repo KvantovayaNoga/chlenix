@@ -28,6 +28,8 @@ interface AuthState {
   deleteUser: (id: string) => Promise<{ success: boolean; error?: string }>;
   setTheme: (theme: ThemePreference) => Promise<void>;
   switchOrganization: (organizationId: string) => Promise<{ success: boolean; error?: string }>;
+  /** Обновить пользователя в сессии без перезагрузки (после создания организации бэкенд перевыпускает токен). */
+  setCurrentUser: (user: User | null) => void;
   myOrganizations: () => Array<{ id: string; name: string; isOwn: boolean }>;
   canCreateOrganization: () => boolean;
   getUserRole: () => UserRole | null;
@@ -208,6 +210,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       deleteUser,
       setTheme,
       switchOrganization,
+      setCurrentUser,
       myOrganizations: () => currentUser?.accessibleOrganizations ?? [],
       canCreateOrganization: () => currentUser?.role === 'admin',
       getUserRole: () => currentUser?.role || null,
@@ -239,6 +242,7 @@ const authFallback: AuthState = {
   deleteUser: async () => ({ success: false, error: 'Сервер недоступен' }),
   setTheme: async () => {},
   switchOrganization: async () => ({ success: false, error: 'Сервер недоступен' }),
+  setCurrentUser: () => {},
   myOrganizations: () => [],
   canCreateOrganization: () => false,
   getUserRole: () => null,

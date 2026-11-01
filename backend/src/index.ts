@@ -1587,37 +1587,47 @@ const directoryConfigs: DirConfig[] = [
 
 for (const cfg of directoryConfigs) {
   app.get(`/api/${cfg.route}`, authMiddleware, async (c) => {
-    // Справочники видны всем пользователям организации владельца справочника
-    const viewer = await prisma.user.findUnique({ where: { id: c.get('user').userId }, select: { role: true, organizationId: true } });
-    const items: any[] = await (prisma as any)[cfg.model].findMany({ orderBy: { name: 'asc' } });
-    const visible = items.filter((it) =>
-      viewer?.role === 'admin' || !it.organizationId || it.organizationId === viewer?.organizationId
-    );
-    return c.json(visible.map(publicDirectory));
+    // Мультиорганизационность: справочник принадлежит активной организации.
+    // Показываем записи только текущей организации + старые глобальные записи без
+    // привязки (organizationId = null) — для совместимости с данными до миграции.
+    const me = await prisma.user.findUnique({ where: { id: c.get('user').userId }, select: { organizationId: true } });
+    const items: any[] = await (prisma as any)[cfg.model].findMany({
+      // Активная организация + старые глобальные записи (organizationId = null)
+      where: me?.organizationId
+        ? { OR: [{ organizationId: me.organizationId }, { organizationId: null }] }
+        : {},
+      orderBy: { name: 'asc' },
+    });
+    return c.json(items.map(publicDirectory));
   });
 
   app.post(`/api/${cfg.route}`, authMiddleware, requireRole(['admin']), async (c) => {
     const schema = z.object({
       name: z.string().min(1),
       description: z.string().optional().nullable(),
-      organizationId: z.string().uuid().optional().nullable(),
+      organizationId: z.union([z.string().uuid(), z.null()]).optional(),
       ...(cfg.model === 'branch' ? { address: z.string().min(1) } : {}),
     });
     const parsed = schema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
 
     const currentUser = c.get('user');
+    // Активная организация пользователя — источник скоупа справочника.
+    // organizationId из тела запроса учитывается только если он пустой/отсутствует.
+    const dbUser = await prisma.user.findUnique({ where: { id: currentUser.userId }, select: { organizationId: true } });
+    const orgId = dbUser?.organizationId ?? parsed.data.organizationId ?? null;
+
     const orgWhere: any = { name: parsed.data.name };
-    if (currentUser.organizationId) orgWhere.organizationId = currentUser.organizationId;
+    if (orgId) orgWhere.organizationId = orgId;
     const exists = await (prisma as any)[cfg.model].findFirst({ where: orgWhere });
     if (exists) return c.json({ error: `Запись «${parsed.data.name}» уже существует` }, 409);
 
     const item = await (prisma as any)[cfg.model].create({
       data: {
-        name: parsed.data.name,
+        name: parsed.data.name.trim(),
         description: parsed.data.description ?? null,
         ...(cfg.model === 'branch' ? { address: parsed.data.address } : {}),
-        organizationId: currentUser.organizationId ?? null,
+        organizationId: orgId,
         updatedById: currentUser.userId,
       },
     });

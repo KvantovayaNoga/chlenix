@@ -6,10 +6,10 @@
 // ============================================================
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { api } from '../api/client';
+import { api, setToken } from '../api/client';
 import { useAuthStore } from './authStore';
 import type {
-  Employee, Equipment, VirtualMachine, Service,
+  Employee, Equipment, VirtualMachine, Service, User,
   AuditLogEntry, Department, Position, Branch, Organization, DashboardStats,
 } from '../types';
 
@@ -104,7 +104,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { isAuthenticated, currentUser } = useAuthStore();
+  const { isAuthenticated, currentUser, setCurrentUser } = useAuthStore();
 
   // Актуальные списки для «геттеров» без пересоздания контекста
   const ref = useRef({ organizations, departments, positions, branches, employees, equipment, virtualMachines, services });
@@ -205,8 +205,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const addOrganization = useCallback(async (data: Partial<Organization>) => {
     let created: Organization | null = null;
     const ok = await run(async () => {
-      created = await api.post<Organization>('/organizations', data);
-      setOrganizations((prev) => [...prev, created as Organization]);
+      // Бэкенд возвращает { ...organization, token, user }: создавший автоматически
+      // переключается на новую организацию — нужно обновить токен сессии, иначе
+      // справочники/сотрудники останутся привязаны к прежней организации.
+      created = await api.post<Organization & { token?: string; user?: User }>('/organizations', data);
+      const res = created as Organization & { token?: string; user?: User };
+      if (res.token) setToken(res.token);
+      if (res.user) setCurrentUser(res.user);
+      setOrganizations((prev) => [...prev, res]);
     });
     return ok ? created : null;
   }, [run]);
