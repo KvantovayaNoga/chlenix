@@ -172,8 +172,10 @@ export function Sidebar() {
               {!isMinimized && <span className="font-medium truncate">{item.label}</span>}
             </NavLink>
 
-            {/* Блок организаций: переключение + создание — под пунктом «Организация» */}
-            {!isMinimized && item.icon === Building2 && (
+            {/* Блок организаций: переключение + создание второй организации — под пунктом «Организация».
+                Логика: пока нет ни одной организации, отдельной кнопки «создать ещё одну» быть не должно —
+                сначала организация создаётся через основной пункт меню («Создать организацию»). */}
+            {!isMinimized && item.icon === Building2 && organization && (
               <div className="mt-1 ml-3 border-l border-slate-700 pl-2 space-y-1">
                 {accessibleOrgs.length > 1 && (
                   <>
