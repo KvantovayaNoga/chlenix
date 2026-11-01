@@ -1,9 +1,10 @@
 import { useParams, useNavigate } from '../router';
 import { useDataStore } from '../store/dataStore';
 import { useAuthStore } from '../store/authStore';
-import { ArrowLeft, Mail, Phone, Building, MapPin, Calendar, Monitor, Server, Armchair, MousePointerClick, Network, Package, Unlink, Cpu, Globe, User, PhoneCall, Plus, X } from 'lucide-react';
+import { ArrowLeft, Mail, Phone, Building, MapPin, Calendar, Monitor, Server, Armchair, MousePointerClick, Network, Package, Unlink, Cpu, Globe, User, PhoneCall, Plus, X, Pencil } from 'lucide-react';
 import type { EquipmentCategory } from '../types';
 import { useState } from 'react';
+import { AddEmployeeModal } from './EmployeesPage';
 
 const categoryLabels: Record<EquipmentCategory, string> = {
   computer: 'Компьютер', monitor: 'Монитор', peripheral: 'Периферия', furniture: 'Мебель',
@@ -30,9 +31,10 @@ const vmStatusLabels = {
 export function EmployeeDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getEmployeeById, getEquipmentByEmployee, getVMsByResponsible, unassignEquipment, assignEquipment, getUnassignedEquipment, departments, positions, branches } = useDataStore();
+  const { getEmployeeById, getEquipmentByEmployee, getVMsByResponsible, unassignEquipment, assignEquipment, getUnassignedEquipment, departments, positions, branches, updateEmployee } = useDataStore();
   const { canEdit, users } = useAuthStore();
   const [showAssignEquipmentModal, setShowAssignEquipmentModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   const employee = getEmployeeById(id || '');
   const employeeEquipment = getEquipmentByEmployee(id || '');
@@ -58,7 +60,12 @@ export function EmployeeDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
-            <div className="text-center mb-6">
+            <div className="text-center mb-6 relative">
+              {canEdit() && (
+                <button onClick={() => setShowEditModal(true)} className="absolute right-0 top-0 flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors" title="Редактировать карточку">
+                  <Pencil className="w-4 h-4" />Изменить
+                </button>
+              )}
               <div className={`w-20 h-20 rounded-full mx-auto flex items-center justify-center text-white text-2xl font-bold ${employee.isEmployed ? 'bg-indigo-500' : 'bg-gray-400'}`}>{employee.lastName.charAt(0)}{employee.firstName.charAt(0)}</div>
               <h2 className="text-xl font-bold text-gray-700 dark:text-gray-200 mt-4">{employee.lastName} {employee.firstName} {employee.middleName}</h2>
               <p className="text-gray-600 dark:text-gray-400">{getPosName()}</p>
@@ -160,6 +167,14 @@ export function EmployeeDetailPage() {
           </div>
         </div>
       </div>
+
+      {showEditModal && employee && (
+        <AddEmployeeModal
+          initial={employee}
+          onClose={() => setShowEditModal(false)}
+          onAdd={(data) => { updateEmployee(employee.id, data as any); setShowEditModal(false); }}
+        />
+      )}
 
       {showAssignEquipmentModal && employee && (
         <AssignEquipmentModal

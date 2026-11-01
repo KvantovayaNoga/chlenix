@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from '../router';
 import { useDataStore } from '../store/dataStore';
 import { useAuthStore } from '../store/authStore';
-import { Search, Plus, UserCheck, UserX, Mail, Building, MapPin, X, Users, Phone, Filter, Save } from 'lucide-react';
+import { Search, Plus, UserCheck, UserX, Mail, Building, MapPin, X, Users, Phone, Filter, Save, Pencil } from 'lucide-react';
 import type { Employee } from '../types';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
 
 export function EmployeesPage() {
-  const { employees, addEmployee, departments, positions, branches } = useDataStore();
+  const { employees, addEmployee, updateEmployee, departments, positions, branches } = useDataStore();
   const { canEdit } = useAuthStore();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
@@ -16,6 +16,7 @@ export function EmployeesPage() {
   const [filterBranch, setFilterBranch] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [showFilterManager, setShowFilterManager] = useState(false);
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>(() => {
     const saved = localStorage.getItem('employees-filters');
@@ -150,7 +151,18 @@ export function EmployeesPage() {
                   <p className="text-sm text-gray-600 dark:text-gray-400">{getPosName(employee.positionId)}</p>
                 </div>
               </div>
-              {employee.isEmployed ? <UserCheck className="w-5 h-5 text-green-500" /> : <UserX className="w-5 h-5 text-red-400" />}
+              <div className="flex items-center gap-2">
+                {canEdit() && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setEditingEmployee(employee); }}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors"
+                    title="Редактировать сотрудника"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                )}
+                {employee.isEmployed ? <UserCheck className="w-5 h-5 text-green-500" /> : <UserX className="w-5 h-5 text-red-400" />}
+              </div>
             </div>
             <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
               <div className="flex items-center gap-2"><Building className="w-4 h-4 text-gray-400 dark:text-gray-500" /><span>{getDeptName(employee.departmentId)}</span></div>
@@ -165,13 +177,26 @@ export function EmployeesPage() {
       {filteredEmployees.length === 0 && <div className="text-center py-12 text-gray-500 dark:text-gray-400"><Users className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" /><p>Сотрудники не найдены</p></div>}
 
       {showAddModal && <AddEmployeeModal onClose={() => setShowAddModal(false)} onAdd={(data) => addEmployee(data as any)} />}
+      {editingEmployee && (
+        <AddEmployeeModal
+          initial={editingEmployee}
+          onClose={() => setEditingEmployee(null)}
+          onAdd={(data) => updateEmployee(editingEmployee.id, data as any)}
+        />
+      )}
     </div>
   );
 }
 
-function AddEmployeeModal({ onClose, onAdd }: { onClose: () => void; onAdd: (data: any) => void }) {
+export function AddEmployeeModal({ onClose, onAdd, initial }: { onClose: () => void; onAdd: (data: any) => void; initial?: Employee | null }) {
   const { departments, positions, branches } = useDataStore();
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState(() => initial ? ({
+    firstName: initial.firstName ?? '', lastName: initial.lastName ?? '', middleName: initial.middleName ?? '',
+    positionId: initial.positionId ?? '', departmentId: initial.departmentId ?? '', email: initial.email ?? '',
+    workPhone: initial.workPhone ?? '', internalPhone: initial.internalPhone ?? '', personalPhone: initial.personalPhone ?? '',
+    hireDate: initial.hireDate ? initial.hireDate.slice(0, 10) : new Date().toISOString().split('T')[0],
+    isEmployed: initial.isEmployed ?? true, branchId: initial.branchId ?? '', floor: initial.floor ?? '', room: initial.room ?? '', notes: initial.notes ?? '',
+  }) : {
     firstName: '', lastName: '', middleName: '', positionId: '', departmentId: '', email: '',
     workPhone: '', internalPhone: '', personalPhone: '', hireDate: new Date().toISOString().split('T')[0],
     isEmployed: true, branchId: '', floor: '', room: '', notes: '',
@@ -184,7 +209,7 @@ function AddEmployeeModal({ onClose, onAdd }: { onClose: () => void; onAdd: (dat
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-xl font-bold text-gray-700 dark:text-gray-200">Добавить сотрудника</h2>
+          <h2 className="text-xl font-bold text-gray-700 dark:text-gray-200">{initial ? 'Редактировать сотрудника' : 'Добавить сотрудника'}</h2>
           <button onClick={onClose} className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"><X className="w-6 h-6" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
@@ -198,7 +223,7 @@ function AddEmployeeModal({ onClose, onAdd }: { onClose: () => void; onAdd: (dat
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Отдел<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><select value={formData.departmentId} onChange={(e) => handleChange('departmentId', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required><option value="">Выберите отдел</option>{departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email *</label><input type="email" value={formData.email} onChange={(e) => handleChange('email', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required /></div>
+            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="email" value={formData.email} onChange={(e) => handleChange('email', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Рабочий телефон</label><input type="text" value={formData.workPhone} onChange={(e) => handleChange('workPhone', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Внутренний номер</label><input type="text" value={formData.internalPhone} onChange={(e) => handleChange('internalPhone', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="1001" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Личный телефон</label><input type="text" value={formData.personalPhone} onChange={(e) => handleChange('personalPhone', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" /></div>
@@ -213,7 +238,7 @@ function AddEmployeeModal({ onClose, onAdd }: { onClose: () => void; onAdd: (dat
           <div className="flex items-center gap-2"><input type="checkbox" id="isEmployed" checked={formData.isEmployed} onChange={(e) => handleChange('isEmployed', e.target.checked)} className="w-4 h-4 text-indigo-600 rounded" /><label htmlFor="isEmployed" className="text-sm text-gray-700 dark:text-gray-300">Работает в организации</label></div>
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Отмена</button>
-            <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Добавить</button>
+            <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">{initial ? 'Сохранить' : 'Добавить'}</button>
           </div>
         </form>
       </div>
