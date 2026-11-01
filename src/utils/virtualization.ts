@@ -102,3 +102,13 @@ export function buildVirtualizationPlatforms(
   }
   return platforms.sort((a, b) => a.hypervisor.localeCompare(b.hypervisor));
 }
+
+/** Нормализация данных сервера для POST/PUT /api/equipment:
+ *  роль «storage» синхронизируется с категорией оборудования, пустые строки -> null. */
+export function normalizeServerPayload<T extends Record<string, any>>(data: T, isCreate: boolean): T {
+  const out: any = { ...data };
+  if (out.serverRole === '') out.serverRole = null;
+  if ('hypervisorName' in out) out.hypervisorName = out.hypervisorName?.trim() ? out.hypervisorName.trim() : null;
+  if (isCreate) out.category = out.serverRole === 'storage' ? 'storage' : 'server';
+  return out as T;
+}

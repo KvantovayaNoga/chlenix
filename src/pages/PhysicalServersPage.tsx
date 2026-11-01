@@ -6,7 +6,7 @@ import { useAuthStore } from '../store/authStore';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { HistoryLog } from '../components/HistoryLog';
 import type { Equipment, ServerRole } from '../types';
-import { serverRoleLabels, serverRoleOptions, hypervisorSuggestions } from '../utils/virtualization';
+import { serverRoleLabels, serverRoleOptions, hypervisorSuggestions, normalizeServerPayload } from '../utils/virtualization';
 
 export function PhysicalServersPage() {
   const { equipment, branches, addEquipment, updateEquipment, deleteEquipment, getVMsByHost } = useDataStore();

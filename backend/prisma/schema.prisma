@@ -175,6 +175,10 @@ model Equipment {
   serverRole            String?         @map("server_role")
   // Название гипервизора, если это хост (VMware ESXi, Proxmox VE, Hyper-V…)
   hypervisorName        String?         @map("hypervisor_name")
+  // Характеристики серверов (CPU/RAM/Disk)
+  cpuCores              Int?            @map("cpu_cores")
+  ramGB                 Int?            @map("ram_gb")
+  diskGB                Int?            @map("disk_gb")
   notes                 String?
   createdAt             DateTime        @default(now()) @map("created_at")
   updatedAt             DateTime        @updatedAt @map("updated_at")

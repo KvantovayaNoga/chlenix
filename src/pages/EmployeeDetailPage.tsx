@@ -1,18 +1,18 @@
 import { useParams, useNavigate } from '../router';
 import { useDataStore } from '../store/dataStore';
 import { useAuthStore } from '../store/authStore';
-import { ArrowLeft, Mail, Phone, Building, MapPin, Calendar, Monitor, Server, Armchair, MousePointerClick, Network, Package, Unlink, Cpu, Globe, User, PhoneCall, Plus, X, Pencil } from 'lucide-react';
+import { ArrowLeft, Mail, Phone, Building, MapPin, Calendar, Monitor, Server, Armchair, MousePointerClick, Network, Package, Unlink, Cpu, Globe, User, PhoneCall, Plus, X, Pencil, Database } from 'lucide-react';
 import type { EquipmentCategory } from '../types';
 import { useState } from 'react';
 import { AddEmployeeModal } from './EmployeesPage';
 
 const categoryLabels: Record<EquipmentCategory, string> = {
   computer: 'Компьютер', monitor: 'Монитор', peripheral: 'Периферия', furniture: 'Мебель',
-  server: 'Сервер', virtual_machine: 'ВМ', network: 'Сеть', phone: 'Телефон', other: 'Прочее',
+  server: 'Сервер', virtual_machine: 'ВМ', network: 'Сеть', phone: 'Телефон', storage: 'СХД', other: 'Прочее',
 };
 const categoryIcons: Record<EquipmentCategory, React.ElementType> = {
   computer: Monitor, monitor: Monitor, peripheral: MousePointerClick, furniture: Armchair,
-  server: Server, virtual_machine: Cpu, network: Network, phone: Phone, other: Package,
+  server: Server, virtual_machine: Cpu, network: Network, phone: Phone, storage: Database, other: Package,
 };
 const conditionLabels = {
   new: { label: 'Новое', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
