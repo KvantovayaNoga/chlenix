@@ -298,7 +298,8 @@ model Service {
   virtualMachineId String       @map("virtual_machine_id")
   name             String
   version          String?
-  port             Int?
+  // Порт(ы) сервиса: строка, чтобы поддерживать несколько портов через запятую (напр. "80, 443")
+  port             String?
   description      String?
   status           ServiceStatus @default(active)
   createdAt        DateTime     @default(now()) @map("created_at")

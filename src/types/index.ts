@@ -233,12 +233,22 @@ export interface Service {
   virtualMachineId: string;
   name: string;
   version: string;
-  port: number | null;
+  // Порт(ы) сервиса. Строка поддерживает несколько портов через запятую,
+  // например "80, 443" (nginx). Старые числовые значения совместимы на чтение.
+  port: string | number | null;
   description: string;
   status: 'active' | 'inactive' | 'maintenance';
   createdAt: string;
   updatedAt: string;
   updatedBy: string | null;
+}
+
+// Разбирает поле порта сервиса (строка "80, 443", число или null) в массив чисел.
+export function parsePortList(port: string | number | null | undefined): number[] {
+  if (port === null || port === undefined || port === '') return [];
+  const parts = String(port).split(/[,;\/\s]+/).filter(Boolean);
+  const nums = parts.map((x) => Number(x)).filter((n) => Number.isInteger(n) && n >= 1 && n <= 65535);
+  return [...new Set(nums)];
 }
 
 // Запись о передаче техники

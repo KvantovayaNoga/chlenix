@@ -1521,6 +1521,8 @@ app.post('/api/virtual-machines/:vmId/network-interfaces', authMiddleware, requi
     },
   });
 
+  // Каскадно «трогаем» ВМ: updatedAt/updatedBy на карточке должны отражать последнее изменение интерфейса
+  await prisma.virtualMachine.update({ where: { id: vmId }, data: { updatedById: currentUser.userId ?? undefined } });
   await writeAudit(currentUser, 'create', 'virtualmachine', vmId, vm.name, `Добавлен сетевой интерфейс "${ni.name}" (${ni.ipAddress})`, c.req.header('x-forwarded-for'));
   return c.json(ni, 201);
 });
@@ -1545,6 +1547,7 @@ app.put('/api/network-interfaces/:id', authMiddleware, requireRole(['admin', 'ma
     data: { ...parsed.data, updatedById: currentUser.userId ?? undefined },
   });
 
+  await prisma.virtualMachine.update({ where: { id: old.virtualMachineId }, data: { updatedById: currentUser.userId ?? undefined } });
   await writeAudit(currentUser, 'update', 'virtualmachine', old.virtualMachineId, '', `Изменён сетевой интерфейс "${ni.name}"`, c.req.header('x-forwarded-for'));
   return c.json(ni);
 });
@@ -1556,9 +1559,28 @@ app.delete('/api/network-interfaces/:id', authMiddleware, requireRole(['admin', 
   if (!old) return c.json({ error: 'Not found' }, 404);
 
   await prisma.networkInterface.delete({ where: { id } });
+  await prisma.virtualMachine.update({ where: { id: old.virtualMachineId }, data: { updatedById: currentUser.userId ?? undefined } });
   await writeAudit(currentUser, 'delete', 'virtualmachine', old.virtualMachineId, '', `Удалён сетевой интерфейс "${old.name}"`, c.req.header('x-forwarded-for'));
   return c.json({ success: true });
 });
+
+// Разбирает поле «порты»: принимает строку ("80, 443", "80/443", "80; 443"),
+// число или null. Валидирует каждый порт (1..65535) и возвращает нормализованную
+// строку "80, 443". undefined — поле не менялось; ошибка — некорректный порт.
+function parsePorts(v: unknown): { value?: string | null; error?: string } {
+  if (v === undefined) return {};
+  if (v === null || v === '') return { value: null };
+  const parts = String(v).split(/[,;\/\s]+/).filter(Boolean);
+  if (parts.length === 0) return { value: null };
+  const nums: number[] = [];
+  for (const part of parts) {
+    const n = Number(part);
+    if (!Number.isInteger(n) || n < 1 || n > 65535) return { error: `Некорректный порт «${part}» (ожидается число 1–65535)` };
+    nums.push(n);
+  }
+  const uniq = [...new Set(nums)];
+  return { value: uniq.join(', ') };
+}
 
 // Services on VMs
 app.post('/api/virtual-machines/:vmId/services', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
@@ -1566,11 +1588,12 @@ app.post('/api/virtual-machines/:vmId/services', authMiddleware, requireRole(['a
   const parsed = z.object({
     name: z.string().min(1),
     version: z.string().optional().nullable(),
-    port: z.number().int().min(1).max(65535).nullable().optional(),
     description: z.string().optional().nullable(),
     status: z.enum(['active', 'inactive', 'maintenance']).optional(),
-  }).safeParse(await c.req.json().catch(() => null));
+  }).passthrough().safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'Некорректные данные сервиса' }, 400);
+  const ports = parsePorts((parsed.data as any).port);
+  if (ports.error) return c.json({ error: ports.error }, 400);
 
   const currentUser = c.get('user');
   const vm = await prisma.virtualMachine.findUnique({ where: { id: vmId } });
@@ -1580,7 +1603,7 @@ app.post('/api/virtual-machines/:vmId/services', authMiddleware, requireRole(['a
     data: {
       name: parsed.data.name,
       version: parsed.data.version ?? null,
-      port: parsed.data.port ?? null,
+      port: ports.value ?? null,
       description: parsed.data.description ?? null,
       status: parsed.data.status ?? 'active',
       virtualMachineId: vmId,
@@ -1588,6 +1611,7 @@ app.post('/api/virtual-machines/:vmId/services', authMiddleware, requireRole(['a
     },
   });
 
+  await prisma.virtualMachine.update({ where: { id: vmId }, data: { updatedById: currentUser.userId ?? undefined } });
   await writeAudit(currentUser, 'create', 'virtualmachine', vmId, vm.name, `Добавлен сервис "${service.name}"`, c.req.header('x-forwarded-for'));
   return c.json(service, 201);
 });
@@ -1597,21 +1621,24 @@ app.put('/api/services/:id', authMiddleware, requireRole(['admin', 'materially_r
   const parsed = z.object({
     name: z.string().min(1).optional(),
     version: z.string().optional().nullable(),
-    port: z.number().int().min(1).max(65535).nullable().optional(),
     description: z.string().optional().nullable(),
     status: z.enum(['active', 'inactive', 'maintenance']).optional(),
-  }).safeParse(await c.req.json().catch(() => null));
+  }).passthrough().safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
+  const ports = parsePorts((parsed.data as any).port);
+  if (ports.error) return c.json({ error: ports.error }, 400);
 
   const currentUser = c.get('user');
   const old = await prisma.service.findUnique({ where: { id } });
   if (!old) return c.json({ error: 'Not found' }, 404);
 
+  const { port: _rawPort, ...restData } = parsed.data as any;
   const service = await prisma.service.update({
     where: { id },
-    data: { ...parsed.data, updatedById: currentUser.userId ?? undefined },
+    data: { ...restData, ...(ports.value !== undefined ? { port: ports.value } : {}), updatedById: currentUser.userId ?? undefined },
   });
 
+  await prisma.virtualMachine.update({ where: { id: old.virtualMachineId }, data: { updatedById: currentUser.userId ?? undefined } });
   await writeAudit(currentUser, 'update', 'virtualmachine', old.virtualMachineId, '', `Изменён сервис "${service.name}"`, c.req.header('x-forwarded-for'));
   return c.json(service);
 });
@@ -1623,6 +1650,7 @@ app.delete('/api/services/:id', authMiddleware, requireRole(['admin', 'materiall
   if (!old) return c.json({ error: 'Not found' }, 404);
 
   await prisma.service.delete({ where: { id } });
+  await prisma.virtualMachine.update({ where: { id: old.virtualMachineId }, data: { updatedById: currentUser.userId ?? undefined } });
   await writeAudit(currentUser, 'delete', 'virtualmachine', old.virtualMachineId, '', `Удалён сервис "${old.name}"`, c.req.header('x-forwarded-for'));
   return c.json({ success: true });
 });

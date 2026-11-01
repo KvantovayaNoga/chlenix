@@ -1,11 +1,13 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useDataStore } from '../store/dataStore';
+import { api } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { useSearchParams } from '../router';
 import {
   Cpu, Network, Globe, Plus, Edit, Trash2, X, Server, Activity, Search, Filter, Save,
 } from 'lucide-react';
 import type { VirtualMachine, NetworkInterface, Service } from '../types';
+import { parsePortList } from '../types';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
 
@@ -23,7 +25,7 @@ const serviceStatusLabels = {
 };
 
 export function ServersPage() {
-  const { virtualMachines, equipment, employees, services, addVM, updateVM, deleteVM, addNetworkInterface, removeNetworkInterface, addService, updateService, deleteService, getVMsByHost } = useDataStore();
+  const { virtualMachines, equipment, employees, services, addVM, updateVM, deleteVM, addNetworkInterface, removeNetworkInterface, addService, updateService, deleteService, getVMsByHost, reloadVMs: refreshVMs } = useDataStore();
   const { canEdit, users } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -33,12 +35,22 @@ export function ServersPage() {
   const [filterResponsible, setFilterResponsible] = useState('');
   const [filterHasPublicIP, setFilterHasPublicIP] = useState<'all' | 'yes' | 'no'>('all');
   const [filterOS, setFilterOS] = useState('');
-  const [selectedVM, setSelectedVM] = useState<VirtualMachine | null>(null);
+  // ВАЖНО: selectedVMSnapshot — снимок на момент открытия. После add/update/delete
+  // интерфейсов и сервисов store перезагружает virtualMachines, а старый снимок
+  // не обновлялся (баг «изменения видны только после F5»). Теперь актуальная
+  // версия резолвится из стора ниже (useMemo selectedVM).
+  const [selectedVMSnapshot, setSelectedVM] = useState<VirtualMachine | null>(null);
   const [editingVM, setEditingVM] = useState<VirtualMachine | null>(null);
   const [showAddInterfaceModal, setShowAddInterfaceModal] = useState(false);
   const [showAddServiceModal, setShowAddServiceModal] = useState(false);
   const [editingInterface, setEditingInterface] = useState<NetworkInterface | null>(null);
   const [editingService, setEditingService] = useState<Service | null>(null);
+
+  // Актуальная версия выбранной ВМ из стора (обновляется сразу после mutations)
+  const selectedVM = useMemo(
+    () => (selectedVMSnapshot ? virtualMachines.find((v) => v.id === selectedVMSnapshot.id) ?? selectedVMSnapshot : null),
+    [selectedVMSnapshot, virtualMachines],
+  );
   const [showFilterManager, setShowFilterManager] = useState(false);
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>(() => {
     const saved = localStorage.getItem('servers-filters');
@@ -273,7 +285,7 @@ export function ServersPage() {
                     return (
                       <div key={svc.id} className="flex items-center gap-1 px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-xs">
                         <Activity className="w-3 h-3 text-gray-500 dark:text-gray-400" />
-                        <span className="text-gray-700 dark:text-gray-200">{svc.name}{svc.port && `:${svc.port}`}</span>
+                        <span className="text-gray-700 dark:text-gray-200">{svc.name}{parsePortList(svc.port).length > 0 && `:${parsePortList(svc.port).join(', ')}`}</span>
                         <span className={`px-1 rounded text-[10px] ${svcStatus.color}`}>{svcStatus.label}</span>
                       </div>
                     );
@@ -305,7 +317,7 @@ export function ServersPage() {
           services={services.filter(s => s.virtualMachineId === selectedVM.id)} 
           onAddInterface={() => setShowAddInterfaceModal(true)} 
           onEditInterface={(iface) => setEditingInterface(iface)}
-          onRemoveInterface={(ifaceId) => { removeNetworkInterface(selectedVM.id, ifaceId); setSelectedVM({ ...selectedVM, networkInterfaces: selectedVM.networkInterfaces.filter(i => i.id !== ifaceId) } as any); }} 
+          onRemoveInterface={(ifaceId) => { void removeNetworkInterface(selectedVM.id, ifaceId); }} 
           onAddService={() => setShowAddServiceModal(true)} 
           onEditService={(svc) => setEditingService(svc)}
           onDeleteService={(svcId) => { deleteService(svcId); }} 
@@ -335,7 +347,7 @@ export function ServersPage() {
 
       {/* Add Interface Modal */}
       {showAddInterfaceModal && selectedVM && (
-        <AddInterfaceModal onClose={() => setShowAddInterfaceModal(false)} onSave={(data) => { addNetworkInterface(selectedVM.id, data as any); setShowAddInterfaceModal(false); setSelectedVM({ ...selectedVM } as any); }} />
+        <AddInterfaceModal onClose={() => setShowAddInterfaceModal(false)} onSave={async (data) => { await addNetworkInterface(selectedVM.id, data as any); setShowAddInterfaceModal(false); }} />
       )}
 
       {/* Add Service Modal */}
@@ -348,13 +360,14 @@ export function ServersPage() {
         <EditInterfaceModal 
           interface={editingInterface}
           onClose={() => setEditingInterface(null)} 
-          onSave={(data) => { 
-            const updatedInterfaces = selectedVM.networkInterfaces.map(i => 
-              i.id === editingInterface.id ? { ...i, ...data } : i
-            );
-            updateVM(selectedVM.id, { networkInterfaces: updatedInterfaces } as any);
-            setSelectedVM({ ...selectedVM, networkInterfaces: updatedInterfaces } as any);
-            setEditingInterface(null);
+          onSave={async (data) => {
+            try {
+              await api.put(`/network-interfaces/${editingInterface.id}`, data);
+              await refreshVMs();
+              setEditingInterface(null);
+            } catch {
+              alert('Не удалось сохранить интерфейс');
+            }
           }} 
         />
       )}
@@ -376,7 +389,7 @@ export function ServersPage() {
 
 function VMDetailModal({ vm, onClose, canEdit, employees, services, onAddInterface, onEditInterface, onRemoveInterface, onAddService, onEditService, onDeleteService, getEmployeeName, getServerName, getUserName }: any) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-800 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
           <h2 className="text-xl font-bold text-gray-200 flex items-center gap-2"><Cpu className="w-6 h-6 text-purple-400" />{vm.name}</h2>
@@ -435,7 +448,7 @@ function VMDetailModal({ vm, onClose, canEdit, employees, services, onAddInterfa
                 <div key={svc.id} className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
                   <div>
                     <p className="font-medium text-gray-200">{svc.name} <span className="text-sm text-gray-400">v{svc.version}</span></p>
-                    <p className="text-xs text-gray-400">{svc.description} {svc.port && `• Порт: ${svc.port}`}</p>
+                    <p className="text-xs text-gray-400">{svc.description} {parsePortList(svc.port).length > 0 && `• Порты: ${parsePortList(svc.port).join(', ')}`}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`px-2 py-0.5 rounded text-xs ${serviceStatusLabels[svc.status].color}`}>{serviceStatusLabels[svc.status].label}</span>
@@ -472,7 +485,7 @@ function VMEditModal({ vm, onClose, onSave, servers, employees }: any) {
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">{vm?.id ? 'Редактировать ВМ' : 'Создать виртуальную машину'}</h2>
@@ -517,7 +530,7 @@ function AddInterfaceModal({ onClose, onSave }: any) {
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-800 rounded-2xl w-full max-w-md border border-gray-700" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-xl font-bold text-gray-200">Добавить сетевой интерфейс</h2>
@@ -550,7 +563,7 @@ function EditInterfaceModal({ interface: iface, onClose, onSave }: any) {
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-800 rounded-2xl w-full max-w-md border border-gray-700" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-xl font-bold text-gray-200">Редактировать сетевой интерфейс</h2>
@@ -576,14 +589,14 @@ function EditServiceModal({ service: svc, onClose, onSave }: any) {
   const [formData, setFormData] = useState({ 
     name: svc?.name || '', 
     version: svc?.version || '', 
-    port: svc?.port || null as number | null, 
+    port: svc?.port != null ? String(svc.port) : null as string | null, 
     description: svc?.description || '', 
     status: svc?.status || 'active' as const 
   });
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-800 rounded-2xl w-full max-w-md border border-gray-700" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-xl font-bold text-gray-200">Редактировать сервис</h2>
@@ -592,7 +605,7 @@ function EditServiceModal({ service: svc, onClose, onSave }: any) {
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div><label className="block text-sm font-medium text-gray-300 mb-1">Название *</label><input type="text" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" required placeholder="Nginx" /></div>
           <div><label className="block text-sm font-medium text-gray-300 mb-1">Версия</label><input type="text" value={formData.version} onChange={(e) => setFormData(p => ({ ...p, version: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" placeholder="1.24.0" /></div>
-          <div><label className="block text-sm font-medium text-gray-300 mb-1">Порт</label><input type="number" value={formData.port || ''} onChange={(e) => setFormData(p => ({ ...p, port: e.target.value ? +e.target.value : null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" placeholder="80" /></div>
+          <div><label className="block text-sm font-medium text-gray-300 mb-1">Порт(ы)</label><input type="text" inputMode="numeric" title="Номера портов через запятую, например: 80, 443" value={formData.port ?? ''} onChange={(e) => setFormData(p => ({ ...p, port: e.target.value.trim() === '' ? null : e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" placeholder="80, 443" /></div>
           <div><label className="block text-sm font-medium text-gray-300 mb-1">Статус</label>
             <select value={formData.status} onChange={(e) => setFormData(p => ({ ...p, status: e.target.value as any }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
               <option value="active">Активен</option>
@@ -612,11 +625,11 @@ function EditServiceModal({ service: svc, onClose, onSave }: any) {
 }
 
 function AddServiceModal({ onClose, onSave }: any) {
-  const [formData, setFormData] = useState({ name: '', version: '', port: null as number | null, description: '', status: 'active' as const });
+  const [formData, setFormData] = useState({ name: '', version: '', port: null as string | null, description: '', status: 'active' as const });
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-800 rounded-2xl w-full max-w-md border border-gray-700" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-xl font-bold text-gray-200">Добавить сервис</h2>
@@ -625,7 +638,7 @@ function AddServiceModal({ onClose, onSave }: any) {
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div><label className="block text-sm font-medium text-gray-300 mb-1">Название *</label><input type="text" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" required placeholder="Nginx" /></div>
           <div><label className="block text-sm font-medium text-gray-300 mb-1">Версия</label><input type="text" value={formData.version} onChange={(e) => setFormData(p => ({ ...p, version: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" placeholder="1.24.0" /></div>
-          <div><label className="block text-sm font-medium text-gray-300 mb-1">Порт</label><input type="number" value={formData.port || ''} onChange={(e) => setFormData(p => ({ ...p, port: e.target.value ? +e.target.value : null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" placeholder="80" /></div>
+          <div><label className="block text-sm font-medium text-gray-300 mb-1">Порт(ы)</label><input type="text" inputMode="numeric" title="Номера портов через запятую, например: 80, 443" value={formData.port ?? ''} onChange={(e) => setFormData(p => ({ ...p, port: e.target.value.trim() === '' ? null : e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" placeholder="80, 443" /></div>
           <div><label className="block text-sm font-medium text-gray-300 mb-1">Описание</label><textarea value={formData.description} onChange={(e) => setFormData(p => ({ ...p, description: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" rows={2} /></div>
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-700">
             <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-700">Отмена</button>

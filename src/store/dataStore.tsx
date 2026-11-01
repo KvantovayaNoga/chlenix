@@ -28,6 +28,7 @@ interface DataState {
   error: string | null;
 
   loadAll: () => Promise<void>;
+  reloadVMs: () => Promise<void>;
   clearError: () => void;
 
   // Organizations
@@ -516,6 +517,7 @@ const EMPTY_DATA_STATE: DataState = {
   loading: false,
   error: null,
   loadAll: asyncNoop as unknown as DataState['loadAll'],
+  reloadVMs: asyncNoop as unknown as DataState['reloadVMs'],
   clearError: () => {},
   addOrganization: asyncNoop as unknown as DataState['addOrganization'],
   updateOrganization: asyncNoop as unknown as DataState['updateOrganization'],
