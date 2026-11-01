@@ -26,7 +26,17 @@ export interface User {
   updatedAt: string;
   isActive: boolean;
   organizationId?: string | null; // Активная организация пользователя
-  accessibleOrganizations?: Array<{ id: string; name: string; isOwn: boolean }>; // Где может работать пользователь
+  accessibleOrganizations?: Array<{
+    id: string;
+    name: string;
+    isOwn: boolean;
+    // Краткие реквизиты для карточек на странице «Сменить организацию»
+    shortName?: string;
+    legalAddress?: string;
+    phone?: string;
+    inn?: string;
+    directorName?: string;
+  }>; // Где может работать пользователь
 }
 
 // Организация (создаётся пользователем после регистрации)

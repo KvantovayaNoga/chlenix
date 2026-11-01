@@ -17,7 +17,7 @@ import {
   Building2,
   BookMarked,
   Plus,
-  Check,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 const roleLabels = {
@@ -33,31 +33,16 @@ const roleColors = {
 };
 
 export function Sidebar() {
-  const { currentUser, logout, canManageUsers, myOrganizations, switchOrganization } = useAuthStore();
+  const { currentUser, logout, canManageUsers, myOrganizations } = useAuthStore();
   const { organizations } = useDataStore();
   const organization = organizations.find((o) => o.id === currentUser?.organizationId);
   const hasOrganization = !!currentUser?.organizationId;
   const navigate = useNavigate();
   const [isMinimized, setIsMinimized] = useState(false);
-  const [switching, setSwitching] = useState(false);
-  const [orgListOpen, setOrgListOpen] = useState(false);
 
-  // Список организаций для переключения (админ — все организации системы)
+  // Список организаций для отображения кнопки «Сменить организацию» (админ — все организации системы).
+  // Само переключение вынесено на отдельную страницу /organization/switch (карточки с реквизитами).
   const accessibleOrgs = myOrganizations();
-
-  const handleSwitchOrg = async (orgId: string) => {
-    if (!orgId || orgId === currentUser?.organizationId || switching) return;
-    setSwitching(true);
-    const res = await switchOrganization(orgId);
-    setSwitching(false);
-    setOrgListOpen(false);
-    if (res.success) {
-      // Данные активной организации перезагрузятся автоматически (dataStore следит за сменой orgId)
-      navigate('/dashboard');
-    } else {
-      alert(res.error || 'Не удалось переключить организацию');
-    }
-  };
 
   const handleLogout = () => {
     logout();
@@ -172,39 +157,20 @@ export function Sidebar() {
               {!isMinimized && <span className="font-medium truncate">{item.label}</span>}
             </NavLink>
 
-            {/* Блок организаций: переключение + создание второй организации — под пунктом «Организация».
-                Логика: пока нет ни одной организации, отдельной кнопки «создать ещё одну» быть не должно —
-                сначала организация создаётся через основной пункт меню («Создать организацию»). */}
+            {/* Блок организаций: кнопка перехода на страницу «Сменить организацию» — НАД текущей
+                организацией; создание второй организации — под ней (см. ниже). */}
+            {!isMinimized && item.icon === Building2 && organization && accessibleOrgs.length > 1 && (
+              <button
+                onClick={() => navigate('/organization/switch')}
+                className="flex items-center gap-2 w-full mt-1 ml-3 px-3 py-2 rounded-lg text-xs uppercase tracking-wide text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+                title="Открыть список всех организаций"
+              >
+                <ArrowLeftRight className="w-3.5 h-3.5" />
+                Сменить организацию
+              </button>
+            )}
             {!isMinimized && item.icon === Building2 && organization && (
               <div className="mt-1 ml-3 border-l border-slate-700 pl-2 space-y-1">
-                {accessibleOrgs.length > 1 && (
-                  <>
-                    <button
-                      onClick={() => setOrgListOpen((v) => !v)}
-                      className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs uppercase tracking-wide text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
-                    >
-                      <ChevronLeft className={`w-3.5 h-3.5 transition-transform ${orgListOpen ? '-rotate-90' : 'rotate-180'}`} />
-                      Сменить организацию
-                    </button>
-                    {orgListOpen &&
-                      accessibleOrgs.map((org) => (
-                        <button
-                          key={org.id}
-                          onClick={() => handleSwitchOrg(org.id)}
-                          disabled={switching}
-                          className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-left transition-colors disabled:opacity-50 ${
-                            org.id === currentUser?.organizationId
-                              ? 'bg-indigo-600/20 text-indigo-300 cursor-default'
-                              : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                          }`}
-                        >
-                          <Building2 className="w-4 h-4 flex-shrink-0" />
-                          <span className="truncate">{org.name}</span>
-                          {org.id === currentUser?.organizationId && <Check className="w-4 h-4 ml-auto flex-shrink-0" />}
-                        </button>
-                      ))}
-                  </>
-                )}
                 <button
                   onClick={() => navigate('/organization/create')}
                   className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"

@@ -294,11 +294,25 @@ async function getUserOrgScope(userId: string): Promise<{ orgId: string | null; 
 }
 
 // Где может работать пользователь: собственные организации + (для админа) все организации системы.
-async function getAccessibleOrgs(userId: string): Promise<Array<{ id: string; name: string; isOwn: boolean }>> {
+async function getAccessibleOrgs(userId: string): Promise<Array<{ id: string; name: string; isOwn: boolean; shortName?: string; legalAddress?: string; phone?: string; inn?: string; directorName?: string }>> {
   const me = await prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true, role: true } });
-  const all = await prisma.organization.findMany({ orderBy: { createdAt: 'asc' }, select: { id: true, name: true } });
-  if (me?.role === 'admin') return all.map((o) => ({ id: o.id, name: o.name, isOwn: o.id === me.organizationId }));
-  return all.filter((o) => o.id === me?.organizationId).map((o) => ({ id: o.id, name: o.name, isOwn: true }));
+  // Краткие реквизиты нужны для карточек на странице «Сменить организацию»
+  const all = await prisma.organization.findMany({
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, name: true, shortName: true, legalAddress: true, phone: true, inn: true, directorName: true },
+  });
+  const brief = (o: (typeof all)[number], isOwn: boolean) => ({
+    id: o.id,
+    name: o.name,
+    isOwn,
+    shortName: o.shortName ?? '',
+    legalAddress: o.legalAddress ?? '',
+    phone: o.phone ?? '',
+    inn: o.inn ?? '',
+    directorName: o.directorName ?? '',
+  });
+  if (me?.role === 'admin') return all.map((o) => brief(o, o.id === me.organizationId));
+  return all.filter((o) => o.id === me?.organizationId).map((o) => brief(o, true));
 }
 
 // Приводит дату (Date | ISO-строка) к ISO-формату для ответов API

@@ -20,6 +20,7 @@ import { UserProfilePage } from './pages/UserProfilePage';
 import { DirectoriesPage } from './pages/DirectoriesPage';
 import { OrganizationPage } from './pages/OrganizationPage';
 import { CreateOrganizationPage } from './pages/CreateOrganizationPage';
+import { SwitchOrganizationPage } from './pages/SwitchOrganizationPage';
 import { AboutPage } from './pages/AboutPage';
 
 // После авторизации: если у пользователя нет организации — сначала предлагаем создать.
@@ -67,6 +68,7 @@ function App() {
           <Route path="/staff" element={<DirectoriesPage />} />
           <Route path="/organization" element={<OrganizationPage />} />
           <Route path="/organization/create" element={<CreateOrganizationPage />} />
+          <Route path="/organization/switch" element={<SwitchOrganizationPage />} />
           <Route path="/users" element={<ProtectedRoute requiredRole="admin"><UsersPage /></ProtectedRoute>} />
           <Route path="/users/:id" element={<ProtectedRoute><UserProfilePage /></ProtectedRoute>} />
           <Route path="/about" element={<ProtectedRoute requiredRole="admin"><AboutPage /></ProtectedRoute>} />

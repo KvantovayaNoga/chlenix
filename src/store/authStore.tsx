@@ -30,7 +30,7 @@ interface AuthState {
   switchOrganization: (organizationId: string) => Promise<{ success: boolean; error?: string }>;
   /** Обновить пользователя в сессии без перезагрузки (после создания организации бэкенд перевыпускает токен). */
   setCurrentUser: (user: User | null) => void;
-  myOrganizations: () => Array<{ id: string; name: string; isOwn: boolean }>;
+  myOrganizations: () => NonNullable<User['accessibleOrganizations']>;
   canCreateOrganization: () => boolean;
   getUserRole: () => UserRole | null;
   canEdit: () => boolean;
