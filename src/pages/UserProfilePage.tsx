@@ -13,7 +13,7 @@ const roleLabels = {
 export function UserProfilePage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { users, currentUser, updateUser } = useAuthStore();
+  const { users, currentUser, updateUser, refreshUsers } = useAuthStore();
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState({ fullName: '', email: '', password: '', avatar: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -26,6 +26,11 @@ export function UserProfilePage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const user = users.find(u => u.id === id);
+
+  // Если список ещё не загружен (например, прямой заход по ссылке) — подтягиваем его.
+  useEffect(() => {
+    if (!user && users.length === 0) void refreshUsers();
+  }, [user, users.length, refreshUsers]);
 
   if (!user) {
     return (

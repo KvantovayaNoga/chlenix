@@ -466,7 +466,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const value = useMemo<DataState>(() => ({
     organizations, departments, positions, branches, employees, equipment,
     virtualMachines, services, auditLog, loaded, loading, error,
-    loadAll, clearError,
+    loadAll, clearError, reloadVMs,
     addOrganization, updateOrganization, deleteOrganization, getOrganizationById, getCurrentUserOrganization,
     addDepartment, updateDepartment, deleteDepartment,
     addPosition, updatePosition, deletePosition,
@@ -481,7 +481,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }), [
     organizations, departments, positions, branches, employees, equipment,
     virtualMachines, services, auditLog, loaded, loading, error,
-    loadAll, clearError,
+    loadAll, clearError, reloadVMs,
     addOrganization, updateOrganization, deleteOrganization, getOrganizationById, getCurrentUserOrganization,
     addDepartment, updateDepartment, deleteDepartment,
     addPosition, updatePosition, deletePosition,

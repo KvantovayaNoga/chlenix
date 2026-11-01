@@ -77,6 +77,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const user = await api.get<User>('/auth/me');
       syncThemeFromProfile(user.theme);
       setCurrentUser(user);
+      // Список пользователей (страница «Пользователи» и карточка /users/:id)
+      // загружается сразу при восстановлении сессии — иначе после F5/входа
+      // массив users пуст, и карточка показывает «Пользователь не найден».
+      // Для не-админов /users вернёт 403 — ошибка молча игнорируется.
+      void refreshUsers();
     } catch {
       setToken(null);
       setCurrentUser(null);
@@ -84,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setInitialized(true);
       setBootstrapping(false);
     }
-  }, []);
+  }, [refreshUsers]);
 
   // Восстановление сессии при монтировании приложения
   useEffect(() => {

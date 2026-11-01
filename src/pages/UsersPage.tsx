@@ -25,7 +25,7 @@ const roleColors: Record<UserRole, string> = {
 };
 
 export function UsersPage() {
-  const { users, addUser, updateUser, deleteUser, currentUser } = useAuthStore();
+  const { users, addUser, updateUser, deleteUser, currentUser, refreshUsers } = useAuthStore();
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [viewingHistory, setViewingHistory] = useState<User | null>(null);
@@ -43,6 +43,13 @@ export function UsersPage() {
   useEffect(() => {
     localStorage.setItem('users-filters', JSON.stringify(savedFilters));
   }, [savedFilters]);
+
+  // Гарантируем загрузку списка пользователей при входе на страницу
+  // (на случай, если bootstrap отработал до появления токена/списка пуст).
+  useEffect(() => {
+    if (users.length === 0) void refreshUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const currentFilters = { searchQuery, filterRole, filterStatus };
 
