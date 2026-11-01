@@ -134,7 +134,7 @@ model Employee {
   // Связи
   position     Position   @relation(fields: [positionId], references: [id])
   department   Department @relation(fields: [departmentId], references: [id])
-  branch       Branch     @relation(fields: [branchId], references: [id])
+  branch       Branch?    @relation(fields: [branchId], references: [id])
   updatedBy    User?      @relation("EmployeeUpdater", fields: [updatedById], references: [id])
 
   equipment    Equipment[] @relation("AssignedEquipment")
