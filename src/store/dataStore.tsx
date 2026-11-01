@@ -115,6 +115,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
   ref.current = { organizations, departments, positions, branches, employees, equipment, virtualMachines, services };
 
   const loadPromiseRef = useRef<Promise<void> | null>(null);
+  // Глобальный монотонный номер загрузки: любой ответ запроса, начатого раньше
+  // момента последней инициированной перезагрузки, устаревший и НЕ должен
+  // применяться к состоянию. Это лечит гонку: POST /organizations перевыпускает
+  // JWT синхронно, а GET-запросы loadAll() с СТАРЫМ токеном ещё in-flight — их
+  // ответы относятся к прежней организации и перезаписывали очищенные списки
+  // («Штатное расписание пустое» после создания/переключения организации).
+  const loadSeqRef = useRef(0);
 
   const reloadEmployees = useCallback(async () => {
     const list = await api.get<Employee[]>('/employees');
@@ -153,6 +160,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // иначе свежие списки перезапираются устаревшими (баг «штатное расписание
     // пустое» / «данные другой организации»).
     const orgAtStart = currentUser?.organizationId ?? null;
+    const mySeq = ++loadSeqRef.current;
     setLoading(true);
     loadPromiseRef.current = (async () => {
       try {
@@ -166,6 +174,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           api.get<VirtualMachine[]>('/virtual-machines'),
           api.get<AuditLogEntry[]>('/audit-logs').catch(() => [] as AuditLogEntry[]),
         ]);
+        if (mySeq !== loadSeqRef.current) return; // ответ устарел — новая перезагрузка уже инициирована
         if (orgAtStart !== (currentUserRef.current?.organizationId ?? null)) {
           // Организация сменилась во время загрузки — отбрасываем устаревший ответ,
           // useEffect по organizationId перезагрузит данные уже с новым токеном.
@@ -183,10 +192,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setLoaded(true);
         setError(null);
       } catch (e) {
-        setError((e as Error)?.message || 'Не удалось загрузить данные с сервера');
+        if (mySeq === loadSeqRef.current) setError((e as Error)?.message || 'Не удалось загрузить данные с сервера');
       } finally {
-        setLoading(false);
-        loadPromiseRef.current = null;
+        // Не гасим индикатор и не снимаем dedupe, если уже запущена новая загрузка —
+        // иначе stale-ответ «уронит» loading и параллельная перезагрузка отменится.
+        if (mySeq === loadSeqRef.current) {
+          setLoading(false);
+          loadPromiseRef.current = null;
+        }
       }
     })();
     return loadPromiseRef.current;
@@ -210,6 +223,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       prevOrgRef.current = orgId;
       setLoaded(false);
       loadPromiseRef.current = null; // сбросить in-flight dedupe
+      loadSeqRef.current++;          // отменить применение in-flight ответов со СТАРЫМ токеном
       void loadAll();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -235,6 +249,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setDepartments([]); setPositions([]); setBranches([]);
       setLoaded(false);
       loadPromiseRef.current = null;
+      loadSeqRef.current++; // отменить применение in-flight ответов loadAll со СТАРЫМ токеном
       void loadAll();
     });
     return ok ? created : null;
@@ -255,10 +270,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (res?.token) setToken(res.token);
       if (res?.user) setCurrentUser(res.user);
       setOrganizations((prev) => prev.filter((o) => o.id !== id));
+      // Данные удалённой организации больше не относятся к активному скоупу —
+      // отменяем in-flight загрузки и перезагружаем данные с новым токеном.
+      setLoaded(false);
+      loadPromiseRef.current = null;
+      loadSeqRef.current++;
+      void loadAll();
       ok = true;
     });
     return ok;
-  }, [run]);
+  }, [run, loadAll]);
 
   const getOrganizationById = useCallback((id: string) => ref.current.organizations.find((o) => o.id === id), []);
 

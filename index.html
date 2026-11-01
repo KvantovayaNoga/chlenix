@@ -13,28 +13,10 @@
         height: 100%;
       }
     </style>
-    <!-- Тема применяется до первой отрисовки из кэша localStorage/системных настроек (без «мигания») -->
+    <!-- Тема оформления отключена по требованию: интерфейс всегда в тёмной теме.
+         Класс `dark` проставляется безусловно до первой отрисовки (без «мигания»). -->
     <script>
-      (function () {
-        try {
-          var cached = localStorage.getItem('chlenix_theme');
-          var isDark =
-            cached === 'dark' ||
-            ((cached === 'system' || !cached) &&
-              window.matchMedia &&
-              window.matchMedia('(prefers-color-scheme: dark)').matches);
-          if (isDark) document.documentElement.classList.add('dark');
-        } catch (e) {
-          /* localStorage недоступен — используем системные настройки */
-          try {
-            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-              document.documentElement.classList.add('dark');
-            }
-          } catch (inner) {
-            /* без темы: светлая по умолчанию */
-          }
-        }
-      })();
+      document.documentElement.classList.add('dark');
     </script>
   </head>
   <body>
