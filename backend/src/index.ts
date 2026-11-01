@@ -1055,6 +1055,10 @@ app.delete('/api/employees/:id', authMiddleware, requireRole(['admin']), async (
   const currentUser = c.get('user');
   const old = await prisma.employee.findUnique({ where: { id } });
   if (!old) return c.json({ error: 'Not found' }, 404);
+  const scope = await getUserOrgScope(currentUser.userId);
+  if (old.organizationId && old.organizationId !== scope.orgId && scope.role !== 'admin') {
+    return c.json({ error: 'Нет доступа к этой организации' }, 403);
+  }
 
   await prisma.employee.delete({ where: { id } });
   await writeAudit(currentUser, 'delete', 'employee', id, `${old.lastName} ${old.firstName}`, `Удалён сотрудник "${old.lastName} ${old.firstName}"`, c.req.header('x-forwarded-for'));
@@ -1203,6 +1207,10 @@ app.delete('/api/equipment/:id', authMiddleware, requireRole(['admin']), async (
   const currentUser = c.get('user');
   const old = await prisma.equipment.findUnique({ where: { id } });
   if (!old) return c.json({ error: 'Not found' }, 404);
+  const scope = await getUserOrgScope(currentUser.userId);
+  if (old.organizationId && old.organizationId !== scope.orgId) {
+    return c.json({ error: 'Нет доступа к этой организации' }, 403);
+  }
 
   await prisma.equipment.delete({ where: { id } });
   await writeAudit(currentUser, 'delete', 'equipment', id, old.name, `Удалено оборудование "${old.name}" (инв. ${old.inventoryNumber})`, c.req.header('x-forwarded-for'));
@@ -1320,7 +1328,10 @@ const vmInclude = {
 } as const;
 
 app.get('/api/virtual-machines', authMiddleware, async (c) => {
-  const vms = await prisma.virtualMachine.findMany({ include: vmInclude, orderBy: { createdAt: 'desc' } });
+  const scope = await getUserOrgScope(c.get('user').userId);
+  const where: any = {};
+  if (scope.orgId) where.organizationId = scope.orgId; else where.organizationId = null;
+  const vms = await prisma.virtualMachine.findMany({ where, include: vmInclude, orderBy: { createdAt: 'desc' } });
   return c.json(vms.map(publicVM));
 });
 
@@ -1345,6 +1356,7 @@ app.post('/api/virtual-machines', authMiddleware, requireRole(['admin', 'materia
   }
   const currentUser = c.get('user');
   const data = parsed.data;
+  const scope = await getUserOrgScope(currentUser.userId);
 
   const hostServerId = await resolveRef('equipment', data.hostServerId);
   const responsibleEmployeeId = await resolveRef('employee', data.responsibleEmployeeId);
@@ -1352,6 +1364,7 @@ app.post('/api/virtual-machines', authMiddleware, requireRole(['admin', 'materia
 
   const vm = await prisma.virtualMachine.create({
     data: {
+      organizationId: scope.orgId,
       name: data.name,
       hostname: data.hostname,
       type: data.type ?? 'virtual',
@@ -1412,6 +1425,10 @@ app.delete('/api/virtual-machines/:id', authMiddleware, requireRole(['admin']), 
   const currentUser = c.get('user');
   const old = await prisma.virtualMachine.findUnique({ where: { id } });
   if (!old) return c.json({ error: 'Not found' }, 404);
+  const scope = await getUserOrgScope(currentUser.userId);
+  if (old.organizationId && old.organizationId !== scope.orgId) {
+    return c.json({ error: 'Нет доступа к этой организации' }, 403);
+  }
 
   await prisma.virtualMachine.delete({ where: { id } });
   await writeAudit(currentUser, 'delete', 'virtualmachine', id, old.name, `Удалена ВМ "${old.name}"`, c.req.header('x-forwarded-for'));

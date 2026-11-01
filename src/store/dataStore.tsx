@@ -104,7 +104,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, currentUser } = useAuthStore();
 
   // Актуальные списки для «геттеров» без пересоздания контекста
   const ref = useRef({ organizations, departments, positions, branches, employees, equipment, virtualMachines, services });
@@ -185,6 +185,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
+  // При переключении активной организации перезагружаем скоупленные данные
+  const prevOrgRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const orgId = currentUser?.organizationId ?? null;
+    if (prevOrgRef.current === undefined) { prevOrgRef.current = orgId; return; }
+    if (prevOrgRef.current !== orgId && isAuthenticated) {
+      prevOrgRef.current = orgId;
+      setLoaded(false);
+      loadPromiseRef.current = null; // сбросить in-flight dedupe
+      void loadAll();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.organizationId, isAuthenticated]);
+
   const clearError = useCallback(() => setError(null), []);
 
   // ---------- Organizations ----------
@@ -210,11 +224,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const getOrganizationById = useCallback((id: string) => ref.current.organizations.find((o) => o.id === id), []);
 
   const getCurrentUserOrganization = useCallback(() => {
-    // Организация текущего пользователя определяется по токену сессии на сервере;
-    // на клиенте берём единственную организацию (в системе она одна).
+    // Мультиорганизационность: активная организация = organizationId пользователя из сессии.
     const orgs = ref.current.organizations;
-    return orgs.length > 0 ? orgs[0] : undefined;
-  }, []);
+    if (!currentUser?.organizationId) return orgs.length > 0 ? orgs[0] : undefined;
+    return orgs.find((o) => o.id === currentUser.organizationId) ?? (orgs.length > 0 ? orgs[0] : undefined);
+  }, [currentUser]);
 
   // ---------- Directories ----------
   const addDepartment = useCallback((data: Partial<Department>) => run(async () => {
@@ -362,6 +376,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     return {
+      totalOrganizations: ref.current.organizations.length,
       totalEmployees: emps.length,
       activeEmployees,
       totalEquipment: eq.length,

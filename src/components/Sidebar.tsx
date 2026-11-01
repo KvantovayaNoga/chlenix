@@ -32,11 +32,29 @@ const roleColors = {
 };
 
 export function Sidebar() {
-  const { currentUser, logout, canManageUsers } = useAuthStore();
+  const { currentUser, logout, canManageUsers, myOrganizations, switchOrganization } = useAuthStore();
   const { organizations } = useDataStore();
   const organization = organizations.find((o) => o.id === currentUser?.organizationId);
   const navigate = useNavigate();
   const [isMinimized, setIsMinimized] = useState(false);
+  const [switching, setSwitching] = useState(false);
+
+  // Список организаций для переключения (админ — все организации системы)
+  const accessibleOrgs = myOrganizations();
+  const showSwitcher = accessibleOrgs.length > 1;
+
+  const handleSwitchOrg = async (orgId: string) => {
+    if (!orgId || orgId === currentUser?.organizationId || switching) return;
+    setSwitching(true);
+    const res = await switchOrganization(orgId);
+    setSwitching(false);
+    if (res.success) {
+      // Данные активной организации перезагрузятся автоматически (dataStore следит за сменой orgId)
+      navigate('/dashboard');
+    } else {
+      alert(res.error || 'Не удалось переключить организацию');
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -53,8 +71,8 @@ export function Sidebar() {
   const navItems = [
     { to: '/dashboard', label: 'Обзор', icon: LayoutDashboard },
     { to: '/organization', label: organization ? organization.shortName || organization.name : 'Организация', icon: Building2 },
+    { to: '/staff', label: 'Штатное расписание', icon: BookMarked },
     { to: '/employees', label: 'Сотрудники', icon: Users },
-    { to: '/directories', label: 'Справочники', icon: BookMarked },
     { to: '/equipment', label: 'Оборудование', icon: Monitor },
     { to: '/servers/physical', label: 'Физические серверы', icon: Server },
     { to: '/servers', label: 'Виртуальные машины', icon: Cpu },

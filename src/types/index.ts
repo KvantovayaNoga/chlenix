@@ -25,7 +25,8 @@ export interface User {
   createdAt: string;
   updatedAt: string;
   isActive: boolean;
-  organizationId?: string | null; // Организация, к которой привязан пользователь
+  organizationId?: string | null; // Активная организация пользователя
+  accessibleOrganizations?: Array<{ id: string; name: string; isOwn: boolean }>; // Где может работать пользователь
 }
 
 // Организация (создаётся пользователем после регистрации)
@@ -256,6 +257,7 @@ export interface AuditLogEntry {
 
 // Статистика дашборда
 export interface DashboardStats {
+  totalOrganizations: number;
   totalEmployees: number;
   activeEmployees: number;
   totalEquipment: number;

@@ -27,6 +27,9 @@ interface AuthState {
   updateUser: (id: string, data: Partial<User> & { password?: string }) => Promise<{ success: boolean; error?: string }>;
   deleteUser: (id: string) => Promise<{ success: boolean; error?: string }>;
   setTheme: (theme: ThemePreference) => Promise<void>;
+  switchOrganization: (organizationId: string) => Promise<{ success: boolean; error?: string }>;
+  myOrganizations: () => Array<{ id: string; name: string; isOwn: boolean }>;
+  canCreateOrganization: () => boolean;
   getUserRole: () => UserRole | null;
   canEdit: () => boolean;
   canManageUsers: () => boolean;
@@ -124,6 +127,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Переключение активной организации: backend перевыпускает JWT с новой организацией.
+  const switchOrganization = useCallback(async (organizationId: string) => {
+    try {
+      const res = await api.post<{ token: string; user: User }>('/auth/switch-organization', { organizationId });
+      setToken(res.token);
+      syncThemeFromProfile(res.user.theme);
+      setCurrentUser(res.user);
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e instanceof ApiError ? e.message : 'Сервер недоступен' };
+    }
+  }, []);
+
   const logout = useCallback(() => {
     setToken(null);
     setCurrentUser(null);
@@ -191,12 +207,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateUser,
       deleteUser,
       setTheme,
+      switchOrganization,
+      myOrganizations: () => currentUser?.accessibleOrganizations ?? [],
+      canCreateOrganization: () => currentUser?.role === 'admin',
       getUserRole: () => currentUser?.role || null,
       canEdit: () => currentUser?.role === 'admin' || currentUser?.role === 'materially_responsible',
       canManageUsers: () => currentUser?.role === 'admin',
       hasOrganization: () => !!currentUser?.organizationId,
     }),
-    [currentUser, users, isAuthenticated, initialized, bootstrapping, bootstrap, login, register, logout, refreshUsers, addUser, updateUser, deleteUser, setTheme],
+    [currentUser, users, isAuthenticated, initialized, bootstrapping, bootstrap, login, register, logout, refreshUsers, addUser, updateUser, deleteUser, setTheme, switchOrganization],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -219,6 +238,9 @@ const authFallback: AuthState = {
   updateUser: async () => ({ success: false, error: 'Сервер недоступен' }),
   deleteUser: async () => ({ success: false, error: 'Сервер недоступен' }),
   setTheme: async () => {},
+  switchOrganization: async () => ({ success: false, error: 'Сервер недоступен' }),
+  myOrganizations: () => [],
+  canCreateOrganization: () => false,
   getUserRole: () => null,
   canEdit: () => false,
   canManageUsers: () => false,

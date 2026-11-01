@@ -1,5 +1,5 @@
 import { useDataStore } from '../store/dataStore';
-import { Users, Monitor, AlertTriangle, CheckCircle, XCircle, Server, TrendingUp, Cpu, Activity } from 'lucide-react';
+import { Users, Monitor, AlertTriangle, CheckCircle, XCircle, Server, TrendingUp, Cpu, Activity, Building2 } from 'lucide-react';
 
 export function DashboardPage() {
   const { getDashboardStats, virtualMachines, equipment, employees, departments } = useDataStore();
@@ -12,6 +12,7 @@ export function DashboardPage() {
   const physicalServers = equipment.filter(eq => eq.category === 'server');
 
   const statCards = [
+    { title: 'Организаций', value: stats.totalOrganizations, sub: 'в системе', icon: Building2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
     { title: 'Виртуальных машин', value: stats.totalVMs, sub: `${stats.runningVMs} запущено`, icon: Cpu, color: 'text-purple-600', bg: 'bg-purple-50' },
     { title: 'Физ. серверов', value: physicalServers.length, sub: 'в инфраструктуре', icon: Server, color: 'text-red-600', bg: 'bg-red-50' },
     { title: 'С белым IP', value: publicIPVMs.length, sub: 'публично доступны', icon: Activity, color: 'text-orange-600', bg: 'bg-orange-50' },
