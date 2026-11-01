@@ -16,6 +16,8 @@ import {
   ChevronRight,
   Building2,
   BookMarked,
+  Plus,
+  Check,
 } from 'lucide-react';
 
 const roleLabels = {
@@ -34,19 +36,21 @@ export function Sidebar() {
   const { currentUser, logout, canManageUsers, myOrganizations, switchOrganization } = useAuthStore();
   const { organizations } = useDataStore();
   const organization = organizations.find((o) => o.id === currentUser?.organizationId);
+  const hasOrganization = !!currentUser?.organizationId;
   const navigate = useNavigate();
   const [isMinimized, setIsMinimized] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [orgListOpen, setOrgListOpen] = useState(false);
 
   // Список организаций для переключения (админ — все организации системы)
   const accessibleOrgs = myOrganizations();
-  const showSwitcher = accessibleOrgs.length > 1;
 
   const handleSwitchOrg = async (orgId: string) => {
     if (!orgId || orgId === currentUser?.organizationId || switching) return;
     setSwitching(true);
     const res = await switchOrganization(orgId);
     setSwitching(false);
+    setOrgListOpen(false);
     if (res.success) {
       // Данные активной организации перезагрузятся автоматически (dataStore следит за сменой orgId)
       navigate('/dashboard');
@@ -66,19 +70,28 @@ export function Sidebar() {
     }
   };
 
-  // Новый порядок вкладок
+  // Логика: нет организации — нет её наполнения.
+  // Без активной организации показываем только «Обзор» и «Организация» (создание).
   const navItems = [
     { to: '/dashboard', label: 'Обзор', icon: LayoutDashboard },
-    { to: '/organization', label: organization ? organization.shortName || organization.name : 'Организация', icon: Building2 },
-    { to: '/staff', label: 'Штатное расписание', icon: BookMarked },
-    { to: '/employees', label: 'Сотрудники', icon: Users },
-    { to: '/equipment', label: 'Оборудование', icon: Monitor },
-    { to: '/servers/physical', label: 'Физические серверы', icon: Server },
-    { to: '/servers', label: 'Виртуальные машины', icon: Cpu },
+    {
+      to: hasOrganization ? '/organization' : '/organization/create',
+      label: organization ? organization.shortName || organization.name : 'Создать организацию',
+      icon: Building2,
+    },
+    ...(hasOrganization
+      ? [
+          { to: '/staff', label: 'Штатное расписание', icon: BookMarked },
+          { to: '/employees', label: 'Сотрудники', icon: Users },
+          { to: '/equipment', label: 'Оборудование', icon: Monitor },
+          { to: '/servers/physical', label: 'Физические серверы', icon: Server },
+          { to: '/servers', label: 'Виртуальные машины', icon: Cpu },
+        ]
+      : []),
   ];
 
   if (canManageUsers()) {
-    navItems.push({ to: '/users', label: 'Пользователи', icon: UserCog });
+    if (hasOrganization) navItems.push({ to: '/users', label: 'Пользователи', icon: UserCog });
     navItems.push({ to: '/about', label: 'О системе', icon: Info });
   }
 
@@ -142,22 +155,65 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
         {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end
-            className={({ isActive }) =>
-              `flex items-center ${isMinimized ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-lg transition-all duration-200 ${
-                isActive
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`
-            }
-            title={isMinimized ? item.label : ''}
-          >
-            <item.icon className="w-5 h-5 flex-shrink-0" />
-            {!isMinimized && <span className="font-medium">{item.label}</span>}
-          </NavLink>
+          <div key={item.to}>
+            <NavLink
+              to={item.to}
+              end
+              className={({ isActive }) =>
+                `flex items-center ${isMinimized ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-lg transition-all duration-200 ${
+                  isActive
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`
+              }
+              title={isMinimized ? item.label : ''}
+            >
+              <item.icon className="w-5 h-5 flex-shrink-0" />
+              {!isMinimized && <span className="font-medium truncate">{item.label}</span>}
+            </NavLink>
+
+            {/* Блок организаций: переключение + создание — под пунктом «Организация» */}
+            {!isMinimized && item.icon === Building2 && (
+              <div className="mt-1 ml-3 border-l border-slate-700 pl-2 space-y-1">
+                {accessibleOrgs.length > 1 && (
+                  <>
+                    <button
+                      onClick={() => setOrgListOpen((v) => !v)}
+                      className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs uppercase tracking-wide text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+                    >
+                      <ChevronLeft className={`w-3.5 h-3.5 transition-transform ${orgListOpen ? '-rotate-90' : 'rotate-180'}`} />
+                      Сменить организацию
+                    </button>
+                    {orgListOpen &&
+                      accessibleOrgs.map((org) => (
+                        <button
+                          key={org.id}
+                          onClick={() => handleSwitchOrg(org.id)}
+                          disabled={switching}
+                          className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-left transition-colors disabled:opacity-50 ${
+                            org.id === currentUser?.organizationId
+                              ? 'bg-indigo-600/20 text-indigo-300 cursor-default'
+                              : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                          }`}
+                        >
+                          <Building2 className="w-4 h-4 flex-shrink-0" />
+                          <span className="truncate">{org.name}</span>
+                          {org.id === currentUser?.organizationId && <Check className="w-4 h-4 ml-auto flex-shrink-0" />}
+                        </button>
+                      ))}
+                  </>
+                )}
+                <button
+                  onClick={() => navigate('/organization/create')}
+                  className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+                  title="Создать новую организацию"
+                >
+                  <Plus className="w-4 h-4 flex-shrink-0" />
+                  Создать организацию
+                </button>
+              </div>
+            )}
+          </div>
         ))}
       </nav>
 

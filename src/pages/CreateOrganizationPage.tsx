@@ -20,7 +20,6 @@ const labelCls = 'block text-sm font-medium text-gray-300 mb-1';
 export function CreateOrganizationPage() {
   const bootstrap = useAuthStore((s) => s.bootstrap);
   const currentUser = useAuthStore((s) => s.currentUser);
-  const hasOrganization = useAuthStore((s) => s.hasOrganization);
   const addOrganization = useDataStore((s) => s.addOrganization);
   const navigate = useNavigate();
   const [error, setError] = useState('');
@@ -55,11 +54,9 @@ export function CreateOrganizationPage() {
     notes: '',
   });
 
-  // Если у пользователя уже есть организация — не даём создавать вторую
-  if (currentUser && hasOrganization()) {
-    navigate('/organization', { replace: true });
-    return null;
-  }
+  // Мультиорганизационность: создание второй и последующих организаций разрешено.
+  // (Раньше здесь был редирект при наличии любой организации — из-за этого кнопка
+  // «Создать организацию» не работала: страница мгновенно выбрасывала на /organization.)
 
   const handleChange = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -362,7 +359,7 @@ export function CreateOrganizationPage() {
                 />
               </div>
               <div>
-                <label className={labelCls}>Email</label>
+                <label className={labelCls}>Email<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
                 <input
                   type="email"
                   value={form.email}

@@ -396,11 +396,11 @@ function EditOrganizationForm({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="md:col-span-2">
-          <label className={labelCls}>Полное наименование *</label>
+          <label className={labelCls}>Полное наименование<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
           <input type="text" value={form.name} onChange={(e) => handleChange('name', e.target.value)} className={inputCls} required />
         </div>
         <div>
-          <label className={labelCls}>Организационно-правовая форма</label>
+          <label className={labelCls}>Организационно-правовая форма<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
           {/* ОПФ — свободное текстовое поле: формы вписываются вручную */}
           <input type="text" value={form.legalForm ?? ''} onChange={(e) => handleChange('legalForm', e.target.value)} placeholder="Например: ООО, АНО, ФГБУ…" className={inputCls} />
         </div>
@@ -409,7 +409,7 @@ function EditOrganizationForm({
           <input type="text" value={form.shortName} onChange={(e) => handleChange('shortName', e.target.value)} className={inputCls} />
         </div>
         <div>
-          <label className={labelCls}>ИНН</label>
+          <label className={labelCls}>ИНН<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
           <input type="text" maxLength={12} value={form.inn} onChange={(e) => handleChange('inn', e.target.value.replace(/\D/g, ''))} className={inputCls} />
         </div>
         <div>
@@ -417,7 +417,7 @@ function EditOrganizationForm({
           <input type="text" maxLength={9} value={form.kpp} onChange={(e) => handleChange('kpp', e.target.value.replace(/\D/g, ''))} className={inputCls} />
         </div>
         <div>
-          <label className={labelCls}>ОГРН / ОГРНИП</label>
+          <label className={labelCls}>ОГРН / ОГРНИП<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
           <input type="text" maxLength={15} value={form.ogrn} onChange={(e) => handleChange('ogrn', e.target.value.replace(/\D/g, ''))} className={inputCls} />
         </div>
         <div>
@@ -425,7 +425,7 @@ function EditOrganizationForm({
           <input type="text" value={form.taxSystem} onChange={(e) => handleChange('taxSystem', e.target.value)} className={inputCls} />
         </div>
         <div>
-          <label className={labelCls}>Почтовый индекс</label>
+          <label className={labelCls}>Почтовый индекс<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
           <input type="text" maxLength={6} value={form.postalCode} onChange={(e) => handleChange('postalCode', e.target.value.replace(/\D/g, ''))} className={inputCls} />
         </div>
         <div>
@@ -433,7 +433,7 @@ function EditOrganizationForm({
           <input type="text" value={form.city} onChange={(e) => handleChange('city', e.target.value)} className={inputCls} />
         </div>
         <div className="md:col-span-2">
-          <label className={labelCls}>Юридический адрес</label>
+          <label className={labelCls}>Юридический адрес<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
           <input type="text" value={form.legalAddress} onChange={(e) => handleChange('legalAddress', e.target.value)} className={inputCls} />
         </div>
         <div className="md:col-span-2">
