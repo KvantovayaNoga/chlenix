@@ -276,7 +276,6 @@ export function OrganizationPage() {
 
             <InfoCard icon={Crown} title="Руководство">
               <InfoRow label="Руководитель" value={organization.directorName} />
-              <InfoRow label="Главный бухгалтер" value={organization.accountantName} />
             </InfoCard>
 
             <InfoCard icon={Landmark} title="Банковские реквизиты">
@@ -408,10 +407,6 @@ function EditOrganizationForm({
         <div>
           <label className={labelCls}>Руководитель</label>
           <input type="text" value={form.directorName} onChange={(e) => handleChange('directorName', e.target.value)} className={inputCls} />
-        </div>
-        <div>
-          <label className={labelCls}>Главный бухгалтер</label>
-          <input type="text" value={form.accountantName} onChange={(e) => handleChange('accountantName', e.target.value)} className={inputCls} />
         </div>
         <div>
           <label className={labelCls}>Наименование банка</label>

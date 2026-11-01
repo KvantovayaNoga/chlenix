@@ -18,14 +18,20 @@ const inputCls =
 const labelCls = 'block text-sm font-medium text-gray-300 mb-1';
 
 export function CreateOrganizationPage() {
-  const { currentUser, hasOrganization } = useAuthStore();
-  const { addOrganization } = useDataStore();
+  const bootstrap = useAuthStore((s) => s.bootstrap);
+  const currentUser = useAuthStore((s) => s.currentUser);
+  const hasOrganization = useAuthStore((s) => s.hasOrganization);
+  const addOrganization = useDataStore((s) => s.addOrganization);
   const navigate = useNavigate();
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const [form, setForm] = useState({
     name: '',
-    legalForm: 'OOO' as OrganizationLegalForm,
+    // ОПФ выбирается из списка типовых форм; через select со значением
+    // «Другое…» можно ввести любую форму вручную (поле legalFormCustom).
+    legalForm: 'ООО',
+    legalFormCustom: '',
     shortName: '',
     inn: '',
     kpp: '',
@@ -38,7 +44,6 @@ export function CreateOrganizationPage() {
     email: '',
     website: '',
     directorName: '',
-    accountantName: '',
     bankName: '',
     checkingAccount: '',
     correspondentAccount: '',
@@ -60,8 +65,9 @@ export function CreateOrganizationPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
     setError('');
 
     if (form.name.trim().length < 3) {
@@ -72,8 +78,8 @@ export function CreateOrganizationPage() {
       setError('ИНН должен содержать 10 (юридическое лицо) или 12 (физическое лицо/ИП) цифр');
       return;
     }
-    if (form.legalForm !== 'IP' && form.kpp.trim().length !== 9) {
-      setError('КПП должен содержать 9 цифр');
+    if (!form.legalForm.trim() && !form.legalFormCustom.trim()) {
+      setError('Укажите организационно-правовую форму');
       return;
     }
     if (form.ogrn.trim().length === 0) {
@@ -81,38 +87,49 @@ export function CreateOrganizationPage() {
       return;
     }
 
-    const org = addOrganization({
-      name: form.name.trim(),
-      legalForm: form.legalForm,
-      shortName: form.shortName.trim(),
-      inn: form.inn.trim(),
-      kpp: form.kpp.trim(),
-      ogrn: form.ogrn.trim(),
-      legalAddress: form.legalAddress.trim(),
-      actualAddress: form.actualAddress.trim(),
-      postalCode: form.postalCode.trim(),
-      city: form.city.trim(),
-      phone: form.phone.trim(),
-      email: form.email.trim(),
-      website: form.website.trim(),
-      directorName: form.directorName.trim(),
-      accountantName: form.accountantName.trim(),
-      bankName: form.bankName.trim(),
-      checkingAccount: form.checkingAccount.trim(),
-      correspondentAccount: form.correspondentAccount.trim(),
-      bik: form.bik.trim(),
-      taxSystem: form.taxSystem,
-      industry: form.industry.trim(),
-      employeeCount: form.employeeCount ? Number(form.employeeCount) : null,
-      foundedDate: form.foundedDate,
-      logo: undefined,
-      notes: form.notes.trim(),
-    });
+    const finalLegalForm = (form.legalForm === 'Другое…' ? form.legalFormCustom : form.legalForm).trim();
+
+    setSaving(true);
+    let org = null;
+    try {
+      org = await addOrganization({
+        name: form.name.trim(),
+        legalForm: finalLegalForm,
+        shortName: form.shortName.trim() || form.name.trim(),
+        inn: form.inn.trim(),
+        kpp: form.kpp.trim(),
+        ogrn: form.ogrn.trim(),
+        legalAddress: form.legalAddress.trim(),
+        actualAddress: form.actualAddress.trim(),
+        postalCode: form.postalCode.trim(),
+        city: form.city.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim(),
+        website: form.website.trim(),
+        directorName: form.directorName.trim(),
+        bankName: form.bankName.trim(),
+        checkingAccount: form.checkingAccount.trim(),
+        correspondentAccount: form.correspondentAccount.trim(),
+        bik: form.bik.trim(),
+        taxSystem: form.taxSystem,
+        industry: form.industry.trim(),
+        employeeCount: form.employeeCount ? Number(form.employeeCount) : null,
+        foundedDate: form.foundedDate,
+        logo: undefined,
+        notes: form.notes.trim(),
+      });
+    } finally {
+      setSaving(false);
+    }
 
     if (org) {
-      navigate('/organization');
+      // Обновляем профиль пользователя с сервера: именно поле organizationId
+      // в currentUser решает, пускать ли пользователя в приложение. Без этого
+      // шага guard-редиректы считали пользователя «без организации».
+      try { await bootstrap(); } catch { /* не критично */ }
+      navigate('/organization', { replace: true });
     } else {
-      setError('Не удалось создать организацию');
+      setError('Не удалось создать организацию. Проверьте заполнение полей и повторите.');
     }
   };
 
@@ -170,12 +187,20 @@ export function CreateOrganizationPage() {
                   onChange={(e) => handleChange('legalForm', e.target.value)}
                   className={inputCls}
                 >
-                  {legalForms.map((lf) => (
-                    <option key={lf.value} value={lf.value}>
-                      {lf.label}
-                    </option>
+                  {['ООО', 'АО', 'ПАО', 'ИП', 'ГП', 'АНО', 'ФГБУ', 'МБУ', 'Другое…'].map((lf) => (
+                    <option key={lf} value={lf}>{lf}</option>
                   ))}
                 </select>
+                {form.legalForm === 'Другое…' && (
+                  <input
+                    type="text"
+                    value={form.legalFormCustom}
+                    onChange={(e) => handleChange('legalFormCustom', e.target.value)}
+                    className={`${inputCls} mt-2`}
+                    placeholder="Укажите ОПФ вручную, например: ТСН, КФХ, НКО…"
+                    required
+                  />
+                )}
               </div>
               <div>
                 <label className={labelCls}>Краткое наименование</label>
@@ -216,7 +241,7 @@ export function CreateOrganizationPage() {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className={labelCls}>ИНН * {form.legalForm === 'IP' ? '(12 цифр)' : '(10 цифр)'}</label>
+                <label className={labelCls}>ИНН * {form.legalForm === 'ИП' ? '(12 цифр)' : '(10 цифр)'}</label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -224,12 +249,12 @@ export function CreateOrganizationPage() {
                   value={form.inn}
                   onChange={(e) => handleChange('inn', e.target.value.replace(/\D/g, ''))}
                   className={inputCls}
-                  placeholder={form.legalForm === 'IP' ? '12 цифр' : '10 цифр'}
+                  placeholder={form.legalForm === 'ИП' ? '12 цифр' : '10 цифр'}
                   required
                 />
               </div>
               <div>
-                <label className={labelCls}>КПП {form.legalForm === 'IP' ? '(не обязателен)' : '*'}</label>
+                <label className={labelCls}>КПП (не обязателен)</label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -238,7 +263,6 @@ export function CreateOrganizationPage() {
                   onChange={(e) => handleChange('kpp', e.target.value.replace(/\D/g, ''))}
                   className={inputCls}
                   placeholder="9 цифр"
-                  required={form.legalForm !== 'IP'}
                 />
               </div>
               <div>
@@ -369,7 +393,7 @@ export function CreateOrganizationPage() {
               <Building2 className="w-5 h-5" /> Руководство и банковские реквизиты
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
+              <div className="md:col-span-2">
                 <label className={labelCls}>Руководитель (ФИО / должность)</label>
                 <input
                   type="text"
@@ -379,16 +403,8 @@ export function CreateOrganizationPage() {
                   placeholder="Директор Иванов И. И."
                 />
               </div>
-              <div>
-                <label className={labelCls}>Главный бухгалтер</label>
-                <input
-                  type="text"
-                  value={form.accountantName}
-                  onChange={(e) => handleChange('accountantName', e.target.value)}
-                  className={inputCls}
-                  placeholder="Петрова П. П."
-                />
-              </div>
+              {/* Главный бухгалтер убран из карточки организации: он определяется
+                  по штатному расписанию среди сотрудников (справочники → должности). */}
               <div>
                 <label className={labelCls}>Наименование банка</label>
                 <input
@@ -456,10 +472,11 @@ export function CreateOrganizationPage() {
             </button>
             <button
               type="submit"
-              className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30"
+              disabled={saving}
+              className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="w-5 h-5" />
-              Создать организацию
+              {saving ? 'Создание…' : 'Создать организацию'}
             </button>
           </div>
         </form>

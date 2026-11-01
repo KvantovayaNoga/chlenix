@@ -22,10 +22,16 @@ import { OrganizationPage } from './pages/OrganizationPage';
 import { CreateOrganizationPage } from './pages/CreateOrganizationPage';
 import { AboutPage } from './pages/AboutPage';
 
-// После авторизации: если у пользователя нет организации — сначала предлагаем создать
+// После авторизации: если у пользователя нет организации — сначала предлагаем создать.
+// ВАЖНО: редирект выполняется только когда пользователь реально загружен (bootstrap
+// завершился). Раньше на время bootstrap'а currentUser === null, и «страховочный»
+// wildcard-маршрут мгновенно кидал пользователя на /dashboard — это выглядело как
+// «меня выкидывает на главную страницу без организации» сразу после её создания.
 function DefaultAuthenticatedRedirect() {
   const currentUser = useAuthStore((s) => s.currentUser);
-  if (currentUser && !currentUser.organizationId) {
+  const initialized = useAuthStore((s) => s.initialized);
+  if (!initialized || !currentUser) return null; // ждём восстановления сессии
+  if (!currentUser.organizationId) {
     return <Navigate to="/organization/create" replace />;
   }
   return <Navigate to="/dashboard" replace />;

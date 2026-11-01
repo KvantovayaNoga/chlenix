@@ -798,7 +798,7 @@ const employeeSchema = z.object({
   positionId: z.string().min(1),
   departmentId: z.string().min(1),
   // Филиал необязателен (создавать филиалы не обязательно — сотрудник может быть без филиала)
-  branchId: z.string().optional().nullable(),
+  branchId: z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), z.string().uuid().nullable().optional()),
   email: z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), z.string().email().nullable().optional()),
   workPhone: z.string().optional().nullable(),
   internalPhone: z.string().optional().nullable(),

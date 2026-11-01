@@ -117,7 +117,7 @@ model Employee {
   middleName    String?   @map("middle_name")
   positionId    String    @map("position_id")
   departmentId  String    @map("department_id")
-  branchId      String    @map("branch_id")
+  branchId      String?   @map("branch_id")
   email         String?
   workPhone     String?   @map("work_phone")
   internalPhone String?   @map("internal_phone")

@@ -151,10 +151,20 @@ interface RouteProps {
   children?: ReactNode;
 }
 
-// Компонент-заглушка: структура маршрутов читается из props детей <Routes>.
-export function Route(_props: RouteProps): null {
-  return null;
+// Стабильный символ компонента-маршрута. Важно: сравнение child.type === ROUTE_TYPE
+// не зависит от hot-reload/двойной загрузки модуля (сравнение с функцией-компонентом
+// могло «поехать», и тогда <Routes> не находил ни одного совпадения — страница
+// оставалась пустой).
+const ROUTE_TYPE = Symbol.for('chlenix.Route');
+
+interface RouteComponent {
+  (): null;
+  readonly __route: typeof ROUTE_TYPE;
 }
+
+// Компонент-заглушка: структура маршрутов читается из props детей <Routes>.
+export const Route: RouteComponent = (() => null) as unknown as RouteComponent;
+(Route as { __route?: symbol }).__route = ROUTE_TYPE;
 
 interface RoutesProps {
   children?: ReactNode;
@@ -166,9 +176,10 @@ export function Routes({ children }: RoutesProps) {
   const rendered = useMemo(() => {
     const kids = flatten(children);
 
-    const run = (list: ReactElement[], baseRender: (node: ReactNode) => ReactNode): ReactNode => {
+    const run = (list: ReactElement[]): ReactNode => {
       for (const child of list) {
-        if (child.type !== Route) continue;
+        // Совпадение по стабильному символу вместо ссылки на функцию
+        if ((child.type as { __route?: symbol })?.__route !== ROUTE_TYPE) continue;
         const p: RouteProps = child.props as RouteProps;
         const pattern = p.path ?? '';
         let params: Record<string, string> | null = null;
@@ -181,23 +192,40 @@ export function Routes({ children }: RoutesProps) {
         }
         if (!params) continue;
 
-        const inner = run(flatten(p.children), (node) => node);
-        const content = (
-          <ParamsContext.Provider value={params}>
+        const inner = run(flatten(p.children));
+        return (
+          <ParamsContext.Provider key={pattern || undefined} value={params}>
             {p.element != null ? (
               <OutletContext.Provider value={inner}>{p.element}</OutletContext.Provider>
             ) : inner}
           </ParamsContext.Provider>
         );
-        return baseRender(content);
       }
       return null;
     };
 
-    return run(kids, (node) => node);
+    return run(kids);
   }, [children, path]);
 
+  // Пустая страница вместо падения: если маршрут не найден, показываем
+  // минимальную заглушку (раньше при рассинхронизации рендерился null,
+  // и пользователь видел только фон).
+  if (rendered == null) {
+    return (
+      <NotFoundPage pathname={path} />
+    );
+  }
   return <>{rendered}</>;
+}
+
+function NotFoundPage({ pathname }: { pathname: string }) {
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+      <h1 style={{ fontSize: 24, fontWeight: 700 }}>Страница не найдена</h1>
+      <p style={{ opacity: 0.7 }}>Маршрут «{pathname}» не определён.</p>
+      <a href="/dashboard" style={{ textDecoration: 'underline' }}>Перейти на главную</a>
+    </div>
+  );
 }
 
 function flatten(children: ReactNode): ReactElement[] {
