@@ -795,15 +795,24 @@ app.post('/api/organizations', authMiddleware, requireRole(['admin']), async (c)
   await createHistoryEntry('organization', org.id, currentUser.fullName);
   await writeAudit(currentUser, 'create', 'organization', org.id, org.name, `Создана организация "${org.name}"`, c.req.header('x-forwarded-for'));
 
-  // Создавший переключается на новую организацию; пользователи без организации
-  // привязываются к ней (первичная инициализация системы).
+  // Создавший переключается на новую организацию.
+  // ВАЖНО: пользователи без организации привязываются к ней только если это
+  // ПЕРВАЯ организация в системе (первичная инициализация). Иначе создание
+  // второй организации сбрасывало бы активную организацию у всех пользователей.
+  const orgCount = await prisma.organization.count();
+  if (orgCount <= 1) {
+    await prisma.user.updateMany({ where: { organizationId: null }, data: { organizationId: org.id } });
+  }
   await prisma.user.update({ where: { id: currentUser.userId }, data: { organizationId: org.id } });
-  await prisma.user.updateMany({ where: { organizationId: null }, data: { organizationId: org.id } });
 
   const updatedMe = await prisma.user.findUnique({ where: { id: currentUser.userId } });
   const token = await issueToken(updatedMe);
 
-  return c.json({ ...publicOrganization(org), token, user: publicUser(updatedMe) }, 201);
+  // Клиенту возвращаем полный список доступных организаций — иначе после создания
+  // второй организации переключатель «запоминал» только первую.
+  const accessibleOrganizations = await getAccessibleOrgs(currentUser.userId);
+
+  return c.json({ ...publicOrganization(org), token, user: { ...publicUser(updatedMe), accessibleOrganizations } }, 201);
 });
 
 app.put('/api/organizations/:id', authMiddleware, requireRole(['admin']), async (c) => {

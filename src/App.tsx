@@ -63,6 +63,8 @@ function App() {
           <Route path="/employees/:id" element={<EmployeeDetailPage />} />
           <Route path="/equipment" element={<EquipmentPage />} />
           <Route path="/directories" element={<DirectoriesPage />} />
+          {/* Совместимость: Sidebar ведёт на /staff (Штатное расписание) — тот же раздел */}
+          <Route path="/staff" element={<DirectoriesPage />} />
           <Route path="/organization" element={<OrganizationPage />} />
           <Route path="/organization/create" element={<CreateOrganizationPage />} />
           <Route path="/users" element={<ProtectedRoute requiredRole="admin"><UsersPage /></ProtectedRoute>} />

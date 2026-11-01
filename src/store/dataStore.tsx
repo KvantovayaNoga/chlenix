@@ -213,9 +213,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (res.token) setToken(res.token);
       if (res.user) setCurrentUser(res.user);
       setOrganizations((prev) => [...prev, res]);
+      // Активная организация сменилась на новую (пустую): справочники/сотрудники
+      // прежней организации больше не относятся к скоупу — перезагружаем данные,
+      // иначе «Штатное расписание» покажет устаревший набор или пустоту.
+      setDepartments([]); setPositions([]); setBranches([]);
+      setLoaded(false);
+      loadPromiseRef.current = null;
+      void loadAll();
     });
     return ok ? created : null;
-  }, [run]);
+  }, [run, loadAll]);
 
   const updateOrganization = useCallback((id: string, data: Partial<Organization>) => run(async () => {
     const updated = await api.put<Organization>(`/organizations/${id}`, data);
