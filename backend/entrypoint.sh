@@ -111,12 +111,13 @@ while true; do
         echo "     docker compose stop backend"
         echo "     docker volume rm chlenix_postgres_data"
         echo "     ./deploy.sh docker"
-        echo "   Решение B — если данные нужны: привести пароль БД к значению из .env"
-        echo "     (backend при этом должен быть остановлен):"
-        echo "     PGPASS=\$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2)"
-        echo "     docker exec -i chlenix-postgres psql -U ${POSTGRES_USER:-chlenix} -d postgres \\"
-        echo "       -c \"ALTER USER ${POSTGRES_USER:-chlenix} WITH PASSWORD '\$PGPASS';\""
-        echo "     docker compose up -d backend"
+        echo "   Решение B — если данные нужны: запустите заново деплой, он"
+        echo "     синхронизирует пароль автоматически (временная trust-аутентификация,"
+        echo "     ALTER USER, восстановление pg_hba.conf) без потери данных:"
+        echo "     ./deploy.sh docker"
+        echo "   Либо вручную (backend должен быть остановлен; введите СТАРЫЙ пароль БД):"
+        echo "     docker exec -it chlenix-postgres psql -U ${POSTGRES_USER:-chlenix} -d postgres \\"
+        echo "       -c \"ALTER USER ${POSTGRES_USER:-chlenix} WITH PASSWORD '<новый из .env>';\""
         exit 1
       fi
       ;;

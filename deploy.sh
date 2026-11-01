@@ -208,52 +208,85 @@ deploy_docker() {
   # инициализации пустого тома. Если .env пересоздавался (или пароль
   # менялся), том хранит СТАРЫЙ пароль -> backend получает
   # "Authentication failed" и падает по кругу.
-  # Лечим автоматически через docker exec: внутри контейнера есть утилита
-  # pg_isready, которая НЕ проверяет пароль — она говорит, какой именно
-  # пароль был использован при инициализации тома (он же является паролем
-  # суперпользователя POSTGRES_USER в образе). Этим паролем входим в БД
-  # и выполняем ALTER USER на значение из текущего .env. Данные не теряются.
+  #
+  # Как узнаём НАСТОЯЩИЙ пароль тома (без догадок):
+  #   1) Пробуем подключиться с паролем из .env (через PGPASSWORD + psql,
+  #      который есть в образе postgres). Успех — значит всё синхронно.
+  #   2) Иначе временно включаем trust-аутентификацию локально:
+  #      подменяем pg_hba.conf на `local all all trust`, делаем pg_ctl
+  #      reload (данные не трогаем), коннектимся локально БЕЗ пароля,
+  #      исполняем ALTER USER на значение из .env, восстанавливаем
+  #      исходный pg_hba.conf и снова reload. Это надёжно работает даже
+  #      когда пароль тома нам неизвестен (например, сгенерирован ранее
+  #      автоматически deploy.sh).
   # ------------------------------------------------------------
   PGUSER_VAL="${POSTGRES_USER:-chlenix}"
   PGPASS_VAL="${POSTGRES_PASSWORD}"
+  PGDB_VAL="${POSTGRES_DB:-chlenix}"
+
+  pg_try_pass() { # $1 = candidate password
+    docker exec -e PGPASSWORD="$1" chlenix-postgres \
+      psql -h 127.0.0.1 -U "$PGUSER_VAL" -d postgres -tAc "SELECT 1" >/dev/null 2>&1
+  }
+
   sync_pg_password() {
-    # 1) Рабочий ли вообще пароль из .env?
-    if docker exec chlenix-postgres pg_isready -U "$PGUSER_VAL" -d postgres >/dev/null 2>&1; then
+    if [ -z "$PGPASS_VAL" ]; then
+      warn "POSTGRES_PASSWORD пуст в .env — пропускаю синхронизацию."
+      return 1
+    fi
+    # 1) Пароль из .env уже рабочий?
+    if pg_try_pass "$PGPASS_VAL"; then
       ok "Пароль PostgreSQL из .env подтверждён"
       return 0
     fi
-    warn "Пароль '${PGUSER_VAL}' из .env НЕ совпадает с паролем в томе postgres_data — синхронизирую через ALTER USER..."
-    # 2) Достаём пароль, зашитый в том (pg_isready с ним = успех)
-    INIT_PASS=""
-    for CAND in chlenix_secret change_me_strong_password admin secret postgres; do
-      if docker exec chlenix-postgres pg_isready -U "$PGUSER_VAL" -d postgres --password="$CAND" >/dev/null 2>&1; then
-        INIT_PASS="$CAND"; break
-      fi
-    done
-    # pg_isready может возвращать 0 и без пароля (проверка только готовности) —
-    # поэтому верифицируем кандидата реальным SQL-подключением через psql внутри контейнера:
-    if [ -z "$INIT_PASS" ]; then
-      for CAND in chlenix_secret change_me_strong_password admin secret postgres; do
-        if docker exec -e PGPASSWORD="$CAND" chlenix-postgres \
-             psql -h 127.0.0.1 -U "$PGUSER_VAL" -d postgres -tAc "SELECT 1" >/dev/null 2>&1; then
-          INIT_PASS="$CAND"; break
-        fi
-      done
+    warn "Пароль '${PGUSER_VAL}' из .env НЕ совпадает с паролем в томе postgres_data."
+    warn "Синхронизирую через временную trust-аутентификацию (данные сохраняются)..."
+
+    HBA=$(docker exec chlenix-postgres sh -c 'ps -o args= -p 1' 2>/dev/null \
+          | tr ' ' '\n' | sed -n 's|^.*config_file=\(.*\)$|\1|p' | head -1)
+    [ -z "$HBA" ] && HBA="/var/lib/postgresql/data/pg_hba.conf"
+    [ -z "$PGDATA_DIR" ] && PGDATA_DIR="/var/lib/postgresql/data"
+
+    # Резервная копия оригинального pg_hba.conf ВНУТРИ контейнера
+    if ! docker exec chlenix-postgres cp "$HBA" "${HBA}.orig.chlenix" 2>/dev/null; then
+      warn "Не удалось сделать резервную копию $HBA внутри контейнера."
+      return 1
     fi
-    if [ -n "$INIT_PASS" ]; then
-      if docker exec -e PGPASSWORD="$INIT_PASS" chlenix-postgres \
-           psql -h 127.0.0.1 -U "$PGUSER_VAL" -d postgres \
-           -c "ALTER USER ${PGUSER_VAL} WITH PASSWORD '${PGPASS_VAL}';" >/dev/null 2>&1; then
-        ok "Пароль '${PGUSER_VAL}' в БД обновлён на значение из .env"
-        return 0
-      fi
-      warn "ALTER USER не выполнен — проверьте права вручную."
+
+    # Временная trust-конфигурация (только для локальных TCP/unix соединений)
+    docker exec chlenix-postgres sh -c "cat > '$HBA' <<'EOF'
+# temporary trust config created by chlenix deploy.sh
+local all all trust
+host all all 127.0.0.1/32 trust
+host all all ::1/128 trust
+EOF" || { warn "Не удалось подменить pg_hba.conf"; return 1; }
+
+    # Перезагружаем конфиг postmaster'а (сигнал SIGHUP = reload)
+    docker exec chlenix-postgres sh -c 'kill -HUP 1' 2>/dev/null || true
+    sleep 2
+
+    # Меняем пароль пользователя приложения
+    if docker exec chlenix-postgres psql -h 127.0.0.1 -U "$PGUSER_VAL" -d postgres \
+         -c "ALTER USER \"${PGUSER_VAL}\" WITH PASSWORD '${PGPASS_VAL}';" >/dev/null 2>&1; then
+      ok "Пароль '${PGUSER_VAL}' в БД обновлён на значение из .env"
+      SYNC_OK=1
     else
-      warn "Не удалось войти в БД известными начальными паролями (том создан с нестандартным)."
+      warn "ALTER USER не выполнен (возможно, роль '${PGUSER_VAL}' отсутствует)."
+      SYNC_OK=0
     fi
-    warn "Если данные в базе не нужны — чистый старт:"
-    warn "  docker volume rm chlenix_postgres_data && ./deploy.sh docker"
-    warn "Если нужны — команды ручной смены пароля печатаются в логах контейнера backend."
+
+    # Восстанавливаем оригинальный pg_hba.conf и перечитываем конфиг
+    docker exec chlenix-postgres mv -f "${HBA}.orig.chlenix" "$HBA" 2>/dev/null || true
+    docker exec chlenix-postgres sh -c 'kill -HUP 1' 2>/dev/null || true
+    sleep 1
+
+    # Финальная проверка: новый пароль реально работает?
+    if [ "$SYNC_OK" = "1" ] && pg_try_pass "$PGPASS_VAL"; then
+      ok "Синхронизация подтверждена: backend сможет подключиться"
+      return 0
+    fi
+    warn "Синхронизация не подтверждена. Если данные в базе не нужны — чистый старт:"
+    warn "  docker compose stop backend && docker volume rm chlenix_postgres_data && ./deploy.sh docker"
     return 1
   }
   if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'chlenix-postgres'; then
