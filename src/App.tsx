@@ -72,7 +72,10 @@ function App() {
           <Route path="/about" element={<ProtectedRoute requiredRole="admin"><AboutPage /></ProtectedRoute>} />
         </Route>
 
-        <Route path="*" element={isAuthenticated ? <DefaultAuthenticatedRedirect /> : <Navigate to="/login" replace />} />
+        {/* unknown route: guard waits for bootstrap (see DefaultAuthenticatedRedirect);
+            while session is not restored yet we render nothing and KEEP the current URL,
+            so F5 on any page never bounces through /login -> /dashboard */}
+        <Route path="*" element={<DefaultAuthenticatedRedirect />} />
       </Routes>
     </Router>
   );
