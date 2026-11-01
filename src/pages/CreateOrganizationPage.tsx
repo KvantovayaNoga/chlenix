@@ -86,6 +86,14 @@ export function CreateOrganizationPage() {
       setError('Укажите ОГРН / ОГРНИП');
       return;
     }
+    if (!/^\d{6}$/.test(form.postalCode.trim())) {
+      setError('Укажите почтовый индекс — 6 цифр');
+      return;
+    }
+    if (form.legalAddress.trim().length < 5) {
+      setError('Укажите юридический адрес');
+      return;
+    }
 
     const finalLegalForm = (form.legalForm === 'Другое…' ? form.legalFormCustom : form.legalForm).trim();
 
@@ -170,7 +178,7 @@ export function CreateOrganizationPage() {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
-                <label className={labelCls}>Полное наименование *</label>
+                <label className={labelCls}>Полное наименование<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
                 <input
                   type="text"
                   value={form.name}
@@ -181,7 +189,7 @@ export function CreateOrganizationPage() {
                 />
               </div>
               <div>
-                <label className={labelCls}>Организационно-правовая форма *</label>
+                <label className={labelCls}>Организационно-правовая форма<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
                 <select
                   value={form.legalForm}
                   onChange={(e) => handleChange('legalForm', e.target.value)}
@@ -241,7 +249,7 @@ export function CreateOrganizationPage() {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className={labelCls}>ИНН * {form.legalForm === 'ИП' ? '(12 цифр)' : '(10 цифр)'}</label>
+                <label className={labelCls}>ИНН<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span> {form.legalForm === 'ИП' ? '(12 цифр)' : '(10 цифр)'}</label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -266,7 +274,7 @@ export function CreateOrganizationPage() {
                 />
               </div>
               <div>
-                <label className={labelCls}>ОГРН / ОГРНИП *</label>
+                <label className={labelCls}>ОГРН / ОГРНИП<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -302,7 +310,7 @@ export function CreateOrganizationPage() {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className={labelCls}>Почтовый индекс</label>
+                <label className={labelCls}>Почтовый индекс<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -324,7 +332,7 @@ export function CreateOrganizationPage() {
                 />
               </div>
               <div className="md:col-span-2">
-                <label className={labelCls}>Юридический адрес</label>
+                <label className={labelCls}>Юридический адрес<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
                 <input
                   type="text"
                   value={form.legalAddress}

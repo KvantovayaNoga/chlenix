@@ -696,9 +696,9 @@ const organizationSchema = z.object({
   inn: z.string().min(4),
   kpp: orgText,
   ogrn: z.string().min(4),
-  legalAddress: orgText,       // юридический адрес необязателен
+  legalAddress: z.string().min(5),   // юридический адрес обязателен
+  postalCode: z.string().regex(/^\d{6}$/, 'Почтовый индекс — 6 цифр'),
   actualAddress: orgText,
-  postalCode: orgText,
   city: orgText,
   phone: orgText,
   email: z.string().email().nullable().optional().or(z.literal('')),
