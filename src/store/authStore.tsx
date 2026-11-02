@@ -82,9 +82,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // массив users пуст, и карточка показывает «Пользователь не найден».
       // Для не-админов /users вернёт 403 — ошибка молча игнорируется.
       void refreshUsers();
-    } catch {
-      setToken(null);
-      setCurrentUser(null);
+    } catch (e) {
+      // ВАЖНО («вечное колёсико загрузки»): токен сбрасываем ТОЛЬКО при реальном
+      // 401 (сессия истекла / недействительна). При сетевых ошибках (status 0 —
+      // «Сервер недоступен») и временных 5xx (например, nginx отдаёт 502/503,
+      // пока backend ещё стартует) токен сохраняем: bootstrap повторится позже
+      // (retry ниже), а ProtectedRoute по таймауту сам покажет понятный экран,
+      // а не бесконечный спиннер.
+      const status = e instanceof ApiError ? e.status : -1;
+      if (status === 401 || status === 403) {
+        setToken(null);
+        setCurrentUser(null);
+      } else {
+        setCurrentUser(null);
+      }
     } finally {
       setInitialized(true);
       setBootstrapping(false);
@@ -96,6 +107,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void bootstrap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Фоновый retry: если токен есть, но сессия не восстановилась (backend был
+  // недоступен в момент старта), повторяем bootstrap каждые 10 секунд.
+  // Как только currentUser появится или токен будет сброшен — интервал гаснет.
+  useEffect(() => {
+    if (bootstrapping) return;
+    if (currentUser || !getToken()) return;
+    const t = setInterval(() => {
+      if (getToken()) void bootstrap();
+    }, 10000);
+    return () => clearInterval(t);
+  }, [bootstrap, bootstrapping, currentUser]);
 
   // Истечение сессии — очищаем состояние, роутер перенаправит на страницу входа
   useEffect(() => {

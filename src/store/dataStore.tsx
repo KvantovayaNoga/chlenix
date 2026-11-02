@@ -194,6 +194,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setError(null);
       } catch (e) {
         if (mySeq === loadSeqRef.current) setError((e as Error)?.message || 'Не удалось загрузить данные с сервера');
+        // Даже при ошибке помечаем состояние «завершённым»: иначе страницы,
+        // ожидающие loaded === true, остались бы в режиме бесконечной загрузки.
+        // Пользователь увидит текст ошибки (error) и сможет повторить через loadAll().
+        if (mySeq === loadSeqRef.current) setLoaded(true);
       } finally {
         // Не гасим индикатор и не снимаем dedupe, если уже запущена новая загрузка —
         // иначе stale-ответ «уронит» loading и параллельная перезагрузка отменится.
@@ -211,6 +215,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isAuthenticated && !loaded && !loading) {
       void loadAll();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
+
+  // Смена пользователя / выход из системы: сбрасываем флаг загрузки,
+  // чтобы следующий loadAll стартовал с чистого состояния.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setLoaded(false);
+      setLoading(false);
+      setError(null);
+      loadPromiseRef.current = null;
+      loadSeqRef.current++; // отменить применение in-flight ответов прежней сессии
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
