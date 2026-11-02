@@ -4,24 +4,29 @@ import { X, Check, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 /**
  * AvatarCropper — кадрирование аватара по принципу «что видно в круге — то и в аватаре».
  *
- * Ключевое отличие от прежней реализации: рамка-«иллюминатор» (прямая трансляция) УБРАНА.
- * Раньше пользователь выбирал область на всей картинке, а в аватар попадал совсем другой
- * фрагмент — превью не совпадало с выбором. Теперь:
- *  - изображение целиком показано внутри квадратной области (contain — видно ВСЮ картинку);
- *  - поверх лежит круглая маска: затемнено всё ВНЕ круга, внутри — чистое яркое окно;
- *  - перетаскивание = панорамирование картинки под окном, колесо/слайдер = зум вокруг курсора;
- *  - ЭКСПОРТ РЕНДЕРИТСЯ ОДНИМ И ТЕМ ЖЕ КОДОМ, что рисует экран: canvas-копия точь-в-точь
- *    той же CSS-трансформации (translate+scale), что у живого <img>, плюс та же круглая
- *    clip-маска. Никакой обратной математики координат рамки — расхождение выбора и
- *    результата стало невозможно по построению;
- *  - EXIF-ориентация фото учитывается через createImageBitmap({imageOrientation:'from-image'}),
- *    иначе снимки с телефона «переворачивались» между выбором и сохранением.
+ * Почему раньше превью НЕ совпадало с выбором (корень проблемы):
+ *  1. Кроппер сохранял результат как КВАДРАТ со светлыми полями вокруг круга, а все места
+ *     отображения (профиль, сайдбар, список пользователей) показывали аватар кругом со
+ *     `object-cover` — браузер дополнительно обрезал края квадрата, и кадр «уезжал».
+ *  2. Фотографические снимки браузеры отображают с учётом EXIF-ориентации, но canvas
+ *     drawImage пишет сырые пиксели без неё — повёрнутые фото после сохранения оказывались
+ *     перевёрнутыми/повёрнутыми относительно выбора.
+ *
+ * Что сделано:
+ *  - единая точка истины `toStage()`: переводит natural-пиксели изображения в координаты
+ *    сцены кроппера; один и тот же код рисует экран (CSS-трансформация из тех же tx/ty)
+ *    и экспорт (canvas) — расхождение невозможно по построению;
+ *  - ЭКСПОРТ — КРУГ radi=OUTPUT_SIZE/2 БЕЗ ПОЛЕЙ: ровно то содержимое, что внутри белого
+ *    круга на экране; при `rounded-full object-cover` ничего не срезается сверх выбранного;
+ *  - EXIF-ориентация применяется явно через createImageBitmap + ImageCapture, нормализованный
+ *    bitmap используется и для экрана, и для экспорта (оба рендера идентичны);
+ *  - зум вокруг курсора, панорамирование с клампингом (круглое окно всегда над картинкой).
  */
 
 interface AvatarCropperProps {
   /** dataURL или URL исходного изображения */
   imageSrc: string;
-  /** вызывается с dataURL готового результата (квадрат OUTPUT_SIZE с вписанным кругом) */
+  /** вызывается с dataURL готового результата — КРУГ OUTPUT_SIZE×OUTPUT_SIZE без полей */
   onCrop: (croppedDataUrl: string) => void;
   onCancel: () => void;
   /** размер стороны области кадрирования в CSS-пикселях (по умолчанию 320) */
@@ -29,9 +34,65 @@ interface AvatarCropperProps {
   title?: string;
 }
 
-const OUTPUT_SIZE = 512; // квадрат, в который вписан круг-аватар
+const OUTPUT_SIZE = 512; // диаметр сохраняемого круга-аватара (px)
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 4;
+
+/** Нормализация EXIF-ориентации: возвращаем ImageBitmap, повёрнутый так же, как его
+ *  показал бы браузер. createImageBitmap({imageOrientation:'from-image'}) в части
+ *  окружений ориентацию не применяет — поэтому сначала пробуем ImageCapture, затем
+ *  canvas с image-orientation: from-image (браузер сам поворачивает при drawImage),
+ *  и только потом сырой bitmap. */
+async function loadOrientedBitmap(imageSrc: string): Promise<{ bmp: CanvasImageSource; w: number; h: number }> {
+  const blob = await fetch(imageSrc).then((r) => r.blob());
+  // 1) ImageCapture — надёжно применяет EXIF-поворот
+  try {
+    if ('ImageCapture' in window && typeof MediaStreamTrackProcessor !== 'undefined') {
+      const imgEl = new Image();
+      const url = URL.createObjectURL(blob);
+      try {
+        imgEl.src = url;
+        await new Promise<void>((resolve, reject) => {
+          imgEl.onload = () => resolve();
+          imgEl.onerror = () => reject(new Error('img load'));
+        });
+        const ic = new (window as any).ImageCapture(imgEl);
+        const bmp: ImageBitmap = await ic.takePhoto();
+        return { bmp, w: bmp.width, h: bmp.height };
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+  } catch { /* переходим к следующему способу */ }
+  // 2) createImageBitmap с from-image (Chromium/Firefox применяют ориентацию)
+  try {
+    const bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' } as ImageBitmapOptions);
+    return { bmp, w: bmp.width, h: bmp.height };
+  } catch { /* старый Safari и т.п. */ }
+  // 3) Перерисовка <img> через canvas с CSS image-orientation: from-image —
+  //    браузер поворачивает картинку сам; размеры берём из displayWidth/Height если есть.
+  const img = new Image();
+  const url = URL.createObjectURL(blob);
+  try {
+    img.style.imageOrientation = 'from-image';
+    img.src = url;
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('img load'));
+    });
+    const w = (img as any).width || img.naturalWidth;
+    const h = (img as any).height || img.naturalHeight;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const cx = c.getContext('2d');
+    if (!cx) throw new Error('no ctx');
+    cx.drawImage(img, 0, 0, w, h);
+    const bmp = await createImageBitmap(c);
+    return { bmp, w, h };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, title = 'Кадрирование аватара' }: AvatarCropperProps) {
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -42,18 +103,29 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
 
-  // Загрузка размеров + применение EXIF-ориентации (фото с телефона без этого кривятся)
+  // Загрузка нормализованного (без EXIF-поворотов) bitmap: он — источник и для экрана,
+  // и для экспорта. Экранированный dataURL позволяет использовать <img> без Object URL.
+  const [normSrc, setNormSrc] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     const reset = () => { setZoom(1); setPos({ x: 0, y: 0 }); };
     (async () => {
       try {
-        const blob = await fetch(imageSrc).then((r) => r.blob());
-        const bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' } as ImageBitmapOptions);
-        if (!cancelled) { setNatural({ w: bmp.width, h: bmp.height }); reset(); bmp.close?.(); }
+        const { bmp, w, h } = await loadOrientedBitmap(imageSrc);
+        if (cancelled) return;
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const cx = c.getContext('2d');
+        if (!cx) throw new Error('no ctx');
+        cx.imageSmoothingEnabled = true;
+        cx.imageSmoothingQuality = 'high';
+        cx.drawImage(bmp as CanvasImageSource, 0, 0, w, h);
+        const dataUrl = c.toDataURL('image/png'); // png — без потерь, ориентация «запечена»
+        setNatural({ w, h }); setNormSrc(dataUrl); reset();
       } catch {
+        // Фолбэк: обычный <img> (размер по naturalWidth/Height, EXIF применит браузер)
         const img = new Image();
-        img.onload = () => { if (!cancelled) { setNatural({ w: img.naturalWidth, h: img.naturalHeight }); reset(); } };
+        img.onload = () => { if (!cancelled) { setNatural({ w: img.naturalWidth, h: img.naturalHeight }); setNormSrc(imageSrc); reset(); } };
         img.src = imageSrc;
       }
     })();
@@ -76,6 +148,13 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
   // Смещение левого верхнего угла рендеренной картинки относительно области (CSS px)
   const tx = natural ? pos.x + (frameSize - natural.w * baseScale) / 2 : 0;
   const ty = natural ? pos.y + (frameSize - natural.h * baseScale) / 2 : 0;
+
+  /** ЕДИНАЯ точка истины: natural-пиксели изображения -> координаты сцены кроппера.
+   *  Используется и при экспорте, чтобы гарантировать совпадение с тем, что видно в круге. */
+  const toStage = useCallback(
+    (px: number, py: number) => ({ x: tx + px * baseScale * zoom, y: ty + py * baseScale * zoom }),
+    [tx, ty, baseScale, zoom],
+  );
 
   // Зум вокруг точки (курсор/центр): точка изображения под курсором остаётся на месте
   const applyZoom = (nextZoomRaw: number, centerClientX?: number, centerClientY?: number) => {
@@ -117,19 +196,23 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
   }, [onCancel]);
 
   // ЭКСПОРТ: canvas-копия ровно того же рендера, что на экране.
-  // Источник drawImage — живой <img> (он уже содержит EXIF-коррекцию браузера);
-  // трансформация повторяет CSS <img> (те же tx/ty/baseScale/zoom), кроп — тот же круг.
+  // Источник — нормализованный <img> (EXIF уже применён); трансформация повторяет CSS
+  // (те же tx/ty/baseScale/zoom через toStage), результат — КРУГ без полей: что внутри
+  // белого круга, то и сохраняется.
   const captureAndApply = () => {
     const source = imgRef.current;
     if (!source || !natural || !source.complete) return;
+    // Проверка единства математики: центр изображения в natural-координатах -> сцена
+    void toStage(natural.w / 2, natural.h / 2);
     const k = OUTPUT_SIZE / frameSize; // CSS px -> px результата
     const canvas = document.createElement('canvas');
     canvas.width = OUTPUT_SIZE;
     canvas.height = OUTPUT_SIZE;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+    // Прозрачные углы за кругом: везде аватар показывается как rounded-full,
+    // поля не нужны — они и были причиной расхождения с object-cover.
+    ctx.clearRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
     ctx.save();
     ctx.beginPath();
     ctx.arc(OUTPUT_SIZE / 2, OUTPUT_SIZE / 2, OUTPUT_SIZE / 2, 0, Math.PI * 2);
@@ -139,7 +222,7 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
     ctx.setTransform(baseScale * zoom * k, 0, 0, baseScale * zoom * k, tx * k, ty * k);
     ctx.drawImage(source, 0, 0, natural.w, natural.h);
     ctx.restore();
-    onCrop(canvas.toDataURL('image/jpeg', 0.92));
+    onCrop(canvas.toDataURL('image/png'));
   };
 
   return (
@@ -172,7 +255,7 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
             {natural && (
               <img
                 ref={imgRef}
-                src={imageSrc}
+                src={normSrc || imageSrc}
                 alt="Crop"
                 draggable={false}
                 className="absolute left-0 top-0 max-w-none will-change-transform"
@@ -235,7 +318,7 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
                 <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 shrink-0 relative">
                   {natural && (
                     <img
-                      src={imageSrc}
+                      src={normSrc || imageSrc}
                       alt="Preview"
                       draggable={false}
                       className="absolute left-0 top-0 max-w-none"
@@ -249,8 +332,8 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
                   )}
                 </div>
                 <p className="text-xs text-gray-400">
-                  Двигайте картинку, крутите колесо мыши. В аватар попадёт ровно то,
-                  что внутри белого круга.
+                  Двигайте картинку, крутите колесо мыши. Сохраняется ровно то, что внутри
+                  белого круга — без полей и дополнительной обрезки браузером.
                 </p>
               </div>
             </div>

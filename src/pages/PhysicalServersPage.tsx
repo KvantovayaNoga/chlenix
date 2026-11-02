@@ -6,7 +6,8 @@ import { useAuthStore } from '../store/authStore';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { HistoryLog } from '../components/HistoryLog';
 import type { Equipment, ServerRole } from '../types';
-import { serverRoleLabels, serverRoleOptions, hypervisorSuggestions, normalizeServerPayload } from '../utils/virtualization';
+import { serverRoleLabels, serverRoleOptions, hypervisorSuggestions, normalizeServerPayload, storageTypeLabels, storageProtocolLabels } from '../utils/virtualization';
+import type { StorageSystemType, StorageProtocol } from '../types';
 
 export function PhysicalServersPage() {
   const { equipment, branches, addEquipment, updateEquipment, deleteEquipment, getVMsByHost } = useDataStore();
@@ -131,6 +132,11 @@ function ServerModal({ server, onClose, onSave, branches }: any) {
     cpuCores: server?.cpuCores || null, ramGB: server?.ramGB || null, diskGB: server?.diskGB || null,
     serverRole: (server?.serverRole || '') as ServerRole | '',
     hypervisorName: server?.hypervisorName || '',
+    clusterName: server?.clusterName || '',
+    hypervisorVersion: server?.hypervisorVersion || '',
+    storageType: (server?.storageType || '') as StorageSystemType | '',
+    storageProtocol: (server?.storageProtocol || '') as StorageProtocol | '',
+    storageCapacityGB: server?.storageCapacityGB || null,
     notes: server?.notes || '',
   });
 
@@ -177,6 +183,40 @@ function ServerModal({ server, onClose, onSave, branches }: any) {
                   <input list="hypervisor-suggestions" type="text" value={formData.hypervisorName} onChange={(e) => setFormData(p => ({ ...p, hypervisorName: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="VMware ESXi, Proxmox VE…" />
                   <datalist id="hypervisor-suggestions">{hypervisorSuggestions.map(h => <option key={h} value={h} />)}</datalist>
                 </div>
+              )}
+              {formData.serverRole === 'hypervisor_host' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Кластер</label>
+                    <input type="text" value={formData.clusterName} onChange={(e) => setFormData(p => ({ ...p, clusterName: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Например: HA-Cluster-01 (если хост в кластере)" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Версия гипервизора</label>
+                    <input type="text" value={formData.hypervisorVersion} onChange={(e) => setFormData(p => ({ ...p, hypervisorVersion: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="ESXi 8.0 U2, PVE 8.2…" />
+                  </div>
+                </>
+              )}
+              {formData.serverRole === 'storage' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Тип СХД</label>
+                    <select value={formData.storageType} onChange={(e) => setFormData(p => ({ ...p, storageType: e.target.value as StorageSystemType | '' }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                      <option value="">— Не указан —</option>
+                      {Object.entries(storageTypeLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Протокол доступа</label>
+                    <select value={formData.storageProtocol} onChange={(e) => setFormData(p => ({ ...p, storageProtocol: e.target.value as StorageProtocol | '' }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                      <option value="">— Не указан —</option>
+                      {Object.entries(storageProtocolLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Полезный объём (ГБ)</label>
+                    <input type="number" min={0} value={formData.storageCapacityGB || ''} onChange={(e) => setFormData(p => ({ ...p, storageCapacityGB: e.target.value ? +e.target.value : null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Например: 48000" />
+                  </div>
+                </>
               )}
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400">

@@ -487,9 +487,17 @@ function VMEditModal({ vm, onClose, onSave, servers, employees }: any) {
     responsibleEmployeeId: vm?.responsibleEmployeeId || null, serviceResponsibleEmployeeId: vm?.serviceResponsibleEmployeeId || null,
     status: vm?.status || 'running', notes: vm?.notes || '',
     serverRole: (vm?.serverRole || '') as ServerRole | '',
+    provisionedOn: vm?.provisionedOn || '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // ВМ не может быть СХД; «назначенный хост» имеет смысл только для консолей/хостов-ролей
+    const payload = { ...formData };
+    if (payload.serverRole === '' || payload.serverRole === 'storage') payload.serverRole = '' as any;
+    if (payload.serverRole !== 'management_console' && payload.serverRole !== 'hypervisor_host') payload.provisionedOn = '';
+    onSave(payload);
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -511,10 +519,17 @@ function VMEditModal({ vm, onClose, onSave, servers, employees }: any) {
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Роль в системе виртуализации</label>
               <select value={formData.serverRole} onChange={(e) => setFormData(p => ({ ...p, serverRole: e.target.value as ServerRole | '' }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">
-                {serverRoleOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {serverRoleOptions.filter(o => o.value !== 'storage').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Например: консоль управления гипервизором (vCenter / Proxmox VE), размещённая как ВМ.</p>
             </div>
+            {(formData.serverRole === 'management_console' || formData.serverRole === 'hypervisor_host') && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Назначенный хост (pre-provisioning)</label>
+                <input type="text" value={formData.provisionedOn} onChange={(e) => setFormData(p => ({ ...p, provisionedOn: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Имя сервера-хоста, на котором будет размещена ВМ" />
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Если ВМ ещё не создана на хосте — укажите планируемое размещение.</p>
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-4">
             <EmployeeSearch
