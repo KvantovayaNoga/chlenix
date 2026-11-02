@@ -282,6 +282,8 @@ export interface VirtualMachine {
   hostServerId: string | null;
   /** Кластер ВМ не хранится явно: определяется автоматически по хост-серверу
    *  (hostServer.parentClusterId). Поле clusterId удалено из модели и формы ВМ. */
+  /** Вычисляемое поле бэкенда: id кластера, к которому относится ВМ через хост. */
+  vmClusterId?: string | null;
   os: string;
   cpuCores: number;
   ramGB: number;

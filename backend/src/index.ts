@@ -1261,9 +1261,23 @@ const VIRT_ROLES = ['hypervisor_host', 'storage', 'management_console', 'cluster
  *  хостом может быть только физический сервер-хост гипервизора. */
 async function assertVmHostIsHypervisor(hostServerId: string | null | undefined): Promise<string | null> {
   if (!hostServerId) return hostServerId ?? null;
-  const host = await prisma.equipment.findUnique({ where: { id: hostServerId }, select: { serverRole: true } });
-  if (host && VIRT_ROLES.includes(host.serverRole || '') && host.serverRole !== 'hypervisor_host') {
-    throw new VmHostError('Хостом для ВМ может быть только сервер-хост гипервизора. Кластер лишь аккумулирует хосты и СХД — выберите конкретный хост.');
+  const host = await prisma.equipment.findUnique({ where: { id: hostServerId }, select: { serverRole: true, category: true, name: true } });
+  if (!host) {
+    throw new VmHostError('Выбранный хост-сервер не найден (возможно, удалён). Обновите страницу и выберите существующий хост.');
+  }
+  // Явно запрещённые роли: кластер, СХД, консоль управления
+  if (host.serverRole === 'cluster') {
+    throw new VmHostError(`«${host.name}» — это кластер виртуализации, а не физический хост. ВМ размещаются на конкретных хостах гипервизора, а принадлежность к кластеру определяется автоматически по хосту.`);
+  }
+  if (host.serverRole === 'storage') {
+    throw new VmHostError(`«${host.name}» — СХД (система хранения), на ней нельзя разместить ВМ. Выберите сервер-хост гипервизора.`);
+  }
+  if (host.serverRole === 'management_console') {
+    throw new VmHostError(`«${host.name}» — консоль управления гипервизором, а не хост размещения. ВМ нельзя разместить на консоли — выберите сервер-хост.`);
+  }
+  // Оборудование не-серверного типа тоже не может быть хостом
+  if (host.category !== 'server') {
+    throw new VmHostError(`«${host.name}» не является сервером и не может быть хостом для ВМ. Выберите физический сервер-хост гипервизора.`);
   }
   return hostServerId;
 }

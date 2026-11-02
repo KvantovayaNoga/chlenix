@@ -28,7 +28,7 @@ const serviceStatusLabels = {
 };
 
 export function ServersPage() {
-  const { virtualMachines, equipment, employees, services, addVM, updateVM, deleteVM, addNetworkInterface, removeNetworkInterface, addService, updateService, deleteService, getVMsByHost, reloadVMs: refreshVMs } = useDataStore();
+  const { virtualMachines, equipment, employees, services, addVM, updateVM, deleteVM, addNetworkInterface, removeNetworkInterface, addService, updateService, deleteService, getVMsByHost, reloadVMs: refreshVMs, error } = useDataStore();
   const { canEdit, users } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -373,6 +373,7 @@ export function ServersPage() {
           }}
           servers={hypervisorHosts}
           employees={activeEmployees}
+          saveError={error}
         />
       )}
 
@@ -506,10 +507,11 @@ function VMDetailModal({ vm, onClose, canEdit, employees, services, onAddInterfa
   );
 }
 
-function VMEditModal({ vm, onClose, onSave, servers, employees }: any) {
+function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any) {
   // Выбор кластера в форме ВМ убран: принадлежность к кластеру определяется
   // автоматически по хост-серверу (хост входит в кластер => ВМ в этом кластере).
   const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     name: vm?.name || '', hostname: vm?.hostname || '', type: vm?.type || 'virtual', hostServerId: vm?.hostServerId || null,
     os: vm?.os || '', cpuCores: vm?.cpuCores || 2, ramGB: vm?.ramGB || 4, diskGB: vm?.diskGB || 50,
