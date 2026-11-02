@@ -6,8 +6,10 @@ import { useSearchParams } from '../router';
 import {
   Cpu, Network, Globe, Plus, Edit, Trash2, X, Server, Activity, Search, Filter, Save,
 } from 'lucide-react';
-import type { VirtualMachine, NetworkInterface, Service, ServerRole } from '../types';
-import { serverRoleLabels, serverRoleOptions } from '../utils/virtualization';
+import type { VirtualMachine, NetworkInterface, Service, ServerRole, Equipment } from '../types';
+import { serverRoleLabels, hypervisorSuggestions, storageTypeLabels, storageProtocolLabels, roleHasResourceFields } from '../utils/virtualization';
+import { StorageField } from '../components/StorageField';
+import { DecimalInput } from '../components/DecimalInput';
 import { parsePortList } from '../types';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
@@ -100,6 +102,11 @@ export function ServersPage() {
   }, [searchParams]);
 
   const physicalServers = equipment.filter(eq => eq.category === 'server');
+  // Косяк 5/11: хостом для ВМ может быть только гипервизор-хост (или сервер без роли —
+  // автономный, legacy). Кластеры и СХД хостами быть не могут.
+  const hypervisorHosts = physicalServers.filter(eq => eq.serverRole !== 'cluster' && eq.serverRole !== 'storage' && eq.serverRole !== 'management_console');
+  // Отдельные сущности-кластеры (для опционального поля «Кластер» у ВМ)
+  const clusterEntities = equipment.filter(eq => eq.serverRole === 'cluster');
   const activeEmployees = employees.filter(e => e.isEmployed);
 
   const filteredVMs = useMemo(() => {
@@ -127,8 +134,13 @@ export function ServersPage() {
   };
   const getServerName = (serverId: string | null) => {
     if (!serverId) return '—';
-    const server = physicalServers.find(s => s.id === serverId);
+    const server = equipment.find(s => s.id === serverId);
     return server?.name || serverId;
+  };
+  const getClusterName = (clusterId: string | null | undefined) => {
+    if (!clusterId) return '—';
+    const cl = equipment.find(s => s.id === clusterId);
+    return cl ? (cl.clusterName || cl.name) : clusterId;
   };
   const getUserName = (userId: string | null) => {
     if (!userId) return '—';

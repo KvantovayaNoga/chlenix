@@ -6,8 +6,9 @@ import { useAuthStore } from '../store/authStore';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { HistoryLog } from '../components/HistoryLog';
 import type { Equipment, ServerRole } from '../types';
-import { serverRoleLabels, serverRoleOptions, hypervisorSuggestions, normalizeServerPayload, storageTypeLabels, storageProtocolLabels, roleHasResourceFields } from '../utils/virtualization';
+import { serverRoleLabels, hypervisorSuggestions, normalizeServerPayload, storageTypeLabels, storageProtocolLabels, roleHasResourceFields, formatGB } from '../utils/virtualization';
 import { StorageField } from '../components/StorageField';
+import { DecimalInput } from '../components/DecimalInput';
 import type { StorageSystemType, StorageProtocol } from '../types';
 
 export function PhysicalServersPage() {
@@ -78,15 +79,45 @@ export function PhysicalServersPage() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Серийный №:</span><span className="font-mono text-xs text-gray-800 dark:text-gray-200">{server.serialNumber}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Инвентарный №:</span><span className="font-mono text-xs text-gray-800 dark:text-gray-200">{server.inventoryNumber}</span></div>
-                {server.cpuCores && (
+                {roleHasResourceFields(server.serverRole) && server.cpuCores != null && (
                   <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">CPU:</span><span className="text-gray-800 dark:text-gray-200">{server.cpuCores} ядер</span></div>
                 )}
-                {server.ramGB && (
+                {roleHasResourceFields(server.serverRole) && server.ramGB != null && (
                   <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">RAM:</span><span className="text-gray-800 dark:text-gray-200">{server.ramGB} ГБ</span></div>
                 )}
-                {server.diskGB && (
-                  <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Диск:</span><span className="text-gray-800 dark:text-gray-200">{server.diskGB} ГБ</span></div>
+                {roleHasResourceFields(server.serverRole) && server.diskGB != null && (
+                  <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Диск:</span><span className="text-gray-800 dark:text-gray-200">{formatGB(server.diskGB)}</span></div>
                 )}
+                {/* Косяк 7: у СХД вместо CPU/RAM — тип, протокол и полезный объём */}
+                {server.serverRole === 'storage' && (
+                  <>
+                    {server.storageType && (
+                      <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Тип СХД:</span><span className="text-gray-800 dark:text-gray-200">{storageTypeLabels[server.storageType]}</span></div>
+                    )}
+                    {server.storageProtocol && (
+                      <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Протокол:</span><span className="text-gray-800 dark:text-gray-200">{storageProtocolLabels[server.storageProtocol]}</span></div>
+                    )}
+                    <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Полезный объём:</span><span className="text-gray-800 dark:text-gray-200">{server.storageCapacityGB ? formatGB(server.storageCapacityGB) : '—'}</span></div>
+                  </>
+                )}
+                {/* Косяк 11: кластер аккумулирует характеристики хостов и СХД внутри себя */}
+                {server.serverRole === 'cluster' && (() => {
+                  const children = clusterChildren(server.id);
+                  const hosts = children.filter((c) => c.serverRole === 'hypervisor_host');
+                  const stors = children.filter((c) => c.serverRole === 'storage');
+                  const cpuSum = hosts.reduce((s, h) => s + (h.cpuCores || 0), 0);
+                  const ramSum = hosts.reduce((s, h) => s + (h.ramGB || 0), 0);
+                  const diskSum = stors.reduce((s, st) => s + (st.storageCapacityGB || st.diskGB || 0), 0);
+                  return (
+                    <>
+                      <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Хостов в кластере:</span><span className="text-gray-800 dark:text-gray-200">{hosts.length}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">СХД в кластере:</span><span className="text-gray-800 dark:text-gray-200">{stors.length}</span></div>
+                      {cpuSum > 0 && <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">CPU (суммарно):</span><span className="text-gray-800 dark:text-gray-200">{cpuSum} ядер</span></div>}
+                      {ramSum > 0 && <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">RAM (суммарно):</span><span className="text-gray-800 dark:text-gray-200">{ramSum} ГБ</span></div>}
+                      {diskSum > 0 && <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Ёмкость СХД:</span><span className="text-gray-800 dark:text-gray-200">{formatGB(diskSum)}</span></div>}
+                    </>
+                  );
+                })()}
                 <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Расположение:</span><span className="text-gray-800 dark:text-gray-200">{getBranchName(server.branchId)} {server.room && `, ${server.room}`}</span></div>
                 <div className="flex justify-between items-center">
                   <span className="text-gray-500 dark:text-gray-400">ВМ на сервере:</span>
@@ -121,6 +152,7 @@ export function PhysicalServersPage() {
             setShowAddModal(false); setEditingServer(null);
           }}
           branches={branches}
+          allEquipment={equipment}
         />
       )}
     </div>
@@ -128,6 +160,9 @@ export function PhysicalServersPage() {
 }
 
 function ServerModal({ server, onClose, onSave, branches, allEquipment }: any) {
+  // Косяк 6: чекбокс «Является платформой виртуализации». Если снят — сервер
+  // создаётся как обычный физический (роль не задаётся, поля платформы скрыты).
+  const [isPlatform, setIsPlatform] = useState<boolean>(() => !!server?.serverRole);
   const [formData, setFormData] = useState({
     name: server?.name || '', serialNumber: server?.serialNumber || '', inventoryNumber: server?.inventoryNumber || '',
     brand: server?.brand || '', model: server?.model || '', purchaseDate: server?.purchaseDate || new Date().toISOString().split('T')[0],
@@ -149,7 +184,32 @@ function ServerModal({ server, onClose, onSave, branches, allEquipment }: any) {
     (eq) => eq.serverRole === 'cluster' && eq.id !== server?.id
   );
 
-  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
+  const roleOptions: Array<{ value: ServerRole; label: string }> = [
+    { value: 'hypervisor_host', label: serverRoleLabels.hypervisor_host.label },
+    { value: 'cluster', label: serverRoleLabels.cluster.label },
+    { value: 'storage', label: serverRoleLabels.storage.label },
+    { value: 'management_console', label: serverRoleLabels.management_console.label },
+  ];
+
+  const handleTogglePlatform = (checked: boolean) => {
+    setIsPlatform(checked);
+    if (!checked) {
+      // Обычный физический сервер: роль и все атрибуты платформы сбрасываются
+      setFormData((p) => ({
+        ...p,
+        serverRole: '', hypervisorName: '', clusterName: '', hypervisorVersion: '',
+        storageType: '' as any, storageProtocol: '' as any, storageCapacityGB: null, parentClusterId: null,
+      }));
+    } else if (!formData.serverRole) {
+      setFormData((p) => ({ ...p, serverRole: 'hypervisor_host' }));
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Косяк 6: без чекбокса сервер — обычный физический (role = null)
+    onSave(isPlatform ? formData : { ...formData, serverRole: '', hypervisorName: '', clusterName: '', hypervisorVersion: '', storageType: '', storageProtocol: '', storageCapacityGB: null, parentClusterId: null });
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -165,29 +225,41 @@ function ServerModal({ server, onClose, onSave, branches, allEquipment }: any) {
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Инвентарный номер *</label><input type="text" value={formData.inventoryNumber} onChange={(e) => setFormData(p => ({ ...p, inventoryNumber: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Бренд</label><input type="text" value={formData.brand} onChange={(e) => setFormData(p => ({ ...p, brand: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Модель</label><input type="text" value={formData.model} onChange={(e) => setFormData(p => ({ ...p, model: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" /></div>
-            {roleHasResourceFields(formData.serverRole) && (
+            {roleHasResourceFields(isPlatform ? formData.serverRole : '') && (
               <>
-                <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CPU (ядер)</label><input type="number" value={formData.cpuCores || ''} onChange={(e) => setFormData(p => ({ ...p, cpuCores: e.target.value ? +e.target.value : null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Например: 32" /></div>
-                <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RAM (ГБ)</label><input type="number" value={formData.ramGB || ''} onChange={(e) => setFormData(p => ({ ...p, ramGB: e.target.value ? +e.target.value : null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Например: 128" /></div>
-                <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Диск (ГБ)</label><input type="number" value={formData.diskGB || ''} onChange={(e) => setFormData(p => ({ ...p, diskGB: e.target.value ? +e.target.value : null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Например: 2000" /></div>
+                <div><DecimalInput label="CPU (ядер)" value={formData.cpuCores} onChange={(v) => setFormData(p => ({ ...p, cpuCores: v }))} placeholder="Например: 32" min={1} /></div>
+                <div><DecimalInput label="RAM (ГБ)" value={formData.ramGB} onChange={(v) => setFormData(p => ({ ...p, ramGB: v }))} placeholder="Например: 128 или 64,5" min={0.001} /></div>
+                <div><StorageField label="Диск" valueGB={formData.diskGB} onChange={(gb) => setFormData(p => ({ ...p, diskGB: gb }))} placeholder="Например: 2000 или 12,5" hint="Объём хранится в ГБ; единица выбора (КБ…ПБ) — для удобства ввода." /></div>
               </>
             )}
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Филиал *</label><select value={formData.branchId} onChange={(e) => setFormData(p => ({ ...p, branchId: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required><option value="">Выберите филиал</option>{branches.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Этаж</label><input type="text" value={formData.floor} onChange={(e) => setFormData(p => ({ ...p, floor: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Необязательно" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Кабинет/помещение</label><input type="text" value={formData.room} onChange={(e) => setFormData(p => ({ ...p, room: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Серверная" /></div>
           </div>
-          {/* Система виртуализации: роль сервера и гипервизор */}
+          {/* Косяк 6: чекбокс «Является платформой виртуализации» — при включении
+              появляются поля роли и параметры платформы; при выключении сервер
+              сохраняется как обычный физический сервер. */}
           <div className="border border-purple-100 dark:border-purple-900/50 rounded-xl p-4 bg-purple-50/40 dark:bg-purple-900/10 space-y-3">
-            <p className="text-sm font-semibold text-purple-700 dark:text-purple-300">Система виртуализации</p>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isPlatform}
+                onChange={(e) => handleTogglePlatform(e.target.checked)}
+                className="w-4 h-4 accent-purple-600"
+              />
+              <span className="text-sm font-semibold text-purple-700 dark:text-purple-300">Является платформой виртуализации</span>
+            </label>
+            {isPlatform ? (
+            <>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Роль в инфраструктуре</label>
                 <select
                   value={formData.serverRole}
-                  onChange={(e) => setFormData(p => ({ ...p, serverRole: e.target.value as ServerRole | '' }))}
+                  onChange={(e) => setFormData(p => ({ ...p, serverRole: e.target.value as ServerRole }))}
                   className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
                 >
-                  {serverRoleOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  {roleOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
               {(formData.serverRole === 'hypervisor_host' || formData.serverRole === 'management_console' || formData.serverRole === 'cluster') && (
@@ -268,6 +340,12 @@ function ServerModal({ server, onClose, onSave, branches, allEquipment }: any) {
               Например: два сервера — хосты гипервизора, один — СХД, а консоль управления (vCenter, Proxmox VE) — физический сервер или ВМ.
               После указания роли в сайдбаре появится раздел «Платформа виртуализации».
             </p>
+            </>
+            ) : (
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Сервер будет сохранён как обычный физический сервер без участия в системе виртуализации.
+              </p>
+            )}
           </div>
           <EmployeeSearch
             value={formData.assignedToEmployeeId}
