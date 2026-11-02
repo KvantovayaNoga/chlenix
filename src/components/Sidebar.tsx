@@ -35,10 +35,11 @@ const roleColors: Record<string, string> = {
 };
 
 export function Sidebar() {
-  const { currentUser, logout, canManageUsers, canManageServers, canCreateOrganization, myOrganizations, effectiveRole, impersonatedRole } = useAuthStore();
+  const { currentUser, logout, canManageUsers, canManageServers, canCreateOrganization, myOrganizations, effectiveRole, impersonatedRole, setImpersonatedRole } = useAuthStore();
   // Режим имитации роли (отладка интерфейса администратором, см. «Администрирование»):
   // сайдбар показывается так, как его видит пользователь с выбранной ролью;
-  // кнопка «Админка» внизу (над «Выйти») возвращает настоящий интерфейс админа.
+  // кнопка «Админка» внизу (над «Выйти») СРАЗУ снимает имитацию и возвращает
+  // полный интерфейс администратора (без перехода на /admin).
   const isImpersonating = !!impersonatedRole;
   const { organizations, equipment, virtualMachines } = useDataStore();
   // «Платформа виртуализации» изначально скрыта: пункт появляется в сайдбаре,
@@ -185,15 +186,16 @@ export function Sidebar() {
         )}
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+      {/* Navigation. Плотность списка: уменьшены отступы контейнера и межстрочный
+          интервал, чтобы все категории помещались без скролла. */}
+      <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto">
         {navItems.map((item) => (
           <div key={item.to}>
             <NavLink
               to={item.to}
               end
               className={({ isActive }) =>
-                `flex items-center ${isMinimized ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-lg transition-all duration-200 ${
+                `flex items-center ${isMinimized ? 'justify-center' : 'gap-3'} px-4 py-2 rounded-lg transition-all duration-200 ${
                   isActive
                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
                     : 'text-slate-300 hover:bg-slate-800 hover:text-white'
@@ -241,14 +243,16 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* «Админка» — возврат из режима имитации роли к интерфейсу администратора.
+      {/* «Админка» — возврат из режима имитации роли к полному интерфейсу
+          администратора: кнопка СРАЗУ снимает имитацию (setImpersonatedRole(null)),
+          навигация и права в UI мгновенно возвращаются к админским.
           Показывается только когда администратор включил имитацию другой роли. */}
       {isImpersonating && (
-        <div className="px-4 pt-4">
+        <div className="px-4 pt-2">
           <button
-            onClick={() => navigate('/admin')}
-            className={`flex items-center ${isMinimized ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 transition-all duration-200 w-full`}
-            title={isMinimized ? 'Админка' : ''}
+            onClick={() => setImpersonatedRole(null)}
+            className={`flex items-center ${isMinimized ? 'justify-center' : 'gap-3'} px-4 py-2 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 transition-all duration-200 w-full`}
+            title={isMinimized ? 'Вернуть интерфейс администратора' : 'Снять имитацию роли и вернуть полный интерфейс администратора'}
           >
             <ShieldCheck className="w-5 h-5 flex-shrink-0" />
             {!isMinimized && <span className="font-medium">Админка</span>}
