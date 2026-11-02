@@ -1382,7 +1382,10 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
   });
 
   await createHistoryEntry('equipment', item.id, currentUser.fullName);
-  await writeAudit(currentUser, 'create', 'equipment', item.id, item.name, `Добавлено оборудование "${item.name}" (инв. ${item.inventoryNumber})`, c.req.header('x-forwarded-for'));
+  // У логических сущностей (кластеров) инвентарного номера может не быть —
+  // не печатаем в аудите «инв. null».
+  const invLabel = item.inventoryNumber ? ` (инв. ${item.inventoryNumber})` : '';
+  await writeAudit(currentUser, 'create', 'equipment', item.id, item.name, `Добавлено оборудование "${item.name}"${invLabel}`, c.req.header('x-forwarded-for'));
 
   return c.json(publicEquipmentBrief(item), 201);
 });
@@ -1457,7 +1460,8 @@ app.delete('/api/equipment/:id', authMiddleware, requireRole(['admin']), async (
   }
 
   await prisma.equipment.delete({ where: { id } });
-  await writeAudit(currentUser, 'delete', 'equipment', id, old.name, `Удалено оборудование "${old.name}" (инв. ${old.inventoryNumber})`, c.req.header('x-forwarded-for'));
+  const invLabelDel = old.inventoryNumber ? ` (инв. ${old.inventoryNumber})` : '';
+  await writeAudit(currentUser, 'delete', 'equipment', id, old.name, `Удалено оборудование "${old.name}"${invLabelDel}`, c.req.header('x-forwarded-for'));
   return c.json({ success: true });
 });
 

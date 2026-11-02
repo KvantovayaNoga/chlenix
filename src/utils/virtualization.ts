@@ -383,4 +383,52 @@ export function normalizeServerPayload<T extends Record<string, any>>(data: T, i
   return out as T;
 }
 
+/** Кластер виртуализации — логическая сущность, поэтому он создаётся отдельной
+ *  формой (ClusterForm), а не общей формой физического сервера. Правила:
+ *  - нет серийного/инвентарного номера, бренда и модели (это не «железо»);
+ *  - состав формируется выбором существующих хостов / СХД / консолей управления
+ *    (привязка через parentClusterId у выбранных единиц);
+ *  - если физической инфраструктуры нет («Нет хостов» / «Нет СХД»), ресурсы
+ *    вносятся вручную (CPU/RAM — для хостов, объём — для СХД).
+ *  Функция собирает финальный payload Equipment c serverRole === 'cluster'. */
+export interface ClusterManualResources {
+  cpuCores: number | null;
+  ramGB: number | null;
+  storageCapacityGB: number | null;
+}
+
+export function normalizeClusterPayload<T extends Record<string, any>>(
+  data: T,
+  members: string[],
+  manual: ClusterManualResources,
+): T & { __members: string[] } {
+  const str = (v: any) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const numOrNull = (v: any) => (v === '' || v == null || !isFinite(Number(v)) ? null : Number(v));
+  const out: any = { ...data };
+  // Инвентарная карточка у кластера отсутствует
+  out.serialNumber = null;
+  out.inventoryNumber = null;
+  out.brand = null;
+  out.model = null;
+  out.serverRole = 'cluster';
+  out.clusterName = str(out.clusterName) || str(out.name);
+  out.hypervisorName = str(out.hypervisorName);
+  out.hypervisorVersion = str(out.hypervisorVersion);
+  out.parentClusterId = null; // кластер не может входить в другой кластер
+  // Ручные ресурсы живут только при соответствующих чекбоксах «Нет хостов / Нет СХД»
+  out.cpuCores = out.noHosts ? numOrNull(manual.cpuCores) : null;
+  out.ramGB = out.noHosts ? numOrNull(manual.ramGB) : null;
+  out.storageCapacityGB = out.noStorage ? numOrNull(manual.storageCapacityGB) : null;
+  out.diskGB = null;
+  // Поля СХД-роли кластеру не принадлежат (объём «руками» — в storageCapacityGB)
+  out.storageType = null;
+  out.storageProtocol = null;
+  delete out.noHosts;
+  delete out.noStorage;
+  out.category = 'server';
+  // Выбранные участники кластера (хосты/СХД/консоли) — применяются после создания
+  out.__members = Array.isArray(members) ? members.filter(Boolean) : [];
+  return out as T & { __members: string[] };
+}
+
 

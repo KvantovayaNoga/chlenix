@@ -5,6 +5,7 @@ import { useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { HistoryLog } from '../components/HistoryLog';
+import { ClusterForm } from '../components/ClusterForm';
 import type { Equipment, ServerRole } from '../types';
 import { serverRoleLabels, hypervisorSuggestions, normalizeServerPayload, storageTypeLabels, storageProtocolLabels, roleHasResourceFields, formatGB } from '../utils/virtualization';
 import { StorageField } from '../components/StorageField';
@@ -18,8 +19,9 @@ export function PhysicalServersPage() {
   const navigate = useNavigate();
   const [editingServer, setEditingServer] = useState<Equipment | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  // Косяк 8: «Добавить кластер» — тот же модал, но предзаполненный ролью cluster
-  const [addingCluster, setAddingCluster] = useState(false);
+  // Кластер — логическая сущность, поэтому создаётся/редактируется отдельной формой
+  const [showClusterForm, setShowClusterForm] = useState(false);
+  const [editingCluster, setEditingCluster] = useState<Equipment | null>(null);
   const [viewingHistory, setViewingHistory] = useState<Equipment | null>(null);
 
   // Серверы организации: категория «Сервер» или «СХД», либо любой единице
@@ -47,8 +49,8 @@ export function PhysicalServersPage() {
         </div>
         {canEdit() && (
           <div className="flex items-center gap-3">
-            {/* Косяк 8: быстрый способ создать кластер — сразу с ролью cluster */}
-            <button onClick={() => setAddingCluster(true)} className="bg-white dark:bg-gray-800 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 px-5 py-2.5 rounded-xl font-medium hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-all flex items-center gap-2">
+            {/* Кластер — отдельная форма (логическая сущность без инвентарной карточки) */}
+            <button onClick={() => setShowClusterForm(true)} className="bg-white dark:bg-gray-800 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 px-5 py-2.5 rounded-xl font-medium hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-all flex items-center gap-2">
               <Layers className="w-5 h-5" />Добавить кластер
             </button>
             <button onClick={() => setShowAddModal(true)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20">
@@ -61,8 +63,12 @@ export function PhysicalServersPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {servers.map(server => {
           const vms = getVMsByHost(server.id);
+          const isCluster = server.serverRole === 'cluster';
+          // Кластер — логическая сущность: открывается отдельной формой ClusterForm,
+          // у обычного сервера — общий модал ServerModal.
+          const openEdit = () => canEdit() && (isCluster ? setEditingCluster(server) : setEditingServer(server));
           return (
-            <div key={server.id} onClick={() => canEdit() && setEditingServer(server)} className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600 hover:shadow-md transition-all cursor-pointer">
+            <div key={server.id} onClick={openEdit} className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600 hover:shadow-md transition-all cursor-pointer">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <ServerRoleIcon role={server.serverRole} />
@@ -75,7 +81,10 @@ export function PhysicalServersPage() {
                         </span>
                       )}
                     </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{server.brand} {server.model}</p>
+                    {/* Бренд/модель — только для физических сущностей (кластер их не имеет) */}
+                    {!isCluster && (server.brand || server.model) && (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">{server.brand} {server.model}</p>
+                    )}
                     {server.hypervisorName && (
                       <p className="text-xs text-purple-600 dark:text-purple-400 mt-0.5">Гипервизор: {server.hypervisorName}</p>
                     )}
@@ -86,15 +95,20 @@ export function PhysicalServersPage() {
                 )}
               </div>
               <div className="space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Серийный №:</span><span className="font-mono text-xs text-gray-800 dark:text-gray-200">{server.serialNumber}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Инвентарный №:</span><span className="font-mono text-xs text-gray-800 dark:text-gray-200">{server.inventoryNumber}</span></div>
-                {roleHasResourceFields(server.serverRole) && server.cpuCores != null && (
+                {/* Серийный/инвентарный номера — атрибуты физической техники; у кластера их нет */}
+                {!isCluster && (
+                  <>
+                    <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Серийный №:</span><span className="font-mono text-xs text-gray-800 dark:text-gray-200">{server.serialNumber || '—'}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Инвентарный №:</span><span className="font-mono text-xs text-gray-800 dark:text-gray-200">{server.inventoryNumber || '—'}</span></div>
+                  </>
+                )}
+                {roleHasResourceFields(server.serverRole) && !isCluster && server.cpuCores != null && (
                   <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">CPU:</span><span className="text-gray-800 dark:text-gray-200">{server.cpuCores} ядер</span></div>
                 )}
-                {roleHasResourceFields(server.serverRole) && server.ramGB != null && (
+                {roleHasResourceFields(server.serverRole) && !isCluster && server.ramGB != null && (
                   <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">RAM:</span><span className="text-gray-800 dark:text-gray-200">{server.ramGB} ГБ</span></div>
                 )}
-                {roleHasResourceFields(server.serverRole) && server.diskGB != null && (
+                {roleHasResourceFields(server.serverRole) && !isCluster && server.diskGB != null && (
                   <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Диск:</span><span className="text-gray-800 dark:text-gray-200">{formatGB(server.diskGB)}</span></div>
                 )}
                 {/* Косяк 7: у СХД вместо CPU/RAM — тип, протокол и полезный объём */}
@@ -109,37 +123,44 @@ export function PhysicalServersPage() {
                     <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Полезный объём:</span><span className="text-gray-800 dark:text-gray-200">{server.storageCapacityGB ? formatGB(server.storageCapacityGB) : '—'}</span></div>
                   </>
                 )}
-                {/* Косяк 11: кластер аккумулирует характеристики хостов и СХД внутри себя */}
-                {server.serverRole === 'cluster' && (() => {
+                {/* Кластер аккумулирует характеристики хостов и СХД внутри себя;
+                    если состав не выбран («Нет хостов» / «Нет СХД») — показываем ручные значения */}
+                {isCluster && (() => {
                   const children = clusterChildren(server.id);
                   const hosts = children.filter((c) => c.serverRole === 'hypervisor_host');
                   const stors = children.filter((c) => c.serverRole === 'storage');
-                  const cpuSum = hosts.reduce((s, h) => s + (h.cpuCores || 0), 0);
-                  const ramSum = hosts.reduce((s, h) => s + (h.ramGB || 0), 0);
-                  const diskSum = stors.reduce((s, st) => s + (st.storageCapacityGB || st.diskGB || 0), 0);
+                  const consoles = children.filter((c) => c.serverRole === 'management_console');
+                  const cpuSum = hosts.reduce((s, h) => s + (h.cpuCores || 0), 0) + (server.cpuCores || 0);
+                  const ramSum = hosts.reduce((s, h) => s + (h.ramGB || 0), 0) + (server.ramGB || 0);
+                  const diskSum = stors.reduce((s, st) => s + (st.storageCapacityGB || st.diskGB || 0), 0) + (server.storageCapacityGB || 0);
                   return (
                     <>
-                      <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Хостов в кластере:</span><span className="text-gray-800 dark:text-gray-200">{hosts.length}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">СХД в кластере:</span><span className="text-gray-800 dark:text-gray-200">{stors.length}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Хостов в кластере:</span><span className="text-gray-800 dark:text-gray-200">{hosts.length}{server.cpuCores != null ? ' (указаны вручную)' : ''}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">СХД в кластере:</span><span className="text-gray-800 dark:text-gray-200">{stors.length}{server.storageCapacityGB != null ? ' (объём указан вручную)' : ''}</span></div>
+                      {consoles.length > 0 && (
+                        <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Консолей управления:</span><span className="text-gray-800 dark:text-gray-200">{consoles.length}</span></div>
+                      )}
                       {cpuSum > 0 && <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">CPU (суммарно):</span><span className="text-gray-800 dark:text-gray-200">{cpuSum} ядер</span></div>}
                       {ramSum > 0 && <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">RAM (суммарно):</span><span className="text-gray-800 dark:text-gray-200">{ramSum} ГБ</span></div>}
-                      {diskSum > 0 && <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Ёмкость СХД:</span><span className="text-gray-800 dark:text-gray-200">{formatGB(diskSum)}</span></div>}
+                      {diskSum > 0 && <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Ёмкость хранилища:</span><span className="text-gray-800 dark:text-gray-200">{formatGB(diskSum)}</span></div>}
                     </>
                   );
                 })()}
                 <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Расположение:</span><span className="text-gray-800 dark:text-gray-200">{getBranchName(server.branchId)} {server.room && `, ${server.room}`}</span></div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-500 dark:text-gray-400">ВМ на сервере:</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate(`/servers?host=${server.id}`);
-                    }}
-                    className="font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline"
-                  >
-                    {vms.length}
-                  </button>
-                </div>
+                {!isCluster && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500 dark:text-gray-400">ВМ на сервере:</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/servers?host=${server.id}`);
+                      }}
+                      className="font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline"
+                    >
+                      {vms.length}
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-400 dark:text-gray-500">
                 Обновлено: {new Date(server.updatedAt).toLocaleString('ru-RU')} • {getUserName(server.updatedBy)}
@@ -149,11 +170,10 @@ export function PhysicalServersPage() {
         })}
       </div>
 
-      {(showAddModal || editingServer || addingCluster) && (
+      {(showAddModal || editingServer) && (
         <ServerModal
           server={editingServer}
-          initialCluster={addingCluster}
-          onClose={() => { setShowAddModal(false); setEditingServer(null); setAddingCluster(false); }}
+          onClose={() => { setShowAddModal(false); setEditingServer(null); }}
           onSave={async (payload) => {
             // п.5: не закрываем форму при ошибке сохранения/валидации
             let base: Record<string, any>;
@@ -174,10 +194,31 @@ export function PhysicalServersPage() {
               base = normalizeServerPayload(payload, !editingServer);
             }
             const ok = editingServer ? await updateEquipment(editingServer.id, base as any) : await addEquipment(base as any);
-            if (ok !== false) { setShowAddModal(false); setEditingServer(null); setAddingCluster(false); }
+            if (ok !== false) { setShowAddModal(false); setEditingServer(null); }
           }}
           branches={branches}
           allEquipment={equipment}
+        />
+      )}
+
+      {/* Кластер — отдельная форма создания/редактирования */}
+      {(showClusterForm || editingCluster) && (
+        <ClusterForm
+          cluster={editingCluster}
+          branches={branches}
+          allEquipment={equipment}
+          onClose={() => { setShowClusterForm(false); setEditingCluster(null); }}
+          onSave={async (payload, members) => {
+            // Состав кластера (members) сервер применяет атомарно в том же запросе:
+            // выбранные хосты/СХД/консоли получают parentClusterId, снятые — отвязываются.
+            // При ошибке сохранения форму не закрываем (п.5).
+            const ok = editingCluster
+              ? await updateEquipment(editingCluster.id, { ...payload, __members: members } as any)
+              : await addEquipment({ ...payload, __members: members } as any);
+            if (ok === false) return;
+            setShowClusterForm(false);
+            setEditingCluster(null);
+          }}
         />
       )}
     </div>
