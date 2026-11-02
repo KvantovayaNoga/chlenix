@@ -9,6 +9,7 @@ import type { Equipment, ServerRole } from '../types';
 import { serverRoleLabels, hypervisorSuggestions, normalizeServerPayload, storageTypeLabels, storageProtocolLabels, roleHasResourceFields, formatGB } from '../utils/virtualization';
 import { StorageField } from '../components/StorageField';
 import { DecimalInput } from '../components/DecimalInput';
+import { ServerRoleIcon } from '../components/ServerRoleIcon';
 import type { StorageSystemType, StorageProtocol } from '../types';
 
 export function PhysicalServersPage() {
@@ -64,7 +65,7 @@ export function PhysicalServersPage() {
             <div key={server.id} onClick={() => canEdit() && setEditingServer(server)} className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600 hover:shadow-md transition-all cursor-pointer">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="bg-red-50 dark:bg-red-900/30 p-3 rounded-lg"><Server className="w-6 h-6 text-red-600 dark:text-red-400" /></div>
+                  <ServerRoleIcon role={server.serverRole} />
                   <div>
                     <h3 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
                       {server.name}

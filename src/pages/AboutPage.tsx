@@ -1,4 +1,5 @@
-import { Shield, ShieldCheck, Eye, Cpu, Database, Server, Users, Building2 } from 'lucide-react';
+import { Shield, ShieldCheck, Eye, Cpu, Database, Server, Users, Building2, ChevronDown } from 'lucide-react';
+import { useState } from 'react';
 import type { UserRole } from '../types';
 import { useDataStore } from '../store/dataStore';
 
@@ -31,6 +32,10 @@ const roleColors: Record<UserRole, string> = {
 };
 
 export function AboutPage() {
+  // Пункт 3: описания ролей скрыты под кат, раскрываются по стрелке вниз.
+  const [expandedRoles, setExpandedRoles] = useState<UserRole[]>([]);
+  const toggleRole = (role: UserRole) =>
+    setExpandedRoles((prev) => (prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]));
   // Реальные счётчики из данных текущей организации (без хардкода).
   const { employees, equipment, virtualMachines, organizations } = useDataStore();
   const physicalServers = equipment.filter((e) => e.category === 'server').length;
@@ -92,15 +97,23 @@ export function AboutPage() {
         <div className="space-y-4">
           {(Object.entries(roleLabels) as [UserRole, string][]).map(([role, label]) => {
             const Icon = roleIcons[role];
+            const expanded = expandedRoles.includes(role);
             return (
               <div key={role} className={`p-5 rounded-lg border ${roleColors[role]}`}>
-                <div className="flex items-start gap-4">
-                  <div className="bg-white/50 dark:bg-black/20 p-3 rounded-lg">
+                <button type="button" onClick={() => toggleRole(role)} className="w-full flex items-center gap-4 text-left">
+                  <div className="bg-white/50 dark:bg-black/20 p-3 rounded-lg shrink-0">
                     <Icon className="w-6 h-6" />
                   </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-lg">{label}</h3>
+                  </div>
+                  <ChevronDown className={`w-5 h-5 shrink-0 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
+                </button>
+                {expanded && (
+                <div className="mt-3">
+                  <div className="flex items-start gap-4">
                   <div className="flex-1">
-                    <h3 className="font-semibold text-lg mb-2">{label}</h3>
-                    <p className="text-sm opacity-90">{roleDescriptions[role]}</p>
+                    <p className="text-sm opacity-90 mb-2">{roleDescriptions[role]}</p>
                     <div className="mt-3 pt-3 border-t border-current/20">
                       <p className="text-xs font-medium mb-2">Права доступа:</p>
                       <ul className="text-xs space-y-1 opacity-80">
@@ -133,6 +146,8 @@ export function AboutPage() {
                     </div>
                   </div>
                 </div>
+                </div>
+                )}
               </div>
             );
           })}

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useNavigate } from '../router';
 import { useDataStore } from '../store/dataStore';
-import { Layers, Server, HardDrive, TerminalSquare, Cpu, Monitor } from 'lucide-react';
+import { Layers, Server, HardDrive, TerminalSquare, Cpu } from 'lucide-react';
 import {
   buildVirtualizationPlatforms,
   serverRoleLabels,
@@ -13,14 +13,15 @@ import {
 import type { Equipment } from '../types';
 
 /** Полоса загрузки (использование/ёмкость); переподписка >100% подсвечется красным. */
-function UsageBar({ label, used, total, unit }: { label: string; used: number; total: number; unit: string }) {
+function UsageBar({ label, used, total, unit, fmt }: { label: string; used: number; total: number; unit?: string; fmt?: (gb: number) => string }) {
   const { pct, over } = usagePercent(used, total);
+  const f = fmt ?? ((v: number) => `${v}${unit ?? ''}`);
   return (
     <div className="flex-1 min-w-[120px]">
       <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 mb-1">
         <span>{label}</span>
         <span className={over ? 'text-red-600 dark:text-red-400 font-semibold' : ''}>
-          {used}{unit} / {total || '—'}{unit} {total ? `(${pct}%)` : ''}
+          {f(used)} / {total ? f(total) : '—'} {total ? `(${pct}%)` : ''}
         </span>
       </div>
       <div className="h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
@@ -96,7 +97,7 @@ export function VirtualizationPlatformPage() {
               <div className="flex flex-wrap gap-4 items-start max-w-xl">
                 <UsageBar label="vCPU" used={p.cpuUsed} total={p.cpuTotal} unit="" />
                 <UsageBar label="RAM" used={p.ramUsed} total={p.ramTotal} unit=" ГБ" />
-                <UsageBar label="Диски" used={p.vmDiskTotalGB} total={p.diskTotalGB} unit=" " />
+                <UsageBar label="Диски" used={p.vmDiskTotalGB} total={p.diskTotalGB} fmt={formatGB} />
               </div>
             </div>
 
@@ -113,8 +114,8 @@ export function VirtualizationPlatformPage() {
                     {p.clusters.map((c) => (
                       <div key={c.name || '__none__'}>
                         <div className="flex items-center justify-between mb-1.5">
-                          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">
-                            {c.name ? `Кластер: ${c.name}` : 'Без кластера'}
+                          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 flex items-center gap-1.5">
+                            {c.name ? (<><Layers className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />Кластер: {c.name}</>) : 'Без кластера'}
                           </p>
                           <span className="text-[11px] text-gray-400 dark:text-gray-500">
                             {c.hosts.length} хост(а) • {c.vms.length} ВМ
@@ -174,7 +175,7 @@ export function VirtualizationPlatformPage() {
                   <div className="space-y-2">
                     {p.physicalConsoles.map((c) => (
                       <div key={c.id} className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-                        <div className="bg-amber-50 dark:bg-amber-900/30 p-2 rounded-lg"><Monitor className="w-5 h-5 text-amber-600 dark:text-amber-400" /></div>
+                        <div className="bg-amber-50 dark:bg-amber-900/30 p-2 rounded-lg"><TerminalSquare className="w-5 h-5 text-amber-600 dark:text-amber-400" /></div>
                         <div className="min-w-0 flex-1">
                           <p className="font-medium text-gray-800 dark:text-gray-100 truncate">{c.name}</p>
                           <p className="text-xs text-gray-500 dark:text-gray-400">{c.brand} {c.model} • физический сервер</p>
@@ -184,7 +185,7 @@ export function VirtualizationPlatformPage() {
                     ))}
                     {p.managementConsoles.map((c) => (
                       <div key={c.id} className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-                        <div className="bg-amber-50 dark:bg-amber-900/30 p-2 rounded-lg"><Cpu className="w-5 h-5 text-amber-600 dark:text-amber-400" /></div>
+                        <div className="bg-amber-50 dark:bg-amber-900/30 p-2 rounded-lg"><TerminalSquare className="w-5 h-5 text-amber-600 dark:text-amber-400" /></div>
                         <div className="min-w-0 flex-1">
                           <p className="font-medium text-gray-800 dark:text-gray-100 truncate">{c.name}</p>
                           <p className="text-xs text-gray-500 dark:text-gray-400">{c.os} • виртуальная машина ({c.hostname})</p>
