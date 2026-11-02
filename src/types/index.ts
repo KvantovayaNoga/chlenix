@@ -109,6 +109,18 @@ export interface Branch {
   updatedBy: string | null;
 }
 
+// Справочник: дата-центры (ЦОД) — сторонние/облачные вычислительные мощности
+export interface DataCenter {
+  id: string;
+  name: string;
+  owner: string;
+  address: string | null;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
 // Сотрудник организации
 export interface Employee {
   id: string;

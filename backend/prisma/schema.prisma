@@ -37,6 +37,7 @@ model User {
   departments       Department[]       @relation("DepartmentUpdater")
   positions         Position[]         @relation("PositionUpdater")
   branches          Branch[]           @relation("BranchUpdater")
+  dataCenters       DataCenter[]       @relation("DataCenterUpdater")
   equipment         Equipment[]        @relation("EquipmentUpdater")
   virtualMachines   VirtualMachine[]   @relation("VMUpdater")
   networkInterfaces NetworkInterface[] @relation("NIUpdater")
@@ -106,6 +107,26 @@ model Branch {
   @@unique([organizationId, name])
   @@index([organizationId])
   @@map("branches")
+}
+
+// Дата-центры (ЦОД): сторонние/облачные вычислительные мощности,
+// которые может не принадлежать организации.
+model DataCenter {
+  id             String   @id @default(uuid())
+  name           String
+  owner          String
+  address        String?
+  description    String?
+  organizationId String?  @map("organization_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  updatedById    String?  @map("updated_by")
+
+  updatedBy User? @relation("DataCenterUpdater", fields: [updatedById], references: [id])
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("data_centers")
 }
 
 // ============================================================

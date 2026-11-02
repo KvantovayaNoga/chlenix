@@ -1877,7 +1877,7 @@ app.delete('/api/services/:id', authMiddleware, requireRole(['admin', 'materiall
 // Directories Routes (Departments, Positions, Branches)
 // ============================================================
 interface DirConfig {
-  model: 'department' | 'position' | 'branch';
+  model: 'department' | 'position' | 'branch' | 'dataCenter';
   route: string;
   label: string;
   requiredBranchAddress?: boolean;
@@ -1887,6 +1887,7 @@ const directoryConfigs: DirConfig[] = [
   { model: 'department', route: 'departments', label: 'Отдел' },
   { model: 'position', route: 'positions', label: 'Должность' },
   { model: 'branch', route: 'branches', label: 'Филиал' },
+  { model: 'dataCenter', route: 'data-centers', label: 'ЦОД' },
 ];
 
 for (const cfg of directoryConfigs) {
@@ -1911,6 +1912,7 @@ for (const cfg of directoryConfigs) {
       description: z.string().optional().nullable(),
       organizationId: z.union([z.string().uuid(), z.null()]).optional(),
       ...(cfg.model === 'branch' ? { address: z.string().min(1) } : {}),
+      ...(cfg.model === 'dataCenter' ? { owner: z.string().min(1), address: z.string().optional().nullable() } : {}),
     });
     const parsed = schema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
@@ -1931,6 +1933,7 @@ for (const cfg of directoryConfigs) {
         name: parsed.data.name.trim(),
         description: parsed.data.description ?? null,
         ...(cfg.model === 'branch' ? { address: parsed.data.address } : {}),
+        ...(cfg.model === 'dataCenter' ? { owner: parsed.data.owner, address: parsed.data.address ?? null } : {}),
         organizationId: orgId,
         updatedById: currentUser.userId,
       },
@@ -1947,6 +1950,7 @@ for (const cfg of directoryConfigs) {
       name: z.string().min(1).optional(),
       description: z.string().optional().nullable(),
       ...(cfg.model === 'branch' ? { address: z.string().min(1).optional() } : {}),
+      ...(cfg.model === 'dataCenter' ? { owner: z.string().min(1).optional(), address: z.string().optional().nullable() } : {}),
     }).safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
 

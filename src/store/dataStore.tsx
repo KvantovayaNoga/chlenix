@@ -10,7 +10,7 @@ import { api, setToken } from '../api/client';
 import { useAuthStore } from './authStore';
 import type {
   Employee, Equipment, VirtualMachine, Service, User,
-  AuditLogEntry, Department, Position, Branch, Organization, DashboardStats,
+  AuditLogEntry, Department, Position, Branch, DataCenter, Organization, DashboardStats,
 } from '../types';
 
 interface DataState {
@@ -18,6 +18,7 @@ interface DataState {
   departments: Department[];
   positions: Position[];
   branches: Branch[];
+  dataCenters: DataCenter[];
   employees: Employee[];
   equipment: Equipment[];
   virtualMachines: VirtualMachine[];
@@ -52,6 +53,11 @@ interface DataState {
   addBranch: (data: Partial<Branch>) => Promise<boolean>;
   updateBranch: (id: string, data: Partial<Branch>) => Promise<boolean>;
   deleteBranch: (id: string) => Promise<boolean>;
+
+  // Data centers (ЦОД)
+  addDataCenter: (data: Partial<DataCenter>) => Promise<boolean>;
+  updateDataCenter: (id: string, data: Partial<DataCenter>) => Promise<boolean>;
+  deleteDataCenter: (id: string) => Promise<boolean>;
 
   // Employees
   addEmployee: (data: Partial<Employee>) => Promise<boolean>;
@@ -96,6 +102,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [dataCenters, setDataCenters] = useState<DataCenter[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [virtualMachines, setVirtualMachines] = useState<VirtualMachine[]>([]);
@@ -112,8 +119,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   currentUserRef.current = currentUser;
 
   // Актуальные списки для «геттеров» без пересоздания контекста
-  const ref = useRef({ organizations, departments, positions, branches, employees, equipment, virtualMachines, services });
-  ref.current = { organizations, departments, positions, branches, employees, equipment, virtualMachines, services };
+  const ref = useRef({ organizations, departments, positions, branches, dataCenters, employees, equipment, virtualMachines, services });
+  ref.current = { organizations, departments, positions, branches, dataCenters, employees, equipment, virtualMachines, services };
 
   const loadPromiseRef = useRef<Promise<void> | null>(null);
   // Глобальный монотонный номер загрузки: любой ответ запроса, начатого раньше
@@ -165,11 +172,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     loadPromiseRef.current = (async () => {
       try {
-        const [orgs, deps, poss, brs, emps, eq, vms, logs] = await Promise.all([
+        const [orgs, deps, poss, brs, dcs, emps, eq, vms, logs] = await Promise.all([
           api.get<Organization[]>('/organizations'),
           api.get<Department[]>('/departments'),
           api.get<Position[]>('/positions'),
           api.get<Branch[]>('/branches'),
+          api.get<DataCenter[]>('/data-centers').catch(() => [] as DataCenter[]),
           api.get<Employee[]>('/employees'),
           api.get<Equipment[]>('/equipment'),
           api.get<VirtualMachine[]>('/virtual-machines'),
@@ -185,6 +193,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setDepartments(deps);
         setPositions(poss);
         setBranches(brs);
+        setDataCenters(dcs);
         setEmployees(emps);
         setEquipment(eq);
         setVirtualMachines(vms);
@@ -264,7 +273,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // Активная организация сменилась на новую (пустую): справочники/сотрудники
       // прежней организации больше не относятся к скоупу — перезагружаем данные,
       // иначе «Штатное расписание» покажет устаревший набор или пустоту.
-      setDepartments([]); setPositions([]); setBranches([]);
+      setDepartments([]); setPositions([]); setBranches([]); setDataCenters([]);
       setLoaded(false);
       loadPromiseRef.current = null;
       loadSeqRef.current++; // отменить применение in-flight ответов loadAll со СТАРЫМ токеном
@@ -356,6 +365,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const deleteBranch = useCallback((id: string) => run(async () => {
     await api.delete(`/branches/${id}`);
     setBranches((prev) => prev.filter((b) => b.id !== id));
+  }), [run]);
+
+  const addDataCenter = useCallback((data: Partial<DataCenter>) => run(async () => {
+    const item = await api.post<DataCenter>('/data-centers', data);
+    setDataCenters((prev) => [...prev, item].sort((a, b) => a.name.localeCompare(b.name)));
+  }), [run]);
+  const updateDataCenter = useCallback((id: string, data: Partial<DataCenter>) => run(async () => {
+    const item = await api.put<DataCenter>(`/data-centers/${id}`, data);
+    setDataCenters((prev) => prev.map((d) => (d.id === id ? item : d)));
+  }), [run]);
+  const deleteDataCenter = useCallback((id: string) => run(async () => {
+    await api.delete(`/data-centers/${id}`);
+    setDataCenters((prev) => prev.filter((d) => d.id !== id));
   }), [run]);
 
   // ---------- Employees ----------
@@ -481,13 +503,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<DataState>(() => ({
-    organizations, departments, positions, branches, employees, equipment,
+    organizations, departments, positions, branches, dataCenters, employees, equipment,
     virtualMachines, services, auditLog, loaded, loading, error,
     loadAll, clearError, reloadVMs,
     addOrganization, updateOrganization, deleteOrganization, getOrganizationById, getCurrentUserOrganization,
     addDepartment, updateDepartment, deleteDepartment,
     addPosition, updatePosition, deletePosition,
     addBranch, updateBranch, deleteBranch,
+    addDataCenter, updateDataCenter, deleteDataCenter,
     addEmployee, updateEmployee, deleteEmployee, getEmployeeById,
     addEquipment, updateEquipment, deleteEquipment, getEquipmentById, getEquipmentByEmployee,
     getUnassignedEquipment, assignEquipment, unassignEquipment,
@@ -496,13 +519,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addService, updateService, deleteService, getServicesByVM,
     getDashboardStats,
   }), [
-    organizations, departments, positions, branches, employees, equipment,
+    organizations, departments, positions, branches, dataCenters, employees, equipment,
     virtualMachines, services, auditLog, loaded, loading, error,
     loadAll, clearError, reloadVMs,
     addOrganization, updateOrganization, deleteOrganization, getOrganizationById, getCurrentUserOrganization,
     addDepartment, updateDepartment, deleteDepartment,
     addPosition, updatePosition, deletePosition,
     addBranch, updateBranch, deleteBranch,
+    addDataCenter, updateDataCenter, deleteDataCenter,
     addEmployee, updateEmployee, deleteEmployee, getEmployeeById,
     addEquipment, updateEquipment, deleteEquipment, getEquipmentById, getEquipmentByEmployee,
     getUnassignedEquipment, assignEquipment, unassignEquipment,
@@ -525,6 +549,7 @@ const EMPTY_DATA_STATE: DataState = {
   departments: [],
   positions: [],
   branches: [],
+  dataCenters: [],
   employees: [],
   equipment: [],
   virtualMachines: [],
@@ -550,6 +575,9 @@ const EMPTY_DATA_STATE: DataState = {
   addBranch: asyncNoop as unknown as DataState['addBranch'],
   updateBranch: asyncNoop as unknown as DataState['updateBranch'],
   deleteBranch: asyncNoop as unknown as DataState['deleteBranch'],
+  addDataCenter: asyncNoop as unknown as DataState['addDataCenter'],
+  updateDataCenter: asyncNoop as unknown as DataState['updateDataCenter'],
+  deleteDataCenter: asyncNoop as unknown as DataState['deleteDataCenter'],
   addEmployee: asyncNoop as unknown as DataState['addEmployee'],
   updateEmployee: asyncNoop as unknown as DataState['updateEmployee'],
   deleteEmployee: asyncNoop as unknown as DataState['deleteEmployee'],
