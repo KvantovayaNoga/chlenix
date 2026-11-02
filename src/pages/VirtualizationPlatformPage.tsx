@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from '../router';
 import { useDataStore } from '../store/dataStore';
 import { Layers, Server, HardDrive, TerminalSquare, Cpu, ChevronDown } from 'lucide-react';
+import { VmCountBadge } from '../components/VmCountBadge';
 import {
   buildVirtualizationPlatforms,
   serverRoleLabels,
@@ -19,10 +20,11 @@ function UsageBar({ label, used, total, unit, fmt }: { label: string; used: numb
   const { pct, over } = usagePercent(used, total);
   const f = fmt ?? ((v: number) => `${v}${unit ?? ''}`);
   return (
-    <div className="flex-1 min-w-[120px]">
-      <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 mb-1">
-        <span>{label}</span>
-        <span className={over ? 'text-red-600 dark:text-red-400 font-semibold' : ''}>
+    // shrink-0 + фикс. ширина: три бара всегда в одну строку, без переноса
+    <div className="w-[130px] lg:w-[150px] shrink-0 min-w-0">
+      <div className="flex items-center justify-between gap-1 text-[11px] text-gray-500 dark:text-gray-400 mb-1 whitespace-nowrap overflow-hidden">
+        <span className="shrink-0">{label}</span>
+        <span className={`truncate ${over ? 'text-red-600 dark:text-red-400 font-semibold' : ''}`}>
           {f(used)} / {total ? f(total) : '—'} {total ? `(${pct}%)` : ''}
         </span>
       </div>
@@ -78,7 +80,8 @@ function ClusterBlock({
 }: {
   cluster: PlatformCluster;
   branchName: string;
-  onOpenVms: () => void;
+  /** Переход к ВМ конкретного хоста (по id оборудования) */
+  onOpenVms: (hostId: string) => void;
   onOpenPhysical: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -135,7 +138,7 @@ function ClusterBlock({
                     host={h}
                     vmCount={cluster.vms.filter((v) => v.hostServerId === h.id).length}
                     branchName={branchName}
-                    onOpen={onOpenVms}
+                    onOpen={() => onOpenVms(h.id)}
                   />
                 ))}
               </div>
@@ -234,8 +237,9 @@ export function VirtualizationPlatformPage() {
                   Хостов: {p.hosts.length} • Кластеров: {p.clusters.filter((c) => c.name).length} • ВМ: {p.vms.length} • СХД: {p.storage.length} • Консолей: {p.physicalConsoles.length + p.managementConsoles.length}
                 </p>
               </div>
-              {/* Сводные метрики платформы: CPU/RAM хостов против суммы ВМ, диски СХД против дисков ВМ */}
-              <div className="flex flex-wrap gap-4 items-start max-w-xl">
+              {/* Сводные метрики платформы: CPU/RAM хостов против суммы ВМ, диски СХД против дисков ВМ.
+                  Начинаются с середины ширины шапки (w-1/2), без переноса на другую строку. */}
+              <div className="hidden md:flex w-1/2 min-w-0 items-start gap-4">
                 <UsageBar label="vCPU" used={p.cpuUsed} total={p.cpuTotal} unit="" />
                 <UsageBar label="RAM" used={p.ramUsed} total={p.ramTotal} unit=" ГБ" />
                 <UsageBar label="Диски" used={p.vmDiskTotalGB} total={p.diskTotalGB} fmt={formatGB} />
@@ -260,7 +264,7 @@ export function VirtualizationPlatformPage() {
                           key={c.clusterId || c.name}
                           cluster={c}
                           branchName={getBranchName(c.hosts[0]?.branchId || p.storage[0]?.branchId || '')}
-                          onOpenVms={() => navigate('/servers')}
+                          onOpenVms={(hostId) => navigate(`/servers?host=${hostId}`)}
                           onOpenPhysical={() => navigate('/servers/physical')}
                         />
                       ))}
@@ -277,15 +281,18 @@ export function VirtualizationPlatformPage() {
                   <p className="text-sm text-gray-400 dark:text-gray-500">Хосты вне кластеров не назначены</p>
                 ) : (
                   <div className="space-y-2">
-                    {(p.clusters.find((c) => !c.name)?.hosts || []).map((h) => (
-                      <HostRow
-                        key={h.id}
-                        host={h}
-                        vmCount={(p.clusters.find((c) => !c.name)?.vms || []).filter((v) => v.hostServerId === h.id).length}
-                        branchName={getBranchName(h.branchId)}
-                        onOpen={() => navigate('/servers')}
-                      />
-                    ))}
+                    {(p.clusters.find((c) => !c.name)?.hosts || []).map((h) => {
+                      const vmCount = (p.clusters.find((c) => !c.name)?.vms || []).filter((v) => v.hostServerId === h.id).length;
+                      return (
+                        <HostRow
+                          key={h.id}
+                          host={h}
+                          vmCount={vmCount}
+                          branchName={getBranchName(h.branchId)}
+                          onOpen={() => navigate(`/servers?host=${h.id}`)}
+                        />
+                      );
+                    })}
                   </div>
                 )}
               </CollapsibleSection>
@@ -393,9 +400,7 @@ function HostRow({ host, vmCount, branchName, onOpen }: { host: Equipment; vmCou
           {host.brand} {host.model} • {host.cpuCores || '?'} CPU / {host.ramGB || '?'} ГБ • {branchName}
         </p>
       </div>
-      <button onClick={onOpen} className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline whitespace-nowrap">
-        ВМ: {vmCount}
-      </button>
+      <VmCountBadge count={vmCount} onClick={onOpen} title={`Показать ВМ хоста ${host.name || 'без имени'} (${vmCount})`} />
       <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${serverRoleLabels.hypervisor_host.color}`}>Хост</span>
     </div>
   );

@@ -11,6 +11,7 @@ import { serverRoleLabels, hypervisorSuggestions, normalizeServerPayload, storag
 import { StorageField } from '../components/StorageField';
 import { DecimalInput } from '../components/DecimalInput';
 import { ServerRoleIcon } from '../components/ServerRoleIcon';
+import { VmCountBadge } from '../components/VmCountBadge';
 import type { StorageSystemType, StorageProtocol } from '../types';
 
 export function PhysicalServersPage() {
@@ -158,15 +159,11 @@ export function PhysicalServersPage() {
                 {!isCluster && (
                   <div className="flex justify-between items-center">
                     <span className="text-gray-500 dark:text-gray-400">ВМ на сервере:</span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/servers?host=${server.id}`);
-                      }}
-                      className="font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline"
-                    >
-                      {vms.length}
-                    </button>
+                    <VmCountBadge
+                      count={vms.length}
+                      onClick={() => navigate(`/servers?host=${server.id}`)}
+                      title={`Показать ВМ сервера ${server.name || ''} (${vms.length})`}
+                    />
                   </div>
                 )}
               </div>
