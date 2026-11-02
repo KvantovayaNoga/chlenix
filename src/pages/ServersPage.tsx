@@ -7,7 +7,7 @@ import {
   Cpu, Network, Globe, Plus, Edit, Trash2, X, Server, Activity, Search, Filter, Save,
 } from 'lucide-react';
 import type { VirtualMachine, NetworkInterface, Service, ServerRole, Equipment } from '../types';
-import { serverRoleLabels, hypervisorSuggestions, storageTypeLabels, storageProtocolLabels, roleHasResourceFields } from '../utils/virtualization';
+import { serverRoleLabels, serverRoleOptions, hypervisorSuggestions, storageTypeLabels, storageProtocolLabels, roleHasResourceFields } from '../utils/virtualization';
 import { StorageField } from '../components/StorageField';
 import { DecimalInput } from '../components/DecimalInput';
 import { parsePortList } from '../types';
@@ -281,6 +281,7 @@ export function ServersPage() {
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-3">
                 <div><span className="text-gray-600 dark:text-gray-400 text-xs">Хост:</span><p className="font-medium text-gray-700 dark:text-gray-200">{getServerName(vm.hostServerId)}</p></div>
+                <div><span className="text-gray-600 dark:text-gray-400 text-xs">Кластер:</span><p className="font-medium text-gray-700 dark:text-gray-200">{getClusterName((vm as any).clusterId)}</p></div>
                 <div><span className="text-gray-600 dark:text-gray-400 text-xs">Ресурсы:</span><p className="font-medium text-gray-700 dark:text-gray-200">{vm.cpuCores} CPU / {vm.ramGB} ГБ / {vm.diskGB} ГБ</p></div>
                 <div><span className="text-gray-600 dark:text-gray-400 text-xs">Ответ. (инфра):</span><p className="font-medium text-gray-700 dark:text-gray-200">{getEmployeeName(vm.responsibleEmployeeId)}</p></div>
                 <div><span className="text-gray-600 dark:text-gray-400 text-xs">Ответ. (сервисы):</span><p className="font-medium text-gray-700 dark:text-gray-200">{getEmployeeName(vm.serviceResponsibleEmployeeId)}</p></div>
@@ -341,6 +342,7 @@ export function ServersPage() {
           onDeleteService={(svcId) => { deleteService(svcId); }} 
           getEmployeeName={getEmployeeName} 
           getServerName={getServerName} 
+          getClusterName={getClusterName} 
           getUserName={getUserName} 
         />
       )}
@@ -358,7 +360,8 @@ export function ServersPage() {
             }
             setEditingVM(null);
           }}
-          servers={physicalServers}
+          servers={hypervisorHosts}
+          clusters={clusterEntities}
           employees={activeEmployees}
         />
       )}
@@ -405,7 +408,7 @@ export function ServersPage() {
   );
 }
 
-function VMDetailModal({ vm, onClose, canEdit, employees, services, onAddInterface, onEditInterface, onRemoveInterface, onAddService, onEditService, onDeleteService, getEmployeeName, getServerName, getUserName }: any) {
+function VMDetailModal({ vm, onClose, canEdit, employees, services, onAddInterface, onEditInterface, onRemoveInterface, onAddService, onEditService, onDeleteService, getEmployeeName, getServerName, getClusterName, getUserName }: any) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-800 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -421,6 +424,7 @@ function VMDetailModal({ vm, onClose, canEdit, employees, services, onAddInterfa
             <div><span className="text-gray-400">RAM:</span> <span className="text-gray-200">{vm.ramGB} ГБ</span></div>
             <div><span className="text-gray-400">Диск:</span> <span className="text-gray-200">{vm.diskGB} ГБ</span></div>
             <div><span className="text-gray-400">Хост:</span> <span className="text-gray-200">{getServerName(vm.hostServerId)}</span></div>
+            <div><span className="text-gray-400">Кластер:</span> <span className="text-gray-200">{getClusterName(vm.clusterId)}</span></div>
             <div><span className="text-gray-400">Статус:</span> <span className={`px-2 py-0.5 rounded text-xs ${vmStatusLabels[vm.status as keyof typeof vmStatusLabels].color}`}>{vmStatusLabels[vm.status as keyof typeof vmStatusLabels].label}</span></div>
             <div><span className="text-gray-400">Тип:</span> <span className="text-gray-200">{vm.type}</span></div>
           </div>
@@ -492,9 +496,10 @@ function VMDetailModal({ vm, onClose, canEdit, employees, services, onAddInterfa
   );
 }
 
-function VMEditModal({ vm, onClose, onSave, servers, employees }: any) {
+function VMEditModal({ vm, onClose, onSave, servers, clusters, employees }: any) {
   const [formData, setFormData] = useState({
     name: vm?.name || '', hostname: vm?.hostname || '', type: vm?.type || 'virtual', hostServerId: vm?.hostServerId || null,
+    clusterId: (vm as any)?.clusterId || null,
     os: vm?.os || '', cpuCores: vm?.cpuCores || 2, ramGB: vm?.ramGB || 4, diskGB: vm?.diskGB || 50,
     responsibleEmployeeId: vm?.responsibleEmployeeId || null, serviceResponsibleEmployeeId: vm?.serviceResponsibleEmployeeId || null,
     status: vm?.status || 'running', notes: vm?.notes || '',
@@ -523,10 +528,11 @@ function VMEditModal({ vm, onClose, onSave, servers, employees }: any) {
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Имя ВМ *</label><input type="text" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required placeholder="prod-web-01" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hostname *</label><input type="text" value={formData.hostname} onChange={(e) => setFormData(p => ({ ...p, hostname: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required placeholder="web01.company.local" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ОС *</label><input type="text" value={formData.os} onChange={(e) => setFormData(p => ({ ...p, os: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required placeholder="Ubuntu 22.04 LTS" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Хост-сервер</label><select value={formData.hostServerId || ''} onChange={(e) => setFormData(p => ({ ...p, hostServerId: e.target.value || null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"><option value="">— Не указан —</option>{servers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Хост-сервер (гипервизор)</label><select value={formData.hostServerId || ''} onChange={(e) => setFormData(p => ({ ...p, hostServerId: e.target.value || null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"><option value="">— Не указан —</option>{servers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Кластер</label><select value={formData.clusterId || ''} onChange={(e) => setFormData(p => ({ ...p, clusterId: e.target.value || null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"><option value="">— Не указан —</option>{(clusters ?? []).map((cl: any) => <option key={cl.id} value={cl.id}>{cl.clusterName || cl.name}</option>)}</select><p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Кластер не является хостом — ВМ размещается на сервере-хосте, а кластер только группирует её.</p></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CPU (ядер)</label><input type="number" value={formData.cpuCores} onChange={(e) => setFormData(p => ({ ...p, cpuCores: +e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" min="1" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RAM (ГБ)</label><input type="number" value={formData.ramGB} onChange={(e) => setFormData(p => ({ ...p, ramGB: +e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" min="1" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Диск (ГБ)</label><input type="number" value={formData.diskGB} onChange={(e) => setFormData(p => ({ ...p, diskGB: +e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" min="1" /></div>
+            <div><DecimalInput label="RAM (ГБ)" value={formData.ramGB} onChange={(v) => setFormData(p => ({ ...p, ramGB: v ?? 0 }))} placeholder="Например: 8 или 4,5" /></div>
+            <div><StorageField label="Диск" valueGB={formData.diskGB} onChange={(gb) => setFormData(p => ({ ...p, diskGB: gb ?? 0 }))} placeholder="Например: 100 или 1,5" hint="Объём хранится в ГБ; единица выбора (КБ…ПБ) — для удобства ввода." /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Статус</label><select value={formData.status} onChange={(e) => setFormData(p => ({ ...p, status: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">{Object.entries(vmStatusLabels).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Роль в системе виртуализации</label>
