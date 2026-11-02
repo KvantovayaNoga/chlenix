@@ -1,5 +1,5 @@
 import { useDataStore } from '../store/dataStore';
-import { Server, Edit, Trash2, Plus, X, History } from 'lucide-react';
+import { Server, Edit, Trash2, Plus, X, History, Layers } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
@@ -17,6 +17,8 @@ export function PhysicalServersPage() {
   const navigate = useNavigate();
   const [editingServer, setEditingServer] = useState<Equipment | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  // Косяк 8: «Добавить кластер» — тот же модал, но предзаполненный ролью cluster
+  const [addingCluster, setAddingCluster] = useState(false);
   const [viewingHistory, setViewingHistory] = useState<Equipment | null>(null);
 
   // Серверы организации: категория «Сервер» или «СХД», либо любой единице
@@ -43,9 +45,15 @@ export function PhysicalServersPage() {
           <p className="text-gray-500 dark:text-gray-400 mt-1">Серверное оборудование организации</p>
         </div>
         {canEdit() && (
-          <button onClick={() => setShowAddModal(true)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20">
-            <Plus className="w-5 h-5" />Добавить сервер
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Косяк 8: быстрый способ создать кластер — сразу с ролью cluster */}
+            <button onClick={() => setAddingCluster(true)} className="bg-white dark:bg-gray-800 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 px-5 py-2.5 rounded-xl font-medium hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-all flex items-center gap-2">
+              <Layers className="w-5 h-5" />Добавить кластер
+            </button>
+            <button onClick={() => setShowAddModal(true)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20">
+              <Plus className="w-5 h-5" />Добавить сервер
+            </button>
+          </div>
         )}
       </div>
 
@@ -140,16 +148,17 @@ export function PhysicalServersPage() {
         })}
       </div>
 
-      {(showAddModal || editingServer) && (
+      {(showAddModal || editingServer || addingCluster) && (
         <ServerModal
           server={editingServer}
-          onClose={() => { setShowAddModal(false); setEditingServer(null); }}
+          initialCluster={addingCluster}
+          onClose={() => { setShowAddModal(false); setEditingServer(null); setAddingCluster(false); }}
           onSave={(data) => {
             if (editingServer) { updateEquipment(editingServer.id, normalizeServerPayload(data, false)); }
             else {
               addEquipment(normalizeServerPayload(data, true) as any);
             }
-            setShowAddModal(false); setEditingServer(null);
+            setShowAddModal(false); setEditingServer(null); setAddingCluster(false);
           }}
           branches={branches}
           allEquipment={equipment}
@@ -159,17 +168,17 @@ export function PhysicalServersPage() {
   );
 }
 
-function ServerModal({ server, onClose, onSave, branches, allEquipment }: any) {
+function ServerModal({ server, initialCluster, onClose, onSave, branches, allEquipment }: any) {
   // Косяк 6: чекбокс «Является платформой виртуализации». Если снят — сервер
   // создаётся как обычный физический (роль не задаётся, поля платформы скрыты).
-  const [isPlatform, setIsPlatform] = useState<boolean>(() => !!server?.serverRole);
+  const [isPlatform, setIsPlatform] = useState<boolean>(() => !!server?.serverRole || !!initialCluster);
   const [formData, setFormData] = useState({
     name: server?.name || '', serialNumber: server?.serialNumber || '', inventoryNumber: server?.inventoryNumber || '',
     brand: server?.brand || '', model: server?.model || '', purchaseDate: server?.purchaseDate || new Date().toISOString().split('T')[0],
     condition: server?.condition || 'good', assignedToEmployeeId: server?.assignedToEmployeeId || null,
     branchId: server?.branchId || '', floor: server?.floor || '', room: server?.room || '',
     cpuCores: server?.cpuCores || null, ramGB: server?.ramGB || null, diskGB: server?.diskGB || null,
-    serverRole: (server?.serverRole || '') as ServerRole | '',
+    serverRole: (server?.serverRole || (initialCluster ? 'cluster' : '')) as ServerRole | '',
     hypervisorName: server?.hypervisorName || '',
     clusterName: server?.clusterName || '',
     hypervisorVersion: server?.hypervisorVersion || '',
@@ -251,6 +260,12 @@ function ServerModal({ server, onClose, onSave, branches, allEquipment }: any) {
             </label>
             {isPlatform ? (
             <>
+            {/* Косяк 7: datalist живёт вне условных блоков и создаётся один раз вместе
+                с модалкой. В Chrome связка input@list->datalist, где datalist пересоздаётся
+                при каждой смене роли, вызывает «мигание» подсказок/списка. */}
+            <datalist id="hypervisor-suggestions">
+              {hypervisorSuggestions.map(h => <option key={h} value={h} />)}
+            </datalist>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Роль в инфраструктуре</label>
@@ -266,7 +281,6 @@ function ServerModal({ server, onClose, onSave, branches, allEquipment }: any) {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Гипервизор / платформа</label>
                   <input list="hypervisor-suggestions" type="text" value={formData.hypervisorName} onChange={(e) => setFormData(p => ({ ...p, hypervisorName: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="VMware ESXi, Proxmox VE…" />
-                  <datalist id="hypervisor-suggestions">{hypervisorSuggestions.map(h => <option key={h} value={h} />)}</datalist>
                 </div>
               )}
               {formData.serverRole === 'cluster' && (
