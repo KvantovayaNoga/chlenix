@@ -20,6 +20,9 @@ import { X, Check, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
  *    круга на экране; при `rounded-full object-cover` ничего не срезается сверх выбранного;
  *  - EXIF-ориентация применяется явно через createImageBitmap + ImageCapture, нормализованный
  *    bitmap используется и для экрана, и для экспорта (оба рендера идентичны);
+ *  - БАЗОВЫЙ масштаб — COVER (Math.max по сторонам): картинка сразу заполняет круг без
+ *    полос-полей, как это делает `object-cover` в местах отображения аватара; поэтому
+ *    «вид по умолчанию» = ожидаемый результат, а не уменьшенный снимок с серыми полями;
  *  - зум вокруг курсора, панорамирование с клампингом (круглое окно всегда над картинкой).
  */
 
@@ -132,8 +135,9 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
     return () => { cancelled = true; };
   }, [imageSrc]);
 
-  // Базовый масштаб "contain": при zoom=1 видна ВСЯ картинка целиком
-  const baseScale = natural ? Math.min(frameSize / natural.w, frameSize / natural.h) : 1;
+  // БАЗОВЫЙ масштаб = COVER: картинка изначально заполняет круг целиком (как object-cover),
+  // без полей-полос — то, что пользователь видит при открытии, и есть готовый аватар.
+  const baseScale = natural ? Math.max(frameSize / natural.w, frameSize / natural.h) : 1;
   const renderW = natural ? natural.w * baseScale * zoom : 0;
   const renderH = natural ? natural.h * baseScale * zoom : 0;
   // Сдвиг ограничиваем так, чтобы круглое окно всегда было внутри картинки
