@@ -98,7 +98,10 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
     );
   }
 
-  if (requiredRole && roleHierarchy[currentUser.role] < roleHierarchy[requiredRole]) {
+  // Имитация роли администратором (effectiveRole) влияет и на requiredRole-проверки.
+  const effectiveRole = useAuthStore((s) => s.effectiveRole);
+  const checkRole = effectiveRole ?? currentUser.role;
+  if (requiredRole && roleHierarchy[checkRole as keyof typeof roleHierarchy] < roleHierarchy[requiredRole]) {
     return <Navigate to="/dashboard" replace />;
   }
 

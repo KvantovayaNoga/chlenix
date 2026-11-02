@@ -11,7 +11,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from '../api/client';
 import { ROLE_LABELS, type UserRole } from '../types';
-import { Inbox, Check, X, ShieldCheck, Clock, Users2, Building2, Mail } from 'lucide-react';
+import { Inbox, Check, X, ShieldCheck, Clock, Users2, Building2, Mail, Bug } from 'lucide-react';
+import { useAuthStore } from '../store/authStore';
 
 interface JoinRequestItem {
   id: string;
@@ -36,6 +37,9 @@ const statusLabels: Record<StatusFilter, string> = {
 };
 
 export function AdminPanelPage() {
+  // Имитация роли (отладка интерфейса): доступно только настоящему администратору.
+  // Меняет ТОЛЬКО вид UI (кнопки/разделы/гарды маршрутов), не JWT и не права на сервере.
+  const { impersonatedRole, setImpersonatedRole } = useAuthStore();
   const [filter, setFilter] = useState<StatusFilter>('pending');
   const [requests, setRequests] = useState<JoinRequestItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -116,6 +120,42 @@ export function AdminPanelPage() {
           </div>
         </div>
       )}
+
+      {/* ── Отладка: имитация другой роли ──────────────────────────────── */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 mb-6 p-6">
+        <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2 mb-1">
+          <Bug className="w-5 h-5 text-orange-500" />
+          Имитация роли
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Выберите роль, чтобы увидеть интерфейс так, как его видит пользователь с этой ролью.
+          Это только отладка интерфейса: запросы к серверу выполняются с вашей настоящей ролью
+          администратора, поэтому реальные права не меняются. Для возврата нажмите «Админка»
+          в сайдбаре (или «Вернуть интерфейс администратора» ниже).
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setImpersonatedRole(null)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${!impersonatedRole ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+          >
+            {impersonatedRole ? 'Вернуть интерфейс администратора' : 'Администратор (текущий режим)'}
+          </button>
+          {(['hr_specialist', 'sysadmin', 'materially_responsible', 'viewer'] as UserRole[]).map((r) => (
+            <button
+              key={r}
+              onClick={() => setImpersonatedRole(r)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${impersonatedRole === r ? 'bg-orange-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+            >
+              {ROLE_LABELS[r]}
+            </button>
+          ))}
+        </div>
+        {impersonatedRole && (
+          <p className="mt-3 text-sm text-orange-600 dark:text-orange-400">
+            Сейчас вы видите интерфейс роли «{ROLE_LABELS[impersonatedRole]}». Кнопка «Админка» внизу сайдбара вернёт вас сюда.
+          </p>
+        )}
+      </div>
 
       {/* Фильтры по статусу */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 mb-6">

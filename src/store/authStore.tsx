@@ -33,6 +33,17 @@ interface AuthState {
   myOrganizations: () => NonNullable<User['accessibleOrganizations']>;
   canCreateOrganization: () => boolean;
   getUserRole: () => UserRole | null;
+  /**
+   * Роль для ПРОВЕРОК ПРАВ на UI. Совпадает с currentUser.role, кроме режима
+   * имитации роли администратором (отладка): тогда это выбранная роль.
+   * ВАЖНО: имитация меняет только интерфейс — запросы к API идут с настоящим
+   * JWT администратора, поэтому сервер по-прежнему проверяет реальную роль.
+   */
+  effectiveRole: UserRole | null;
+  /** Выбранная роль-обманка (null = без имитации). Сохраняется в sessionStorage. */
+  impersonatedRole: UserRole | null;
+  /** Администратор может включить имитацию другой роли для отладки интерфейса. */
+  setImpersonatedRole: (role: UserRole | null) => void;
   canEdit: () => boolean;
   /**
    * Полное право на удаление и управление справочниками/организациями — только admin.
@@ -257,6 +268,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // --- Имитация роли администратором (отладка интерфейса, см. AdminPanelPage) ---
+  // Роль-обманка живёт только в sessionStorage текущей вкладки и НЕ влияет на
+  // JWT/запросы к API: сервер по-прежнему авторизует настоящей ролью admin.
+  const IMPERSONATION_KEY = 'chlenix_impersonate_role';
+  const [impersonatedRole, setImpersonatedRoleState] = useState<UserRole | null>(() => {
+    try { return sessionStorage.getItem(IMPERSONATION_KEY) as UserRole | null; } catch { return null; }
+  });
+  const setImpersonatedRole = useCallback((role: UserRole | null) => {
+    setImpersonatedRoleState(role);
+    try {
+      if (role) sessionStorage.setItem(IMPERSONATION_KEY, role);
+      else sessionStorage.removeItem(IMPERSONATION_KEY);
+    } catch { /* приватный режим — имитация просто не переживёт перезагрузку */ }
+  }, []);
+  // Имитация разрешена ТОЛЬКО администратору; при logout сбрасываем.
+  const isAdminUser = currentUser?.role === 'admin';
+  // Роль, видимая UI (для can*()-проверок): при имитации — выбранная роль,
+  // иначе — реальная роль пользователя. Не-админам имитация недоступна.
+  const uiRole = isAdminUser ? impersonatedRole ?? 'admin' : currentUser?.role ?? null;
+  // Сброс имитации при выходе (смена учётной записи не должна «протекать» в новую сессию)
+  useEffect(() => {
+    if (!currentUser) {
+      setImpersonatedRole(null);
+    }
+  }, [currentUser, setImpersonatedRole]);
+
   const value = useMemo<AuthState>(
     () => ({
       currentUser,
@@ -276,7 +313,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       switchOrganization,
       setCurrentUser,
       myOrganizations: () => currentUser?.accessibleOrganizations ?? [],
-      canCreateOrganization: () => currentUser?.role === 'admin' || currentUser?.role === 'hr_specialist',
+      canCreateOrganization: () => isAdminUser || uiRole === 'hr_specialist',
       getUserRole: () => currentUser?.role || null,
       // Бизнес-логика (решение от 2026-11): работа МОЛ — только связка
       // «сотрудник ↔ оборудование» (assign/unassign). Создание/редактирование
@@ -284,12 +321,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // NOTE: бэкенд пока допускает materially_responsible на POST/PUT по
       // employees/equipment/VM — это расхождение оставлено сознательно
       // (отладка в процессе тестирования сервиса).
-      canEdit: () => currentUser?.role === 'admin',
-      isAdmin: () => currentUser?.role === 'admin',
-      canManageUsers: () => currentUser?.role === 'admin',
+      // NOTE: проверки прав ниже учитывают режим имитации роли (uiRole):
+      // админ, включивший имитацию другой роли, видит UI этой роли, НО
+      // сохраняет свои админские разделы — isAdmin()/canManageUsers() всегда true.
+      effectiveRole: uiRole,
+      impersonatedRole: isAdminUser ? impersonatedRole : null,
+      setImpersonatedRole,
+      canEdit: () => isAdminUser,
+      isAdmin: () => isAdminUser,
+      canManageUsers: () => isAdminUser,
       hasOrganization: () => !!currentUser?.organizationId,
-      canCreateOrg: () => currentUser?.role === 'admin' || currentUser?.role === 'hr_specialist',
-      canManageEmployees: () => currentUser?.role === 'admin' || currentUser?.role === 'hr_specialist',
+      canCreateOrg: () => isAdminUser || uiRole === 'hr_specialist',
+      canManageEmployees: () => isAdminUser || uiRole === 'hr_specialist',
       /**
        * Создание/редактирование карточек серверов и кластеров.
        * Зеркало бэкенда: POST/PUT /api/equipment доступны admin+HR для любой техники,
@@ -297,19 +340,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        * В разделе «Физические серверы» вся создаваемая техника инфраструктурная,
        * поэтому здесь достаточно admin+sysadmin+HR.
        */
-      canManageServerCards: () => currentUser?.role === 'admin' || currentUser?.role === 'sysadmin' || currentUser?.role === 'hr_specialist',
-      canAssignEquipment: () => currentUser?.role === 'admin' || currentUser?.role === 'hr_specialist' || currentUser?.role === 'materially_responsible',
-      canManageServers: () => currentUser?.role === 'admin' || currentUser?.role === 'sysadmin',
+      canManageServerCards: () => isAdminUser || uiRole === 'sysadmin' || uiRole === 'hr_specialist',
+      canAssignEquipment: () => isAdminUser || uiRole === 'hr_specialist' || uiRole === 'materially_responsible',
+      canManageServers: () => isAdminUser || uiRole === 'sysadmin',
       // Зеркало canEditDirectory() из backend/src/index.ts
       canEditDirectory: (model: string) => {
-        const role = currentUser?.role ?? '';
+        // Имитация: sysadmin-обманка показывает редактирование только ЦОД,
+        // hr_specialist-обманка — всё кроме ЦОД (админ при этом сохраняет полный доступ).
+        const role = uiRole ?? '';
         if (role === 'admin') return true;
         if (role === 'hr_specialist') return model !== 'dataCenter';
         if (role === 'sysadmin') return model === 'dataCenter';
         return false;
       },
     }),
-    [currentUser, users, isAuthenticated, initialized, bootstrapping, bootstrap, login, register, logout, refreshUsers, addUser, updateUser, deleteUser, setTheme, switchOrganization],
+    [currentUser, users, isAuthenticated, initialized, bootstrapping, bootstrap, login, register, logout, refreshUsers, addUser, updateUser, deleteUser, setTheme, switchOrganization, isAdminUser, uiRole, impersonatedRole, setImpersonatedRole],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -336,6 +381,9 @@ const authFallback: AuthState = {
   setCurrentUser: () => {},
   myOrganizations: () => [],
   canCreateOrganization: () => false,
+  effectiveRole: null,
+  impersonatedRole: null,
+  setImpersonatedRole: () => {},
   getUserRole: () => null,
   canEdit: () => false,
   isAdmin: () => false,

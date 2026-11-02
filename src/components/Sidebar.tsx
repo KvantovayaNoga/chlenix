@@ -35,7 +35,11 @@ const roleColors: Record<string, string> = {
 };
 
 export function Sidebar() {
-  const { currentUser, logout, canManageUsers, canManageServers, canCreateOrganization, myOrganizations } = useAuthStore();
+  const { currentUser, logout, canManageUsers, canManageServers, canCreateOrganization, myOrganizations, effectiveRole, impersonatedRole } = useAuthStore();
+  // Режим имитации роли (отладка интерфейса администратором, см. «Администрирование»):
+  // сайдбар показывается так, как его видит пользователь с выбранной ролью;
+  // кнопка «Админка» внизу (над «Выйти») возвращает настоящий интерфейс админа.
+  const isImpersonating = !!impersonatedRole;
   const { organizations, equipment, virtualMachines } = useDataStore();
   // «Платформа виртуализации» изначально скрыта: пункт появляется в сайдбаре,
   // когда хотя бы у одного сервера/ВМ выставлена роль в системе виртуализации.
@@ -94,7 +98,7 @@ export function Sidebar() {
           // - «Сотрудники»: всем (CRUD-кнопки на странице — admin+HR);
           // - «Оборудование»: всем (viewer/МОЛ — просмотр и связки).
           { to: '/staff', label: 'Штатное расписание', icon: BookMarked, activeIconBg: 'bg-sky-500' },
-          ...(canManageServers()
+          ...((isImpersonating ? impersonatedRole === 'sysadmin' : canManageServers())
             ? [
                 { to: '/servers/physical', label: 'Физические серверы', icon: Server, activeIconBg: 'bg-red-500' },
                 { to: '/servers', label: 'Виртуальные машины', icon: Cpu, activeIconBg: 'bg-violet-500' },
@@ -103,18 +107,25 @@ export function Sidebar() {
                   : []),
               ]
             : []),
-          { to: '/employees', label: 'Сотрудники', icon: Users, activeIconBg: 'bg-blue-500' },
-          { to: '/equipment', label: 'Оборудование', icon: Monitor, activeIconBg: 'bg-teal-500' },
+          ...(!(isImpersonating && impersonatedRole === 'sysadmin')
+            ? [
+                { to: '/employees', label: 'Сотрудники', icon: Users, activeIconBg: 'bg-blue-500' },
+                { to: '/equipment', label: 'Оборудование', icon: Monitor, activeIconBg: 'bg-teal-500' },
+              ]
+            : []),
         ]
       : []),
   ];
 
-  if (canManageUsers()) {
+  // Имитация другой роли скрывает админские разделы из навигации — для возврата
+  // служит кнопка «Админка» внизу сайдбара (ведёт в /admin).
+  if (canManageUsers() && !isImpersonating) {
     if (hasOrganization) navItems.push({ to: '/users', label: 'Пользователи', icon: UserCog, activeIconBg: 'bg-amber-500' });
     // Раздел «Администрирование» (заявки на вступление) — только администратор системы
     navItems.push({ to: '/admin', label: 'Администрирование', icon: ShieldCheck, activeIconBg: 'bg-indigo-600' });
     navItems.push({ to: '/about', label: 'О системе', icon: Info, activeIconBg: 'bg-slate-600' });
   }
+
 
   return (
     <aside className={`${isMinimized ? 'w-20' : 'w-80'} bg-slate-900 text-white flex flex-col h-screen sticky top-0 transition-all duration-300`}>
@@ -164,9 +175,10 @@ export function Sidebar() {
             )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">{currentUser?.fullName}</p>
-              <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${roleColors[currentUser?.role || 'viewer']}`}>
+              <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${roleColors[effectiveRole || currentUser?.role || 'viewer']}`}>
                 <Shield className="w-3 h-3 inline mr-1" />
-                {roleLabels[currentUser?.role || 'viewer']}
+                {roleLabels[effectiveRole || currentUser?.role || 'viewer']}
+                {isImpersonating && ' (имитация)'}
               </span>
             </div>
           </div>
@@ -213,7 +225,7 @@ export function Sidebar() {
               </button>
             )}
             {/* «Создать организацию» — синхронно с бэкендом: ORG_CREATE_ROLES (admin|hr_specialist) */}
-            {!isMinimized && item.icon === Building2 && organization && canCreateOrganization() && (
+            {!isMinimized && item.icon === Building2 && organization && (isImpersonating ? impersonatedRole !== 'sysadmin' && impersonatedRole !== 'materially_responsible' && impersonatedRole !== 'viewer' : canCreateOrganization()) && (
               <div className="mt-1 ml-3 border-l border-slate-700 pl-2 space-y-1">
                 <button
                   onClick={() => navigate('/organization/create')}
@@ -228,6 +240,21 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
+
+      {/* «Админка» — возврат из режима имитации роли к интерфейсу администратора.
+          Показывается только когда администратор включил имитацию другой роли. */}
+      {isImpersonating && (
+        <div className="px-4 pt-4">
+          <button
+            onClick={() => navigate('/admin')}
+            className={`flex items-center ${isMinimized ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 transition-all duration-200 w-full`}
+            title={isMinimized ? 'Админка' : ''}
+          >
+            <ShieldCheck className="w-5 h-5 flex-shrink-0" />
+            {!isMinimized && <span className="font-medium">Админка</span>}
+          </button>
+        </div>
+      )}
 
       {/* Logout */}
       <div className="p-4 border-t border-slate-700">

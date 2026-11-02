@@ -264,7 +264,10 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
           </button>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-6 items-start justify-center">
+        {/* ВЕРТИКАЛЬНАЯ компоновка (решение от 2026-11): превью справа убрано —
+            оно расходилось с выбором; управление (слайдер масштаба, кнопки зума и
+            сброса) перенесено ПОД картинку. */}
+        <div className="flex flex-col items-center gap-4">
           {/* Область кадрирования: вся картинка + круглое «окно» аватара поверх */}
           <div
             ref={stageRef}
@@ -310,93 +313,60 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
             </svg>
           </div>
 
-          {/* Правая колонка: управление + живое превью */}
-          <div className="flex-1 min-w-[220px] space-y-5">
-            <div>
-              <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">Масштаб</p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200"
-                  onClick={() => applyZoom(zoom / 1.2)}
-                  aria-label="Уменьшить"
-                ><ZoomOut className="w-4 h-4" /></button>
-                <input
-                  type="range"
-                  min={MIN_ZOOM}
-                  max={MAX_ZOOM}
-                  step={0.01}
-                  value={zoom}
-                  onChange={(e) => applyZoom(Number(e.target.value))}
-                  className="flex-1 accent-indigo-600"
-                />
-                <button
-                  type="button"
-                  className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200"
-                  onClick={() => applyZoom(zoom * 1.2)}
-                  aria-label="Увеличить"
-                ><ZoomIn className="w-4 h-4" /></button>
-                <button
-                  type="button"
-                  className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200"
-                  onClick={() => { setZoom(1); setPos({ x: 0, y: 0 }); }}
-                  aria-label="Сбросить кадрирование"
-                  title="Сбросить"
-                ><RotateCcw className="w-4 h-4" /></button>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">Превью аватара</p>
-              <div className="flex items-center gap-3">
-                {/* Живое круглое превью: ТОЧКА-В-ТОЧЬ тот же круг, что в большом окне.
-                    Контейнер — квадрат со стороной circleDiameter (в масштабе 96/frameSize),
-                    картинка внутри — та же трансформация tx/ty/zoom. */}
-                <div
-                  className="rounded-full overflow-hidden border-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 shrink-0 relative"
-                  style={{ width: circleDiameter * (96 / frameSize), height: circleDiameter * (96 / frameSize) }}
-                >
-                  {natural && (
-                    <img
-                      src={normSrc || imageSrc}
-                      alt="Preview"
-                      draggable={false}
-                      className="absolute max-w-none"
-                      style={{
-                        left: 0,
-                        top: 0,
-                        width: natural.w * baseScale * (96 / frameSize),
-                        height: natural.h * baseScale * (96 / frameSize),
-                        transform: `translate(${(tx - circleCenterX) * (96 / frameSize)}px, ${(ty - circleCenterY) * (96 / frameSize)}px) scale(${zoom})`,
-                        transformOrigin: 'left top',
-                      }}
-                    />
-                  )}
-                </div>
-                <p className="text-xs text-gray-400">
-                  Двигайте картинку, крутите колесо мыши. Сохраняется ровно то, что внутри
-                  белого круга — без полей и дополнительной обрезки браузером.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2">
+          {/* Управление под картинкой: масштаб + кнопки зума/сброса.
+              Превью аватара и подсказки убраны (решение от 2026-11): превью
+              работало некорректно, текст подсказок не нужен. */}
+          <div className="w-full max-w-[480px]">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={captureAndApply}
-                disabled={!natural}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-              >
-                <Check className="w-4 h-4" /> Применить
-              </button>
+                className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200"
+                onClick={() => applyZoom(zoom / 1.2)}
+                aria-label="Уменьшить"
+              ><ZoomOut className="w-4 h-4" /></button>
+              <input
+                type="range"
+                min={MIN_ZOOM}
+                max={MAX_ZOOM}
+                step={0.01}
+                value={zoom}
+                onChange={(e) => applyZoom(Number(e.target.value))}
+                className="flex-1 accent-indigo-600"
+                aria-label="Масштаб"
+              />
               <button
                 type="button"
-                onClick={onCancel}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
-              >
-                <X className="w-4 h-4" /> Отмена
-              </button>
+                className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200"
+                onClick={() => applyZoom(zoom * 1.2)}
+                aria-label="Увеличить"
+              ><ZoomIn className="w-4 h-4" /></button>
+              <button
+                type="button"
+                className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200"
+                onClick={() => { setZoom(1); setPos({ x: 0, y: 0 }); }}
+                aria-label="Сбросить кадрирование"
+                title="Сбросить"
+              ><RotateCcw className="w-4 h-4" /></button>
             </div>
+          </div>
+
+          {/* Кнопки действий — тоже под картинкой */}
+          <div className="flex gap-2 w-full max-w-[480px]">
+            <button
+              type="button"
+              onClick={captureAndApply}
+              disabled={!natural}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+            >
+              <Check className="w-4 h-4" /> Применить
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+            >
+              <X className="w-4 h-4" /> Отмена
+            </button>
           </div>
         </div>
       </div>

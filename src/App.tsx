@@ -44,7 +44,9 @@ function DefaultAuthenticatedRedirect() {
 // (Названия страниц и кнопки при этом тоже скрываются через соответствующие
 // can*()-хелперы authStore, синхронизированные с матрицей прав бэкенда.)
 function RoleGuard({ roles, children }: { roles: string[]; children: ReactNode }) {
-  const role = useAuthStore((s) => s.currentUser?.role);
+  // effectiveRole — роль с учётом режима имитации (администратор может «примерить»
+  // другую роль для отладки UI; см. AdminPanelPage и authStore.setImpersonatedRole).
+  const role = useAuthStore((s) => s.effectiveRole);
   if (!role || !roles.includes(role)) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
