@@ -1212,11 +1212,14 @@ const numOrEmpty = (schema: any) =>
 const strOrEmpty = (schema: any) =>
   z.preprocess(emptyToNull, schema.optional().nullable());
 
+// Кластер виртуализации — логическая сущность: у него нет физической инвентарной
+// карточки (серийного/инвентарного номера), поэтому для этой роли они необязательны.
+const CLUSTER_ROLE = 'cluster';
 const equipmentSchema = z.object({
   name: z.string().min(1, 'Укажите наименование'),
   category: z.enum(['computer', 'monitor', 'peripheral', 'furniture', 'server', 'storage', 'virtual_machine', 'network', 'phone', 'other']),
-  serialNumber: z.string().min(1, 'Укажите серийный номер'),
-  inventoryNumber: z.string().min(1, 'Укажите инвентарный номер'),
+  serialNumber: strOrEmpty(z.string()),
+  inventoryNumber: strOrEmpty(z.string()),
   brand: strOrEmpty(z.string()),
   model: strOrEmpty(z.string()),
   purchaseDate: z.preprocess((v) => (emptyToNull(v) === null ? undefined : v), z.coerce.date().optional().nullable()),
@@ -1318,16 +1321,25 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
   const data = parsed.data;
   const scope = await getUserOrgScope(currentUser.userId);
 
+  // Серийный/инвентарный номера обязательны для физической техники;
+  // кластер виртуализации — логическая сущность, у него их может не быть.
+  if (data.serverRole !== CLUSTER_ROLE) {
+    if (!data.serialNumber?.trim()) return c.json({ error: 'Укажите серийный номер' }, 400);
+    if (!data.inventoryNumber?.trim()) return c.json({ error: 'Укажите инвентарный номер' }, 400);
+  }
+
   const branchId = await resolveRef('branch', data.branchId);
   if (!branchId) return c.json({ error: 'Филиал выбран некорректно' }, 400);
   const assignedToEmployeeId = await resolveRef('employee', data.assignedToEmployeeId);
 
-  const duplicate = await prisma.equipment.findUnique({ where: { inventoryNumber: data.inventoryNumber } });
+  const duplicate = data.inventoryNumber ? await prisma.equipment.findUnique({ where: { inventoryNumber: data.inventoryNumber } }) : null;
   if (duplicate) {
     return c.json({ error: 'Инвентарный номер уже используется' }, 409);
   }
 
-  // Кластерные связи (косяк 11): родительский кластер должен существовать и быть кластером
+  // Кластер (serverRole === 'cluster') не может быть помещён внутрь другого кластера,
+  // не может включать сам себя и не может находиться внутри собственного члена.
+  if (data.serverRole === CLUSTER_ROLE) data.parentClusterId = null;
   let parentClusterId: string | null = null;
   try {
     parentClusterId = await validateParentCluster(await resolveRef('equipment', data.parentClusterId));
@@ -1341,8 +1353,8 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
       organizationId: scope.orgId,
       name: data.name,
       category: data.category,
-      serialNumber: data.serialNumber,
-      inventoryNumber: data.inventoryNumber,
+      serialNumber: data.serialNumber ?? null,
+      inventoryNumber: data.inventoryNumber ?? null,
       brand: data.brand ?? null,
       model: data.model ?? null,
       condition: data.condition ?? 'good',

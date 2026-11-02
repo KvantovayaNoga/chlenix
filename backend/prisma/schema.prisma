@@ -186,8 +186,10 @@ model Equipment {
   organizationId       String?           @map("organization_id")
   name                 String
   category             EquipmentCategory
-  serialNumber         String            @map("serial_number")
-  inventoryNumber      String            @unique @map("inventory_number")
+  // Серийный/инвентарный номера необязательны: логические сущности (кластеры
+  // виртуализации) не имеют физической инвентарной карточки.
+  serialNumber         String?           @map("serial_number")
+  inventoryNumber      String?           @unique @map("inventory_number")
   brand                String?
   model                String?
   purchaseDate         DateTime?         @map("purchase_date")
