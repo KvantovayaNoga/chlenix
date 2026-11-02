@@ -123,6 +123,8 @@ model DataCenter {
   updatedById    String?  @map("updated_by")
 
   updatedBy User? @relation("DataCenterUpdater", fields: [updatedById], references: [id])
+  // ЦОД может быть местом размещения оборудования (кластеры на арендованных/облачных мощностях)
+  equipment Equipment[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -196,7 +198,12 @@ model Equipment {
   writeOffDate         DateTime?         @map("write_off_date")
   condition            Condition         @default(good)
   assignedToEmployeeId String?           @map("assigned_to_employee_id")
-  branchId             String            @map("branch_id")
+  // Место размещения: филиал организации (branchId, обязателен для физической техники)
+  // ИЛИ внешний/облачный ЦОД (dataCenterId — используется кластерами на арендованных мощностях).
+  // Для кластеров заполнен ровно один из двух: locationType указывает, какой именно.
+  branchId             String?           @map("branch_id")
+  dataCenterId         String?           @map("data_center_id")
+  locationType         String?           @map("location_type") // 'branch' | 'data_center' | null (для обычной техники — филиал)
   floor                String?
   room                 String?
   // Роль в системе виртуализации: хост гипервизора / СХД / консоль управления / автономный
@@ -228,7 +235,8 @@ model Equipment {
   // Связи
   organization       Organization? @relation(fields: [organizationId], references: [id])
   assignedToEmployee Employee?     @relation("AssignedEquipment", fields: [assignedToEmployeeId], references: [id])
-  branch             Branch        @relation(fields: [branchId], references: [id])
+  branch             Branch?       @relation(fields: [branchId], references: [id])
+  dataCenter         DataCenter?   @relation(fields: [dataCenterId], references: [id])
   updatedBy          User?         @relation("EquipmentUpdater", fields: [updatedById], references: [id])
 
   hostForVMs   VirtualMachine[]      @relation("HostServer")
@@ -245,6 +253,7 @@ model Equipment {
   @@index([assignedToEmployeeId])
   @@index([condition])
   @@index([branchId])
+  @@index([dataCenterId])
   @@index([organizationId])
   @@map("equipment")
 }

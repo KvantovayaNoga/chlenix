@@ -272,13 +272,13 @@ async function createHistoryEntry(entityType: string, entityId: string, changedB
 // Разрешает внешние ключи из строковых ID, возвращает null если записи нет.
 // Для справочников (branch/department/position) дополнительно проверяет
 // принадлежность организации: запись либо привязана к orgId, либо общая (null).
-async function resolveRef(model: 'employee' | 'branch' | 'department' | 'position' | 'equipment', id: unknown, orgId?: string | null): Promise<string | null> {
+async function resolveRef(model: 'employee' | 'branch' | 'department' | 'position' | 'equipment' | 'dataCenter', id: unknown, orgId?: string | null): Promise<string | null> {
   if (typeof id !== 'string' || id.trim() === '') return null;
   const where = { id };
   try {
     const found: any = await (prisma as any)[model].findUnique({ where, select: { id: true, organizationId: true } });
     if (!found) return null;
-    if (orgId !== undefined && ['branch', 'department', 'position'].includes(model)) {
+    if (orgId !== undefined && ['branch', 'department', 'position', 'dataCenter'].includes(model)) {
       if (found.organizationId && orgId && found.organizationId !== orgId) return null;
     }
     return found.id;
@@ -289,7 +289,7 @@ async function resolveRef(model: 'employee' | 'branch' | 'department' | 'positio
 
 // Безопасно разрешает внешние ключи: undefined остаётся undefined (поле не меняется/не задаётся),
 // пустое/несуществующее значение -> null
-async function resolveRefOrNull(model: 'employee' | 'branch' | 'department' | 'position' | 'equipment', id: unknown, orgId?: string | null): Promise<string | null | undefined> {
+async function resolveRefOrNull(model: 'employee' | 'branch' | 'department' | 'position' | 'equipment' | 'dataCenter', id: unknown, orgId?: string | null): Promise<string | null | undefined> {
   if (id === undefined) return undefined;
   return await resolveRef(model, id, orgId);
 }
@@ -1226,7 +1226,12 @@ const equipmentSchema = z.object({
   writeOffDate: z.preprocess((v) => (emptyToNull(v) === null ? undefined : v), z.coerce.date().optional().nullable()),
   condition: z.enum(['new', 'good', 'satisfactory', 'needs_repair', 'written_off']).optional(),
   assignedToEmployeeId: strOrEmpty(z.string()),
-  branchId: z.string().min(1, 'Выберите филиал'),
+  // Место размещения: филиал (branchId) или ЦОД (dataCenterId).
+  // Для физической техники обязателен филиал; для кластеров допустим ЦОД
+  // (арендованные/облачные мощности) — проверка «ровно одного из двух» ниже по serverRole.
+  branchId: strOrEmpty(z.string()),
+  dataCenterId: strOrEmpty(z.string()),
+  locationType: strOrEmpty(z.enum(['branch', 'data_center'])),
   floor: strOrEmpty(z.string()),
   room: strOrEmpty(z.string()),
   serverRole: z.enum(['hypervisor_host', 'storage', 'management_console', 'standalone', 'cluster']).optional().nullable(),
@@ -1360,8 +1365,28 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
     if (!data.inventoryNumber?.trim()) return c.json({ error: 'Укажите инвентарный номер' }, 400);
   }
 
-  const branchId = await resolveRef('branch', data.branchId);
-  if (!branchId) return c.json({ error: 'Филиал выбран некорректно' }, 400);
+  // Место размещения: филиал ИЛИ ЦОД. Кластер может размещаться в ЦОД
+  // (арендованные/облачные мощности); остальная техника — только в филиале.
+  let branchId: string | null = null;
+  let dataCenterId: string | null = null;
+  let locationType: string | null = null;
+  const hasBranch = !!data.branchId?.trim();
+  const hasDC = !!data.dataCenterId?.trim();
+  if (hasBranch && hasDC) return c.json({ error: 'Выберите что-то одно: филиал или ЦОД' }, 400);
+  if (hasDC) {
+    if (data.serverRole !== CLUSTER_ROLE) return c.json({ error: 'Размещение в ЦОД доступно только для кластеров виртуализации' }, 400);
+    dataCenterId = await resolveRef('dataCenter', data.dataCenterId!);
+    if (!dataCenterId) return c.json({ error: 'ЦОД выбран некорректно' }, 400);
+    locationType = 'data_center';
+  } else if (hasBranch) {
+    branchId = await resolveRef('branch', data.branchId!);
+    if (!branchId) return c.json({ error: 'Филиал выбран некорректно' }, 400);
+    locationType = 'branch';
+  } else if (data.serverRole === CLUSTER_ROLE) {
+    return c.json({ error: 'Выберите место размещения: филиал или ЦОД' }, 400);
+  } else {
+    return c.json({ error: 'Выберите филиал' }, 400);
+  }
   const assignedToEmployeeId = await resolveRef('employee', data.assignedToEmployeeId);
 
   const duplicate = data.inventoryNumber ? await prisma.equipment.findUnique({ where: { inventoryNumber: data.inventoryNumber } }) : null;
@@ -1405,6 +1430,8 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
       diskGB: data.diskGB ?? null,
       notes: data.notes ?? null,
       branchId,
+      dataCenterId,
+      locationType,
       assignedToEmployeeId,
       purchaseDate: normalizeDateField(data.purchaseDate),
       writeOffDate: normalizeDateField(data.writeOffDate),
