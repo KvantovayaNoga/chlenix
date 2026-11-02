@@ -67,34 +67,36 @@ export function Sidebar() {
 
   // Логика: нет организации — нет её наполнения.
   // Без активной организации показываем только «Обзор» и «Организация» (создание).
-  // Пункты навигации. activeIconColor — ЯРКИЙ цвет иконки активной ссылки
-  // (по аналогии с цветными иконками ролей на «Физических серверах»);
-  // текст активной ссылки остаётся белым, неактивные пункты — как раньше.
+  // Пункты навигации. Для АКТИВНОЙ ссылки иконка рисуется на цветном
+  // квадратном фоне с закруглёнными краями (по аналогии с карточками ролей
+  // на «Физических серверах» и «Платформе виртуализации»): яркий фон + белая
+  // иконка поверх — контраст гарантирован на любом фоне. Неактивные иконки —
+  // белые без фона; текст активной ссылки остаётся белым.
   const navItems = [
-    { to: '/dashboard', label: 'Обзор', icon: LayoutDashboard, activeIconColor: 'text-indigo-400' },
+    { to: '/dashboard', label: 'Обзор', icon: LayoutDashboard, activeIconBg: 'bg-indigo-500' },
     {
       to: hasOrganization ? '/organization' : '/organization/create',
       label: organization ? organization.shortName || organization.name : 'Создать организацию',
       icon: Building2,
-      activeIconColor: 'text-emerald-400',
+      activeIconBg: 'bg-emerald-500',
     },
     ...(hasOrganization
       ? [
-          { to: '/staff', label: 'Штатное расписание', icon: BookMarked, activeIconColor: 'text-sky-400' },
-          { to: '/employees', label: 'Сотрудники', icon: Users, activeIconColor: 'text-blue-400' },
-          { to: '/equipment', label: 'Оборудование', icon: Monitor, activeIconColor: 'text-teal-400' },
-          { to: '/servers/physical', label: 'Физические серверы', icon: Server, activeIconColor: 'text-red-400' },
-          { to: '/servers', label: 'Виртуальные машины', icon: Cpu, activeIconColor: 'text-violet-400' },
+          { to: '/staff', label: 'Штатное расписание', icon: BookMarked, activeIconBg: 'bg-sky-500' },
+          { to: '/employees', label: 'Сотрудники', icon: Users, activeIconBg: 'bg-blue-500' },
+          { to: '/equipment', label: 'Оборудование', icon: Monitor, activeIconBg: 'bg-teal-500' },
+          { to: '/servers/physical', label: 'Физические серверы', icon: Server, activeIconBg: 'bg-red-500' },
+          { to: '/servers', label: 'Виртуальные машины', icon: Cpu, activeIconBg: 'bg-violet-500' },
           ...(showVirtualization
-            ? [{ to: '/servers/virtualization', label: 'Платформа виртуализации', icon: Layers, activeIconColor: 'text-purple-400' }]
+            ? [{ to: '/servers/virtualization', label: 'Платформа виртуализации', icon: Layers, activeIconBg: 'bg-purple-500' }]
             : []),
         ]
       : []),
   ];
 
   if (canManageUsers()) {
-    if (hasOrganization) navItems.push({ to: '/users', label: 'Пользователи', icon: UserCog, activeIconColor: 'text-amber-400' });
-    navItems.push({ to: '/about', label: 'О системе', icon: Info, activeIconColor: 'text-slate-200' });
+    if (hasOrganization) navItems.push({ to: '/users', label: 'Пользователи', icon: UserCog, activeIconBg: 'bg-amber-500' });
+    navItems.push({ to: '/about', label: 'О системе', icon: Info, activeIconBg: 'bg-slate-600' });
   }
 
   return (
@@ -170,7 +172,14 @@ export function Sidebar() {
               }
               title={isMinimized ? item.label : ''}
             >
-              <item.icon className={`w-5 h-5 flex-shrink-0 ${isActiveItem(item.to) ? item.activeIconColor : ''}`} />
+              {isActiveItem(item.to) ? (
+                // Активная иконка: белая глиф на цветном квадрате со скруглением
+                <span className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${item.activeIconBg} shadow-sm`}>
+                  <item.icon className="w-[18px] h-[18px] text-white" />
+                </span>
+              ) : (
+                <item.icon className="w-5 h-5 flex-shrink-0" />
+              )}
               {!isMinimized && <span className="font-medium truncate">{item.label}</span>}
             </NavLink>
 
