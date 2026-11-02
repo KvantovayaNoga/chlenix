@@ -45,6 +45,7 @@ function CollapsibleSection({
   icon,
   defaultOpen = false,
   action,
+  highlight = false,
   children,
 }: {
   title: React.ReactNode;
@@ -52,12 +53,14 @@ function CollapsibleSection({
   defaultOpen?: boolean;
   /** Кнопка/элемент справа от заголовка (не сворачивает кат при клике) */
   action?: React.ReactNode;
+  /** Выделенная группа (напр. «Хосты без кластера» — не часть кластеров): жирнее рамка и фон шапки */
+  highlight?: boolean;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <section className="rounded-xl border border-gray-100 dark:border-gray-700 overflow-hidden">
-      <div className="flex items-center gap-2 pr-4 bg-gray-50/70 dark:bg-gray-900/30">
+    <section className={`rounded-xl overflow-hidden ${highlight ? 'border-2 border-red-200 dark:border-red-900/60 bg-red-50/30 dark:bg-red-950/10' : 'border border-gray-100 dark:border-gray-700'}`}>
+      <div className={`flex items-center gap-2 pr-4 ${highlight ? 'bg-red-50 dark:bg-red-950/30' : 'bg-gray-50/70 dark:bg-gray-900/30'}`}>
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
@@ -333,10 +336,11 @@ export function VirtualizationPlatformPage() {
                 )}
               </CollapsibleSection>
 
-              {/* Хосты без кластера */}
+              {/* Хосты без кластера — выделенная группа: они НЕ являются частью кластеров */}
               <CollapsibleSection
                 title={<>Хосты без кластера ({(p.clusters.find((c) => !c.name)?.hosts || []).length})</>}
                 icon={<Server className="w-4 h-4 text-red-500" />}
+                highlight
               >
                 {(p.clusters.find((c) => !c.name)?.hosts || []).length === 0 ? (
                   <p className="text-sm text-gray-400 dark:text-gray-500">Хосты вне кластеров не назначены</p>
@@ -360,7 +364,7 @@ export function VirtualizationPlatformPage() {
 
               {/* СХД вне кластеров */}
               <CollapsibleSection
-                title={<>Системы хранения (СХД) ({p.storage.length})</>}
+                title={<>Системы хранения данных ({p.storage.length})</>}
                 icon={<HardDrive className="w-4 h-4 text-cyan-600" />}
               >
                 {p.storage.length === 0 ? (
