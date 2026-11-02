@@ -44,10 +44,15 @@ export function Sidebar() {
   const hasOrganization = !!currentUser?.organizationId;
   const navigate = useNavigate();
   const location = useLocation();
-  // Активный пункт (для окраски иконки): совпадение с NavLink end — точное,
-  // но для вложенных маршрутов (например /employees/123) считаем активным родителя.
-  const isActiveItem = (to: string) =>
-    location.pathname === to || location.pathname.startsWith(to + '/');
+  // Активный пункт (для окраски иконки): ТОЛЬКО точное совпадение маршрута.
+  // Раньше использовался префиксный матчинг (startsWith), из-за чего при выборе
+  // «Физические серверы» (/servers/physical) или «Платформа виртуализации»
+  // (/servers/virtualization) подсвечивалась ещё и «Виртуальные машины»
+  // (/servers) как родительский путь. Комплексное выделение убрано: выделена
+  // должна быть только та категория, которая выбрана. Вложенные страницы
+  // (например /employees/123) активным родителем не подсвечиваются — там
+  // используется собственная навигация.
+  const isActiveItem = (to: string) => location.pathname === to;
   const [isMinimized, setIsMinimized] = useState(false);
 
   // Список организаций для отображения кнопки «Сменить организацию» (админ — все организации системы).
