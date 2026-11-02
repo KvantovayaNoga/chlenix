@@ -114,17 +114,38 @@ export function EmployeeDetailPage() {
                   const Icon = categoryIcons[eq.category];
                   const condition = conditionLabels[eq.condition];
                   return (
-                    <div key={eq.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                      <div className="flex items-center gap-3">
+                    <div
+                      key={eq.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setViewingEquipmentId(eq.id)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setViewingEquipmentId(eq.id); } }}
+                      className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-indigo-50/60 dark:hover:bg-gray-600 transition-colors"
+                      title="Открыть карточку оборудования"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
                         <div className="bg-white dark:bg-gray-600 p-2 rounded-lg shadow-sm"><Icon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" /></div>
-                        <div>
-                          <p className="font-medium text-gray-700 dark:text-gray-200">{eq.name}</p>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">{categoryLabels[eq.category]} • Инв. №{eq.inventoryNumber} • Сер. №{eq.serialNumber}</p>
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-700 dark:text-gray-200 truncate">{eq.name}</p>
+                          {/* Инв.№/Сер.№ показываем только для физической техники: кластер — логическая сущность */}
+                          <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
+                            {categoryLabels[eq.category]}
+                            {eq.serverRole !== 'cluster' && eq.inventoryNumber ? ` • Инв. №${eq.inventoryNumber}` : ''}
+                            {eq.serverRole !== 'cluster' && eq.serialNumber ? ` • Сер. №${eq.serialNumber}` : ''}
+                          </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${condition.color}`}>{condition.label}</span>
-                        {canEdit() && <button onClick={() => unassignEquipment(eq.id)} className="text-red-400 dark:text-red-500 hover:text-red-600 dark:hover:text-red-400 p-1" title="Открепить"><Unlink className="w-4 h-4" /></button>}
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${condition?.color ?? 'bg-gray-100 text-gray-600'}`}>{condition?.label ?? eq.condition}</span>
+                        {canEdit() && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); unassignEquipment(eq.id); }}
+                            className="text-red-400 dark:text-red-500 hover:text-red-600 dark:hover:text-red-400 p-1"
+                            title="Открепить"
+                          >
+                            <Unlink className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -187,6 +208,14 @@ export function EmployeeDetailPage() {
             assignEquipment(equipmentId, employee.id);
             setShowAssignEquipmentModal(false);
           }}
+        />
+      )}
+
+      {/* Карточка оборудования поверх вкладки «Сотрудники»: просмотр и редактирование */}
+      {viewingEquipmentId && (
+        <EquipmentCardModal
+          equipmentId={viewingEquipmentId}
+          onClose={() => setViewingEquipmentId(null)}
         />
       )}
     </div>
