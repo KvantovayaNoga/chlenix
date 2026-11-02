@@ -183,6 +183,9 @@ model Equipment {
   storageType           String?         @map("storage_type")
   storageProtocol       String?         @map("storage_protocol")
   storageCapacityGB     Int?            @map("storage_capacity_gb")
+  // кластер-сервер (serverRole === 'cluster'): аккумулирует хосты и СХД внутри себя;
+  // обычные поля clusterName/hypervisorName/hypervisorVersion используются как атрибуты кластера
+  parentClusterId       String?         @map("parent_cluster_id")
   // Характеристики серверов (CPU/RAM/Disk)
   cpuCores              Int?            @map("cpu_cores")
   ramGB                 Int?            @map("ram_gb")
@@ -199,7 +202,15 @@ model Equipment {
   updatedBy           User?       @relation("EquipmentUpdater", fields: [updatedById], references: [id])
 
   hostForVMs          VirtualMachine[] @relation("HostServer")
+  // ВМ, приписанные к этому кластеру (только для serverRole === 'cluster')
+  vmsInCluster        VirtualMachine[] @relation("VmCluster")
   assignments         EquipmentAssignment[]
+
+  // Кластерные связи: кластер-сервер аккумулирует внутри себя хосты и СХД.
+  parentCluster       Equipment?  @relation("EquipmentCluster", fields: [parentClusterId], references: [id], onDelete: SetNull)
+  clusterMembers      Equipment[] @relation("EquipmentCluster")
+
+  @@index([parentClusterId])
 
   @@index([category])
   @@index([assignedToEmployeeId])
@@ -240,6 +251,9 @@ model VirtualMachine {
   hostname                    String
   type                        VMType    @default(virtual)
   hostServerId                String?   @map("host_server_id")
+  // Кластер, которому принадлежит ВМ (виртуальные машины НЕ размещаются на кластере
+  // напрямую — хостом может быть только физический сервер-хост гипервизора)
+  clusterId                   String?   @map("cluster_id")
   os                          String?
   cpuCores                    Int       @default(2) @map("cpu_cores")
   ramGB                       Int       @default(4) @map("ram_gb")
@@ -259,6 +273,7 @@ model VirtualMachine {
   // Связи
   organization              Organization? @relation(fields: [organizationId], references: [id])
   hostServer              Equipment?  @relation("HostServer", fields: [hostServerId], references: [id])
+  cluster                 Equipment?  @relation("VmCluster", fields: [clusterId], references: [id], onDelete: SetNull)
   responsibleEmployee     Employee?   @relation("VMInfraResponsible", fields: [responsibleEmployeeId], references: [id])
   serviceResponsibleEmployee Employee? @relation("VMServiceResponsible", fields: [serviceResponsibleEmployeeId], references: [id])
   updatedBy               User?       @relation("VMUpdater", fields: [updatedById], references: [id])
