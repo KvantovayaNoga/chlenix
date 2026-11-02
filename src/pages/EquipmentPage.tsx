@@ -9,6 +9,7 @@ import type { Equipment, EquipmentCategory } from '../types';
 import { HistoryLog } from '../components/HistoryLog';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
+import { serverRoleVisual } from '../components/ServerRoleIcon';
 
 const categoryLabels: Record<EquipmentCategory, string> = {
   computer: 'Компьютеры', monitor: 'Мониторы', peripheral: 'Периферия', furniture: 'Мебель',
@@ -219,7 +220,14 @@ export function EquipmentPage() {
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
               {filteredEquipment.map((eq) => {
-                const Icon = categoryIcons[eq.category];
+                // Для серверных сущностей (хост/кластер/СХД/консоль) красим иконку по роли —
+                // так же, как в «Физических серверах» и «Платформе виртуализации».
+                const roleVisual = eq.serverRole ? serverRoleVisual(eq.serverRole) : null;
+                const Icon = roleVisual ? roleVisual.Icon : categoryIcons[eq.category];
+                const iconBoxClass = roleVisual
+                  ? `${roleVisual.bg} p-2 rounded-lg`
+                  : 'bg-indigo-50 dark:bg-indigo-900/30 p-2 rounded-lg';
+                const iconColorClass = roleVisual ? roleVisual.color : 'text-indigo-600 dark:text-indigo-400';
                 const condition = conditionLabels[eq.condition];
                 return (
                   <tr
@@ -229,7 +237,7 @@ export function EquipmentPage() {
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="bg-indigo-50 dark:bg-indigo-900/30 p-2 rounded-lg"><Icon className="w-4 h-4 text-indigo-600 dark:text-indigo-400" /></div>
+                        <div className={iconBoxClass}><Icon className={`w-4 h-4 ${iconColorClass}`} /></div>
                         <div>
                           <p className="font-medium text-gray-700 dark:text-gray-200 text-sm">{eq.name}</p>
                           <p className="text-xs text-gray-600 dark:text-gray-400">{eq.brand} {eq.model}</p>
