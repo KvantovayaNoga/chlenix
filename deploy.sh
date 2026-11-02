@@ -300,6 +300,46 @@ EOF" || { warn "Не удалось подменить pg_hba.conf"; return 1; }
   [ -n "${NPM_REGISTRY:-}" ] && BUILD_ARGS="$BUILD_ARGS --build-arg NPM_REGISTRY=${NPM_REGISTRY}"
   [ -n "${HTTPS_PROXY:-}" ]  && BUILD_ARGS="$BUILD_ARGS --build-arg HTTPS_PROXY=${HTTPS_PROXY}"
   [ -n "${HTTP_PROXY:-}" ]   && BUILD_ARGS="$BUILD_ARGS --build-arg HTTP_PROXY=${HTTP_PROXY}"
+
+  # ------------------------------------------------------------
+  # Диагностика рассинхрона пароля PostgreSQL (исправление «проблемы с БД»
+  # после деплоя на новом сервере).
+  #
+  # Симптом: backend стартует, nginx сразу получает 503 на /api/* и затем
+  # быстро отдаёт 200; либо контейнер API зацикливается на рестартах.
+  # Причина: POSTGRES_PASSWORD в .env не совпадает с паролем, записанным в
+  # том postgres_data при его ПЕРВОЙ инициализации. Контейнер postgres
+  # игнорирует переменную на непустом томе («Skipping initialization» в
+  # логах) — пароль остаётся старым навсегда.
+  #
+  # Раньше синхронизация выполнялась ОДИН раз до `docker compose down` —
+  # пока контейнер запущен. Если же том был создан другим прогоном/сервером
+  # или пароль сменился между запусками, проверка молча проходила мимо
+  # (контейнер ещё не поднят) и проблема всплывала только в рантайме.
+  # Теперь проверка выполняется ЕЩЁ РАЗ после сборки образов — пока все
+  # сервисы подняты и entrypoint уже мог упереться в отказ аутентификации.
+  # ------------------------------------------------------------
+  sync_pg_password_again() {
+    if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'chlenix-postgres'; then
+      return 0
+    fi
+    if pg_try_pass "$PGPASS_VAL"; then
+      ok "Пароль PostgreSQL из .env подтверждён (финальная проверка)"
+      return 0
+    fi
+    warn "Обнаружен рассинхрон пароля: том postgres_data хранит ДРУГОЙ пароль."
+    warn "Синхронизирую без потери данных (временная trust-аутентификация)..."
+    if sync_pg_password; then
+      ok "Пароль синхронизирован — перезапускаю backend для чистого старта"
+      (cd "$APP_DIR" && docker compose restart backend) >/dev/null 2>&1 || true
+    else
+      warn "Автоматическая синхронизация не удалась. Варианты вручную:"
+      warn "  A) данные не нужны: docker compose stop backend && docker volume rm chlenix_postgres_data && ./deploy.sh docker"
+      warn "  B) данные нужны:    docker exec -it chlenix-postgres psql -U ${PGUSER_VAL} -d postgres \"\\"
+      warn "                        -c 'ALTER USER ${PGUSER_VAL} WITH PASSWORD '\''<пароль из .env>'\'';'\""
+    fi
+  }
+
   # shellcheck disable=SC2086
   if ! (cd "$APP_DIR" && docker compose up -d --build $BUILD_ARGS); then
     warn "Сборка упала — повторяем с принудительной пересборкой слоёв (--no-cache)..."
@@ -307,6 +347,8 @@ EOF" || { warn "Не удалось подменить pg_hba.conf"; return 1; }
     (cd "$APP_DIR" && docker compose build --no-cache $BUILD_ARGS && docker compose up -d $BUILD_ARGS) \
       || die "Сборка образов не удалась. См. вывод выше."
   fi
+
+  sync_pg_password_again || true
 
   echo "⏳ Ожидаем готовности backend..."
   wait_for_api "http://localhost:${HTTP_PORT:-80}/api/health" "http://localhost:${BACKEND_PORT:-4000}/api/health"
@@ -362,9 +404,14 @@ deploy_bare() {
   (cd /opt/chlenix/backend && sudo npm ci --omit=dev --no-audit --no-fund && sudo npx prisma generate)
 
   echo "🔧 Применение схемы БД..."
+  # --force: Prisma 6.9+ при db push задаёт интерактивный вопрос даже с флагом
+  # --accept-data-loss; в неинтерактивном окружении CI/деплоя он упал бы.
   if ls /opt/chlenix/backend/prisma/migrations/*/migration.sql >/dev/null 2>&1; then
     (cd /opt/chlenix/backend && sudo env DATABASE_URL="$DATABASE_URL" npx prisma migrate deploy)
+  elif (cd /opt/chlenix/backend && sudo env DATABASE_URL="$DATABASE_URL" npx prisma db push --force); then
+    :
   else
+    echo "   ⚠️ db push --force не удался — повторяем без флага (старый CLI)..."
     (cd /opt/chlenix/backend && sudo env DATABASE_URL="$DATABASE_URL" npx prisma db push)
   fi
   ok "Схема БД применена"

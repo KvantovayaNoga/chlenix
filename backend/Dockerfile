@@ -76,6 +76,12 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
+# ВАЖНО (исправление рассинхрона схемы на проде): образ должен собираться АТОМАРНО
+# по всем сервисам — `docker compose build` (без имени сервиса) или полный
+# `./deploy.sh docker`. Если собирать только frontend (`build frontend`), compose
+# НЕ пересобирает backend, и контейнер API продолжает работать со СТАРЫМ dist.js и
+# СТАРЫМ Prisma Client, тогда как БД уже обновлена новой схемой (и наоборот: старый
+# backend + новая схема дают ошибки вида P2022 «column does not exist»).
 COPY --from=builder /app/dist ./dist
 
 # Canary runtime-образа: НЕ require('@prisma/client') «в лоб» (Node маскирует

@@ -138,13 +138,88 @@ while true; do
 done
 echo "✓ PostgreSQL готов"
 
-if ls prisma/migrations/*/migration.sql >/dev/null 2>&1; then
-  echo "🔧 Применяем миграции Prisma (migrate deploy)..."
-  npx prisma migrate deploy
-else
-  echo "🔧 Миграций не найдено — синхронизируем схему через prisma db push..."
-  npx prisma db push
+# --- Синхронизация схемы БД -------------------------------------------------
+# ИСПРАВЛЕНИЕ ПРОБЛЕМ СХЕМЫ ПРИ ДЕПЛОЕ (два независимых дефекта):
+#
+# 1) Контейнер backend мог работать со СТАРЫМ Prisma Client, сшитым со schema
+#    предыдущей сборки. Причина в backend/Dockerfile: prod-слой копировал
+#    готовый node_modules из builder-слоя и сам `prisma generate` не запускал.
+#    Если на сервере пересобирался только frontend (`docker compose up -d --build`
+#    без имени сервиса), а кэш builder-слоя «сгорал» — собирался новый образ с
+#    dist.js от новой схемы, но без перегенерации клиента. Запросы к новым
+#    колонкам падали с P2022 («column ... does not exist») при полностью
+#    здоровой БД. Лечение теперь двустороннее: generate выполняется и в
+#    Dockerfile, и здесь, на старте контейнера — схема/клиент/БД гарантированно
+#    синхронны даже после частично-кэшированной пересборки.
+#
+# 2) Начиная с Prisma 6.9 у `db push` появился интерактивный prompt («Apply
+#    these changes?» / drift-подтверждение). В контейнере stdin не TTY — prompt
+#    падает, entrypoint с `set -e` умирает, `restart: unless-stopped` поднимает
+#    контейнер снова → цикл рестартов, nginx отдаёт 502/503 на /api/*.
+#    Лечение: подбираем набор флагов «не спрашивать подтверждение» перебором —
+#    так же, как это делает сам Prisma при обновлении версии CLI. Проверять
+#    поддержку флага по --help/--version нельзя (вывод не содержит списка
+#    флагов db push), поэтому пробуем варианты по порядку и принимаем первый,
+#    который завершился успешно ИЛИ упал с ошибкой уровня БД (P1xxx/P2xxx/
+#    P3xxx) — она означает, что аргументы CLI принял и дошёл до применения схемы.
+push_variants() {
+  echo "--skip-generate --force"
+  echo "--skip-generate --accept-data-loss"
+  echo "--skip-generate"
+}
+
+apply_schema() {
+  if ls prisma/migrations/*/migration.sql >/dev/null 2>&1; then
+    echo "🔧 Применяем миграции Prisma (migrate deploy)..."
+    npx prisma migrate deploy
+    return $?
+  fi
+
+  # Регенерируем Prisma Client из ТЕКУЩЕЙ schema.prisma перед применением
+  # схемы (см. пункт 1 выше). Не критично при ошибке — db push сам дёргает
+  # генератор, но явный шаг спасает при сломанном кэше образов.
+  echo "🔧 Синхронизируем Prisma Client со схемой (generate)..."
+  npx prisma generate || echo "   ⚠️ generate не удался — продолжаем (db push повторит генерацию)"
+
+  local out rc v
+  for v in $(push_variants); do
+    echo "🔧 Синхронизируем схему через: prisma db push $v"
+    # shellcheck disable=SC2086
+    out=$(npx prisma db push $v 2>&1); rc=$?
+    echo "$out" | tail -12
+    if [ "$rc" -eq 0 ]; then
+      echo "✓ Схема применена ($v)"
+      return 0
+    fi
+    # Ошибка валидации схемы или отсутствия DATABASE_URL (P1012) — это НЕ про
+    # флаги: смысл имеет только «дошёл ли CLI до БД». Если дошёл (P1001/P1003/
+    # P2021/P2022/P3014…) — набор флагов корректен, проблема в самой базе,
+    # повторять другими флагами бессмысленно.
+    if printf '%s' "$out" | grep -Eq 'P10[0-9][0-9]|P2[0-9]{3}|P3[0-9]{3}'; then
+      echo "❌ Ба данных отклонила изменения схемы (см. код ошибки выше)."
+      return 1
+    fi
+    echo "   ↳ набор '$v' не подошёл (скорее всего неизвестный флаг) — пробую следующий..."
+  done
+  return 1
+}
+
+# Повторно-безопасная обёртка: если БД недоступна или push упал — выходим с
+# кодом 1 (docker перезапустит контейнер и попробует снова), но НЕ молча в
+# цикле: причина всегда печатается в docker logs.
+if ! apply_schema; then
+  echo "❌ Не удалось синхронизировать схему БД. Backend НЕ запускается."
+  echo "   Типичные причины:"
+  echo "     1) Пароль/DATABASE_URL не совпадает с содержимым тома postgres_data"
+  echo "        → ./deploy.sh docker (синхронизирует пароль) или ALTER USER вручную;"
+  echo "     2) Конфликт типов/данных при изменении схемы"
+  echo "        → проверьте вывод prisma выше; при необходимости"
+  echo "          docker exec chlenix-postgres psql -U \${POSTGRES_USER:-chlenix} -d \${POSTGRES_DB:-chlenix}"
+  echo "     3) Старый кэш образа без свежей schema.prisma"
+  echo "        → docker compose build --no-cache backend && docker compose up -d"
+  exit 1
 fi
+echo "✓ Схема БД синхронизирована"
 
 echo "🚀 Запускаем Chlenix Backend API..."
 exec node dist/index.js

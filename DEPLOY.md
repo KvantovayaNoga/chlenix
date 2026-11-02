@@ -469,6 +469,66 @@ chlenix/
 3. Проверьте `.env` файл
 4. Перезапустите сервисы: `docker compose restart`
 
+### 🔧 Проблемы с базой данных после обновления (`git pull`)
+
+Симптомы и причины, разобранные по логам реальных серверов.
+
+**1) Первый запрос через nginx отдаёт 503, следующие — 200.**
+```
+[error] connect() failed (111: Connection refused) while connecting to upstream,
+        request: "GET /api/health", upstream: "http://172.18.0.3:4000/api/health"
+```
+Это **нормально**: nginx поднимается за секунды, а контейнер backend в это время
+ещё выполняет `prisma generate` + синхронизацию схемы. Если через ~1–2 минуты
+`docker compose ps` показывает backend как `healthy`, а `/api/health` отвечает
+200 — ничего чинить не нужно.
+
+**2) Backend зациклен на рестартах (в логах повторяется один и тот же блок).**
+Смотрите `docker logs chlenix-backend --tail 50`. Возможные причины:
+
+- **Пароль БД не совпадает с паролем в томе.** Лог postgres содержит
+  `PostgreSQL Database directory appears to contain a database; Skipping
+  initialization` — это ключевой признак: образ применяет `POSTGRES_PASSWORD`
+  **только при первой инициализации пустого тома**, дальше том хранит старый
+  пароль, даже если вы поменяли его в `.env`. Лечится без потери данных:
+  ```bash
+  ./deploy.sh docker      # скрипт сам делает временную trust-аутентификацию
+                          # и ALTER USER на значение из .env
+  ```
+  Вручную (backend должен быть остановлен, вводится СТАРЫЙ пароль тома):
+  ```bash
+  docker exec -it chlenix-postgres psql -U chlenix -d postgres \
+    -c "ALTER USER chlenix WITH PASSWORD '<пароль из .env>';"
+  ```
+  Если данные не нужны — чистый старт:
+  ```bash
+  docker compose stop backend && docker volume rm chlenix_postgres_data && ./deploy.sh docker
+  ```
+
+- **Схема БД не применилась.** Начиная с Prisma 6.9 у `db push` появился
+  интерактивный вопрос о подтверждении изменений; в контейнере stdin не TTY,
+  поэтому он падает. Entrypoint подбирает нужный флаг автоматически
+  (`--force` там, где он есть, иначе `--accept-data-loss`).
+
+**3) Ошибки вида `Unknown argument 'serverRole'` / P2022 «column does not exist»
+при здоровой БД.**
+Значит контейнер API работает со **старым** Prisma Client или старым `dist.js`:
+образ пересобирали только для одного сервиса (`docker compose build frontend`),
+а backend остался от предыдущей сборки. Собирайте атомарно по всем сервисам:
+```bash
+docker compose down && docker compose up -d --build     # либо просто ./deploy.sh docker
+```
+Дополнительно entrypoint на каждом старте выполняет `prisma generate` из
+текущей `schema.prisma`, поэтому такой рассинхрон больше не переживает
+перезапуск контейнера.
+
+**4) Быстрая проверка состояния БД:**
+```bash
+docker exec chlenix-postgres psql -U chlenix -d chlenix -c "\dt"          # таблицы
+docker exec chlenix-postgres psql -U chlenix -d chlenix -c "\d \"Equipment\""  # колонки
+curl -s http://localhost/api/health
+```
+
 ## 📝 Лицензия
 
 MIT
