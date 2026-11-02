@@ -46,9 +46,9 @@ function Row({ icon: Icon, label, value }: { icon?: React.ElementType; label: st
 export function EquipmentCardModal({ equipmentId, onClose }: { equipmentId: string; onClose: () => void }) {
   const { getEquipmentById, branches, dataCenters, unassignEquipment, employees } = useDataStore();
   // МОЛ: в карточке оборудования доступна только связка — кнопка «Открепить».
-  // Редактирование карточки (canEdit) — строго admin.
+  // Редактирование карточки (canEdit) — admin + HR (EQUIPMENT_MANAGE_ROLES на бэкенде).
   const { canEdit, isAdmin, currentUser } = useAuthStore();
-  const canAssign = isAdmin() || currentUser?.role === 'materially_responsible';
+  const canAssign = isAdmin() || currentUser?.role === 'materially_responsible' || currentUser?.role === 'hr_specialist';
   const [editing, setEditing] = useState(false);
 
   // Держим актуальную версию объекта: после сохранения формы store обновится.

@@ -1,25 +1,26 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
-import { Shield, ShieldCheck, Eye, X, CheckCircle, XCircle, Edit, Trash2, Plus, Search, Filter, History, Save } from 'lucide-react';
+import { Shield, ShieldCheck, Eye, X, CheckCircle, XCircle, Edit, Trash2, Plus, Search, Filter, History, Save, UserCog, ServerCog } from 'lucide-react';
 import type { User, UserRole, HistoryEntry } from '../types';
+import { ROLE_LABELS } from '../types';
 import { api } from '../api/client';
 import { HistoryLog } from '../components/HistoryLog';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
 
-const roleLabels: Record<UserRole, string> = {
-  admin: 'Администратор',
-  materially_responsible: 'Мат. ответственное лицо',
-  viewer: 'Пользователь',
-};
+const roleLabels: Record<UserRole, string> = ROLE_LABELS;
 
 const roleIcons: Record<UserRole, React.ElementType> = {
   admin: ShieldCheck,
+  hr_specialist: UserCog,
+  sysadmin: ServerCog,
   materially_responsible: Shield,
   viewer: Eye,
 };
 
 const roleColors: Record<UserRole, string> = {
   admin: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
+  hr_specialist: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800',
+  sysadmin: 'bg-cyan-100 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300 dark:border-cyan-800',
   materially_responsible: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
   viewer: 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
 };
@@ -273,7 +274,7 @@ function UserModal({ user, onClose, onSave }: any) {
           <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ФИО *</label><input type="text" value={formData.fullName} onChange={(e) => setFormData(p => ({ ...p, fullName: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required /></div>
           <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email *</label><input type="email" value={formData.email} onChange={(e) => setFormData(p => ({ ...p, email: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required /></div>
           <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{user ? 'Новый пароль' : 'Пароль *'}</label><input type="password" value={formData.password} onChange={(e) => setFormData(p => ({ ...p, password: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required={!user} /></div>
-          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Роль</label><select value={formData.role} onChange={(e) => setFormData(p => ({ ...p, role: e.target.value as UserRole }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"><option value="admin">Администратор</option><option value="materially_responsible">Мат. ответственное лицо</option><option value="viewer">Пользователь</option></select></div>
+          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Роль</label><select value={formData.role} onChange={(e) => setFormData(p => ({ ...p, role: e.target.value as UserRole }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">{(Object.entries(roleLabels) as [UserRole, string][]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
           <div className="flex items-center gap-2"><input type="checkbox" id="isActive" checked={formData.isActive} onChange={(e) => setFormData(p => ({ ...p, isActive: e.target.checked }))} className="w-4 h-4 text-indigo-600 rounded" /><label htmlFor="isActive" className="text-sm text-gray-700 dark:text-gray-300">Активен</label></div>
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Отмена</button>

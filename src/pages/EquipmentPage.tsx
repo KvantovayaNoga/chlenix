@@ -32,7 +32,7 @@ const conditionLabels = {
 
 export function EquipmentPage() {
   const { equipment, employees, branches, addEquipment, updateEquipment, deleteEquipment } = useDataStore();
-  const { canEdit, isAdmin, users } = useAuthStore();
+  const { canManageEmployees, isAdmin, users } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterCondition, setFilterCondition] = useState('');
@@ -124,7 +124,7 @@ export function EquipmentPage() {
           <h1 className="text-3xl font-bold text-gray-700 dark:text-gray-200">Техника и имущество</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">Управление оборудованием и имуществом организации</p>
         </div>
-        {canEdit() && (
+        {canManageEmployees() && (
           <button
             onClick={() => setShowAddModal(true)}
             className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20"
@@ -215,7 +215,7 @@ export function EquipmentPage() {
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400">Сост.</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400">Закреплено за</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400">Обновлено</th>
-                {canEdit() && <th className="text-right px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400">Действия</th>}
+                {canManageEmployees() && <th className="text-right px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400">Действия</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
@@ -232,8 +232,8 @@ export function EquipmentPage() {
                 return (
                   <tr
                     key={eq.id}
-                    onClick={() => canEdit() && setEditingEquipment(eq)}
-                    className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${canEdit() ? 'cursor-pointer' : ''}`}
+                    onClick={() => canManageEmployees() && setEditingEquipment(eq)}
+                    className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${canManageEmployees() ? 'cursor-pointer' : ''}`}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -259,7 +259,7 @@ export function EquipmentPage() {
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={(e) => { e.stopPropagation(); setViewingHistory(eq); }} className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 p-1" title="История изменений"><History className="w-4 h-4" /></button>
-                        {canEdit() && (
+                        {canManageEmployees() && (
                           <button onClick={(e) => { e.stopPropagation(); setEditingEquipment(eq); }} className="text-gray-400 hover:text-indigo-600 p-1" title="Редактировать"><Edit className="w-4 h-4" /></button>
                         )}
                         {/* Удаление оборудования на бэкенде разрешено только admin */}

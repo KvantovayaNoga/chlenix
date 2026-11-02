@@ -16,7 +16,7 @@ export function fmtRuDate(iso?: string | null): string {
 
 export function EmployeesPage() {
   const { employees, addEmployee, updateEmployee, departments, positions, branches, error } = useDataStore();
-  const { canEdit } = useAuthStore();
+  const { canManageEmployees } = useAuthStore();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDepartment, setFilterDepartment] = useState('');
@@ -82,7 +82,7 @@ export function EmployeesPage() {
           <h1 className="text-3xl font-bold text-gray-700 dark:text-gray-200">Сотрудники</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">Полный список сотрудников организации ({employees.length})</p>
         </div>
-        {canEdit() && (
+        {canManageEmployees() && (
           <button onClick={() => setShowAddModal(true)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20">
             <Plus className="w-5 h-5" />Добавить сотрудника
           </button>
@@ -165,7 +165,7 @@ export function EmployeesPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {canEdit() && (
+                {canManageEmployees() && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setEditingEmployee(employee); }}
                     className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors"

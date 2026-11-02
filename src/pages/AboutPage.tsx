@@ -1,32 +1,36 @@
-import { Shield, ShieldCheck, Eye, Cpu, Database, Server, Users, Building2, ChevronDown } from 'lucide-react';
+import { Shield, ShieldCheck, Eye, Cpu, Database, Server, Users, Building2, ChevronDown, UserCog, ServerCog } from 'lucide-react';
 import { useState } from 'react';
 import type { UserRole } from '../types';
+import { ROLE_LABELS } from '../types';
 import { useDataStore } from '../store/dataStore';
 
 // Версия приложения: единый источник — package.json (подставляется Vite при сборке).
 const APP_VERSION: string =
   (import.meta as unknown as { env?: { VITE_APP_VERSION?: string } }).env?.VITE_APP_VERSION ?? '0.12';
 
-const roleLabels: Record<UserRole, string> = {
-  admin: 'Администратор',
-  materially_responsible: 'Материально ответственное лицо',
-  viewer: 'Пользователь',
-};
+const roleLabels: Record<UserRole, string> = ROLE_LABELS;
 
+// Описания прав строго соответствуют матрице requireRole()/canEditDirectory() на бэкенде.
 const roleDescriptions: Record<UserRole, string> = {
-  admin: 'Полный доступ ко всем функциям системы: просмотр, редактирование, управление пользователями, настройка справочников.',
-  materially_responsible: 'Доступ к просмотру и редактированию данных о сотрудниках, оборудовании, физических серверах и виртуальных машинах.',
+  admin: 'Полный доступ ко всем функциям системы: просмотр, редактирование, управление пользователями, настройка всех справочников (включая ЦОД), администрирование заявок на вступление в организацию.',
+  hr_specialist: 'Создание организаций, управление штатным расписанием (отделы, должности, филиалы; ЦОД — только просмотр) и списком сотрудников. Оборудование — только просмотр. Нет доступа к физическим серверам, виртуальным машинам, платформе виртуализации и управлению пользователями.',
+  sysadmin: 'Управление ЦОД, физическими серверами, виртуальными машинами и платформой виртуализации. Отделы, должности и филиалы — только просмотр. Нет права создавать организации и управлять сотрудниками.',
+  materially_responsible: 'Просмотр данных и работа со связками «сотрудник — оборудование»: закрепление и открепление оборудования за сотрудниками. Остальные разделы — без возможности редактирования.',
   viewer: 'Доступ только для просмотра информации. Не может вносить изменения в данные.',
 };
 
 const roleIcons: Record<UserRole, React.ElementType> = {
   admin: ShieldCheck,
+  hr_specialist: UserCog,
+  sysadmin: ServerCog,
   materially_responsible: Shield,
   viewer: Eye,
 };
 
 const roleColors: Record<UserRole, string> = {
   admin: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
+  hr_specialist: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800',
+  sysadmin: 'bg-cyan-100 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300 dark:border-cyan-800',
   materially_responsible: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
   viewer: 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
 };

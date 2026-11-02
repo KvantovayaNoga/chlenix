@@ -121,6 +121,8 @@ const EDITOR_ROLES = ALL_ROLES.filter((r) => r !== 'viewer');
 const ORG_CREATE_ROLES: string[] = ['admin', 'hr_specialist'];
 /** Полное управление сотрудниками (CRUD): admin + HR. */
 const EMPLOYEE_MANAGE_ROLES: string[] = ['admin', 'hr_specialist'];
+/** Создание/редактирование карточек оборудования: admin + HR (МОЛ — только связка assign/unassign). */
+const EQUIPMENT_MANAGE_ROLES: string[] = ['admin', 'hr_specialist'];
 /** Связка «сотрудник ↔ оборудование»: admin, HR, МОЛ. */
 const ASSIGN_ROLES: string[] = ['admin', 'hr_specialist', 'materially_responsible'];
 /** Серверные разделы (физические серверы / ВМ / платформы виртуализации): admin + системный администратор. */
@@ -1440,7 +1442,7 @@ app.get('/api/equipment/:id/history', authMiddleware, async (c) => {
   return c.json(history.map(publicHistory));
 });
 
-app.post('/api/equipment', authMiddleware, requireRole(['admin', 'hr_specialist']), async (c) => {
+app.post('/api/equipment', authMiddleware, requireRole(EQUIPMENT_MANAGE_ROLES), async (c) => {
   const body = await c.req.json().catch(() => null);
   // ClusterForm передаёт состав кластера служебным полем __members — извлекаем его
   // до валидации схемы (в equipmentSchema его нет).
@@ -1556,7 +1558,7 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'hr_specialist'
   return c.json(publicEquipmentBrief(item), 201);
 });
 
-app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'hr_specialist']), async (c) => {
+app.put('/api/equipment/:id', authMiddleware, requireRole(EQUIPMENT_MANAGE_ROLES), async (c) => {
   const { id } = c.req.param();
   const body = await c.req.json().catch(() => null);
   // ClusterForm передаёт состав кластера служебным полем __members — извлекаем до валидации

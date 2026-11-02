@@ -35,9 +35,9 @@ export function EmployeeDetailPage() {
   const { getEmployeeById, getEquipmentByEmployee, getVMsByResponsible, unassignEquipment, assignEquipment, getUnassignedEquipment, departments, positions, branches, updateEmployee } = useDataStore();
   // МОЛ: разрешена только связка «сотрудник ↔ оборудование» (assign/unassign —
   // бэкенд допускает materially_responsible на /equipment/:id/assign|unassign).
-  // Редактирование карточки сотрудника (canEdit) — строго admin.
+  // Редактирование карточки сотрудника (canEdit) — admin + HR (EMPLOYEE_MANAGE_ROLES на бэкенде).
   const { canEdit, isAdmin, currentUser, users } = useAuthStore();
-  const canAssign = isAdmin() || currentUser?.role === 'materially_responsible';
+  const canAssign = isAdmin() || currentUser?.role === 'materially_responsible' || currentUser?.role === 'hr_specialist';
   const [showAssignEquipmentModal, setShowAssignEquipmentModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   // Карточка оборудования: просмотр из «Закреплённое имущество» без перехода на вкладку оборудования

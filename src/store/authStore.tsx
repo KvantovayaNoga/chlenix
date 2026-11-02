@@ -274,7 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       switchOrganization,
       setCurrentUser,
       myOrganizations: () => currentUser?.accessibleOrganizations ?? [],
-      canCreateOrganization: () => currentUser?.role === 'admin',
+      canCreateOrganization: () => currentUser?.role === 'admin' || currentUser?.role === 'hr_specialist',
       getUserRole: () => currentUser?.role || null,
       // Бизнес-логика (решение от 2026-11): работа МОЛ — только связка
       // «сотрудник ↔ оборудование» (assign/unassign). Создание/редактирование
