@@ -23,7 +23,12 @@ import { X, Check, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
  *  - БАЗОВЫЙ масштаб — COVER (Math.max по сторонам): картинка сразу заполняет круг без
  *    полос-полей, как это делает `object-cover` в местах отображения аватара; поэтому
  *    «вид по умолчанию» = ожидаемый результат, а не уменьшенный снимок с серыми полями;
- *  - зум вокруг курсора, панорамирование с клампингом (круглое окно всегда над картинкой).
+ *  - зум вокруг курсора, панорамирование с клампингом (круглое окно всегда над картинкой);
+ *  - ДИАМЕТР вписанного круга = короткая сторона кадра (frameSize*baseScale/min(baseScale)),
+ *    а не frameSize: иначе у фото с соотношением сторон ≠ 1:1 круг касается длинных сторон,
+ *    и из-за клампинга «окно» нельзя подвести к краям короткой стороны — дальние части
+ *    кадра становятся недостижимыми. Теперь при любом соотношении сторон можно выбрать
+ *    любой край картинки (в т.ч. углы), а превью справа показывает ровно тот же круг.
  */
 
 interface AvatarCropperProps {
@@ -138,11 +143,21 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
   // БАЗОВЫЙ масштаб = COVER: картинка изначально заполняет круг целиком (как object-cover),
   // без полей-полос — то, что пользователь видит при открытии, и есть готовый аватар.
   const baseScale = natural ? Math.max(frameSize / natural.w, frameSize / natural.h) : 1;
+  // Диаметр вписанного круга (в CSS px сцены): короткая сторона кадра при базовом зуме.
+  // Если бы круг был всегда frameSize, у фото ≠1:1 он касался бы длинных сторон, и из-за
+  // клампинга нельзя было бы подвести окно к краям короткой стороны («не выбрать крайнюю
+  // часть картинки»). Круг по короткой стороне решает это при любом соотношении сторон.
+  const circleDiameter = natural ? Math.min(natural.w, natural.h) * baseScale : frameSize;
   const renderW = natural ? natural.w * baseScale * zoom : 0;
   const renderH = natural ? natural.h * baseScale * zoom : 0;
-  // Сдвиг ограничиваем так, чтобы круглое окно всегда было внутри картинки
-  const maxOffsetX = Math.max(0, (renderW - frameSize) / 2);
-  const maxOffsetY = Math.max(0, (renderH - frameSize) / 2);
+  const circleStageR = circleDiameter / 2;
+  const circleCenterX = frameSize / 2;
+  const circleCenterY = frameSize / 2;
+  // Сдвиг ограничиваем так, чтобы КРУГЛОЕ ОКНО целиком оставалось внутри картинки
+  // (а не его описывающий квадрат): иначе у фото ≠1:1 у окна «отнимается» половина
+  // разницы сторон и дальние края/углы кадра становятся недостижимыми.
+  const maxOffsetX = Math.max(0, (renderW - circleDiameter) / 2);
+  const maxOffsetY = Math.max(0, (renderH - circleDiameter) / 2);
 
   const clampPos = useCallback((x: number, y: number) => ({
     x: Math.min(maxOffsetX, Math.max(-maxOffsetX, x)),
@@ -160,7 +175,9 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
     [tx, ty, baseScale, zoom],
   );
 
-  // Зум вокруг точки (курсор/центр): точка изображения под курсором остаётся на месте
+  // Зум вокруг точки (курсор/центр): точка изображения под курсором остаётся на месте.
+  // Новый pos клампится clampPos — тот же инвариант, что и при перетаскивании: круг
+  // (диаметр = короткая сторона кадра) целиком остаётся над картинкой при любом зуме.
   const applyZoom = (nextZoomRaw: number, centerClientX?: number, centerClientY?: number) => {
     const nz = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoomRaw));
     if (!natural || !stageRef.current) { setZoom(nz); setPos(clampPos(pos.x, pos.y)); return; }
@@ -170,10 +187,12 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
     const px = (cx - tx) / (baseScale * zoom); // пиксель исходника под центром зума
     const py = (cy - ty) / (baseScale * zoom);
     const sn = baseScale * nz;
-    const txNew = cx - px * sn;
-    const tyNew = cy - py * sn;
+    const wantTx = cx - px * sn;
+    const wantTy = cy - py * sn;
+    const wantPosX = wantTx - (frameSize - natural.w * baseScale) / 2;
+    const wantPosY = wantTy - (frameSize - natural.h * baseScale) / 2;
     setZoom(nz);
-    setPos(clampPos(txNew - (frameSize - natural.w * baseScale) / 2, tyNew - (frameSize - natural.h * baseScale) / 2));
+    setPos(clampPos(wantPosX, wantPosY));
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -208,7 +227,7 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
     if (!source || !natural || !source.complete) return;
     // Проверка единства математики: центр изображения в natural-координатах -> сцена
     void toStage(natural.w / 2, natural.h / 2);
-    const k = OUTPUT_SIZE / frameSize; // CSS px -> px результата
+    const k = OUTPUT_SIZE / circleDiameter; // CSS px (диаметр круга) -> px результата
     const canvas = document.createElement('canvas');
     canvas.width = OUTPUT_SIZE;
     canvas.height = OUTPUT_SIZE;
@@ -223,7 +242,8 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
     ctx.clip();
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.setTransform(baseScale * zoom * k, 0, 0, baseScale * zoom * k, tx * k, ty * k);
+    // Центр круга на экране ((frameSize)/2) -> центр выхода; трансформация та же, что у <img>.
+    ctx.setTransform(baseScale * zoom * k, 0, 0, baseScale * zoom * k, (tx - circleCenterX) * k + OUTPUT_SIZE / 2, (ty - circleCenterY) * k + OUTPUT_SIZE / 2);
     ctx.drawImage(source, 0, 0, natural.w, natural.h);
     ctx.restore();
     onCrop(canvas.toDataURL('image/png'));
@@ -271,12 +291,23 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
                 }}
               />
             )}
-            {/* Круглое окно аватара: всё вне круга затемнено — это и есть граница выбора */}
-            <div
+            {/* Круглое окно аватара: всё вне круга затемнено — это и есть граница выбора.
+                SVG even-odd: внешний прямоугольник минус окружность радиуса circleStageR
+                с центром в середине кадра — прозрачно ровно внутри круга. */}
+            <svg
               className="absolute inset-0 pointer-events-none"
-              style={{ boxShadow: 'inset 0 0 0 2000px rgba(0,0,0,0.55)', borderRadius: '50%' }}
-            />
-            <div className="absolute inset-0 pointer-events-none rounded-full border-2 border-white/80" />
+              width={frameSize}
+              height={frameSize}
+              viewBox={`0 0 ${frameSize} ${frameSize}`}
+              aria-hidden
+            >
+              <path
+                fillRule="evenodd"
+                fill="rgba(0,0,0,0.55)"
+                d={`M0,0 H${frameSize} V${frameSize} H0 Z M${circleCenterX},${circleCenterY - circleStageR} a${circleStageR},${circleStageR} 0 1,0 0,${circleDiameter} a${circleStageR},${circleStageR} 0 1,0 0,-${circleDiameter} Z`}
+              />
+              <circle cx={circleCenterX} cy={circleCenterY} r={circleStageR} fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth={2} />
+            </svg>
           </div>
 
           {/* Правая колонка: управление + живое превью */}
@@ -318,18 +349,25 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">Превью аватара</p>
               <div className="flex items-center gap-3">
-                {/* Живое круглое превью: ТОЧКА-В-ТОЧЬ та же трансформация, что у большого окна */}
-                <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 shrink-0 relative">
+                {/* Живое круглое превью: ТОЧКА-В-ТОЧЬ тот же круг, что в большом окне.
+                    Контейнер — квадрат со стороной circleDiameter (в масштабе 96/frameSize),
+                    картинка внутри — та же трансформация tx/ty/zoom. */}
+                <div
+                  className="rounded-full overflow-hidden border-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 shrink-0 relative"
+                  style={{ width: circleDiameter * (96 / frameSize), height: circleDiameter * (96 / frameSize) }}
+                >
                   {natural && (
                     <img
                       src={normSrc || imageSrc}
                       alt="Preview"
                       draggable={false}
-                      className="absolute left-0 top-0 max-w-none"
+                      className="absolute max-w-none"
                       style={{
+                        left: 0,
+                        top: 0,
                         width: natural.w * baseScale * (96 / frameSize),
                         height: natural.h * baseScale * (96 / frameSize),
-                        transform: `translate(${tx * (96 / frameSize)}px, ${ty * (96 / frameSize)}px) scale(${zoom})`,
+                        transform: `translate(${(tx - circleCenterX) * (96 / frameSize)}px, ${(ty - circleCenterY) * (96 / frameSize)}px) scale(${zoom})`,
                         transformOrigin: 'left top',
                       }}
                     />
