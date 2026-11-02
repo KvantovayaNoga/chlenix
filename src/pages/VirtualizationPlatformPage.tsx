@@ -222,6 +222,25 @@ export function VirtualizationPlatformPage() {
     [equipment, virtualMachines],
   );
 
+  // «Хосты без кластера» — ОБСОБЛЕННАЯ категория верхнего уровня (на одном уровне с
+  // платформами-гипервизорами), а не подраздел гипервизора: они не входят ни в один
+  // кластер. Внутри категории нет подкатегорий — только плоский список хостов.
+  const standaloneHosts = useMemo(() => {
+    const byId = new Map<string, { host: Equipment; vmCount: number }>();
+    for (const p of platforms) {
+      for (const h of p.hostsWithoutCluster.hosts) {
+        if (!byId.has(h.id)) {
+          byId.set(h.id, { host: h, vmCount: 0 });
+        }
+      }
+      for (const v of p.hostsWithoutCluster.vms) {
+        const entry = v.hostServerId ? byId.get(v.hostServerId) : undefined;
+        if (entry) entry.vmCount += 1;
+      }
+    }
+    return Array.from(byId.values()).sort((a, b) => (a.host.name || '').localeCompare(b.host.name || ''));
+  }, [platforms]);
+
   const getBranchName = (id: string) => branches.find((b) => b.id === id)?.name || '—';
 
   /** Найти Equipment-сущность кластера по clusterId (для кнопки «Редактировать») */
@@ -352,32 +371,10 @@ export function VirtualizationPlatformPage() {
                 )}
               </CollapsibleSection>
 
-              {/* Хосты без кластера — выделенная группа НА ОДНОМ УРОВНЕ вложенности с кластерами:
-                  они НЕ являются частью ни одного кластера (отдельная секция платформы) */}
-              <CollapsibleSection
-                title={<>Хосты без кластера ({p.hostsWithoutCluster.hosts.length})</>}
-                icon={<Server className="w-4 h-4 text-red-500" />}
-                highlight
-              >
-                {p.hostsWithoutCluster.hosts.length === 0 ? (
-                  <p className="text-sm text-gray-400 dark:text-gray-500">Хосты вне кластеров не назначены</p>
-                ) : (
-                  <div className="space-y-2">
-                    {p.hostsWithoutCluster.hosts.map((h) => {
-                      const vmCount = p.hostsWithoutCluster.vms.filter((v) => v.hostServerId === h.id).length;
-                      return (
-                        <HostRow
-                          key={h.id}
-                          host={h}
-                          vmCount={vmCount}
-                          branchName={getBranchName(h.branchId)}
-                          onOpen={() => navigate(`/servers?host=${h.id}`)}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-              </CollapsibleSection>
+              {/* Хосты без кластера ВЫНЕСЕНЫ из подразделов гипервизора в отдельную
+                  обособленную категорию верхнего уровня (см. ниже, после платформ):
+                  они не являются частью ни одного кластера и не должны прятаться
+                  внутри конкретной платформы виртуализации. */}
 
               {/* СХД вне кластеров */}
               <CollapsibleSection
@@ -504,6 +501,37 @@ export function VirtualizationPlatformPage() {
             </div>
           </div>
         ))}
+
+        {/* ОБСОБЛЕННАЯ категория «Хосты без кластера» — на одном уровне вложенности
+            с платформами-гипервизорами (те же карточка, шапка и дизайн). Внутри —
+            только плоский список хостов: подкатегорий (кластеры / СХД / консоли) нет,
+            т.к. эти серверы не входят ни в один кластер. */}
+        {standaloneHosts.length > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border-2 border-red-200 dark:border-red-900/60 overflow-hidden">
+            <div className="px-6 py-4 bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-900/30 dark:to-orange-900/30 border-b border-red-100 dark:border-red-900/40 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2 truncate">
+                  <Server className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0" />
+                  Хосты без кластера ({standaloneHosts.length})
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Физические серверы виртуализации, не входящие ни в один кластер
+                </p>
+              </div>
+            </div>
+            <div className="p-6 space-y-2 bg-red-50/30 dark:bg-red-950/10">
+              {standaloneHosts.map(({ host, vmCount }) => (
+                <HostRow
+                  key={host.id}
+                  host={host}
+                  vmCount={vmCount}
+                  branchName={getBranchName(host.branchId)}
+                  onOpen={() => navigate(`/servers?host=${host.id}`)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Форма редактирования кластера — та же ClusterForm/ClusterEditModal, что и на странице физических серверов */}
