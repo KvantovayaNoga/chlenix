@@ -30,7 +30,7 @@ const conditionLabels = {
 };
 
 export function EquipmentPage() {
-  const { equipment, employees, addEquipment, updateEquipment, deleteEquipment } = useDataStore();
+  const { equipment, employees, branches, addEquipment, updateEquipment, deleteEquipment } = useDataStore();
   const { canEdit, users } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
@@ -108,6 +108,12 @@ export function EquipmentPage() {
     if (!userId) return '—';
     const user = users.find(u => u.id === userId);
     return user?.fullName || 'Система';
+  };
+
+  const getBranchName = (id: string | null | undefined) => {
+    if (!id) return '—';
+    const branch = branches.find((b) => b.id === id);
+    return branch?.name || '—';
   };
 
   return (
@@ -267,6 +273,7 @@ export function EquipmentPage() {
       {(showAddModal || editingEquipment) && (
         <EquipmentModal
           equipment={editingEquipment}
+          branches={branches}
           onClose={() => { setShowAddModal(false); setEditingEquipment(null); }}
           onSave={(data: any) => {
             if (editingEquipment) {
@@ -303,9 +310,10 @@ export function EquipmentPage() {
 }
 
 function EquipmentModal({
-  equipment, onClose, onSave,
+  equipment, branches, onClose, onSave,
 }: {
   equipment: Equipment | null;
+  branches: { id: string; name: string }[];
   onClose: () => void;
   onSave: (data: Partial<Equipment>) => void;
 }) {
@@ -381,7 +389,10 @@ function EquipmentModal({
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Филиал</label>
-              <input type="text" value={formData.branchId || ''} onChange={(e) => handleChange('branchId', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="ID филиала" />
+              <select value={formData.branchId || ''} onChange={(e) => handleChange('branchId', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                <option value="">Не указан</option>
+                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Этаж</label>
