@@ -2,8 +2,36 @@ import { useMemo } from 'react';
 import { useNavigate } from '../router';
 import { useDataStore } from '../store/dataStore';
 import { Layers, Server, HardDrive, TerminalSquare, Cpu, Monitor } from 'lucide-react';
-import { buildVirtualizationPlatforms, serverRoleLabels } from '../utils/virtualization';
+import {
+  buildVirtualizationPlatforms,
+  serverRoleLabels,
+  storageTypeLabels,
+  storageProtocolLabels,
+  formatGB,
+  usagePercent,
+} from '../utils/virtualization';
 import type { Equipment } from '../types';
+
+/** Полоса загрузки (использование/ёмкость); переподписка >100% подсвечется красным. */
+function UsageBar({ label, used, total, unit }: { label: string; used: number; total: number; unit: string }) {
+  const { pct, over } = usagePercent(used, total);
+  return (
+    <div className="flex-1 min-w-[120px]">
+      <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 mb-1">
+        <span>{label}</span>
+        <span className={over ? 'text-red-600 dark:text-red-400 font-semibold' : ''}>
+          {used}{unit} / {total || '—'}{unit} {total ? `(${pct}%)` : ''}
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+        <div
+          className={`h-full rounded-full ${over ? 'bg-red-500' : pct > 80 ? 'bg-amber-500' : 'bg-indigo-500'}`}
+          style={{ width: `${Math.min(pct, 100)}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 /**
  * Платформа виртуализации — агрегированный взгляд на инфраструктуру:
@@ -60,23 +88,46 @@ export function VirtualizationPlatformPage() {
               <div>
                 <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">{p.hypervisor}</h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  Хостов: {p.hosts.length} • ВМ: {p.virtualMachines.length} • СХД: {p.storage.length} • Консолей: {p.physicalConsoles.length + p.managementConsoles.length}
+                  {p.versions.length > 0 && <>Версии: {p.versions.join(', ')} • </>}
+                  Хостов: {p.hosts.length} • Кластеров: {p.clusters.filter((c) => c.name).length} • ВМ: {p.vms.length} • СХД: {p.storage.length} • Консолей: {p.physicalConsoles.length + p.managementConsoles.length}
                 </p>
+              </div>
+              {/* Сводные метрики платформы: CPU/RAM хостов против суммы ВМ, диски СХД против дисков ВМ */}
+              <div className="flex flex-wrap gap-4 items-start max-w-xl">
+                <UsageBar label="vCPU" used={p.cpuUsed} total={p.cpuTotal} unit="" />
+                <UsageBar label="RAM" used={p.ramUsed} total={p.ramTotal} unit=" ГБ" />
+                <UsageBar label="Диски" used={p.vmDiskTotalGB} total={p.diskTotalGB} unit=" " />
               </div>
             </div>
 
             <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Хосты */}
+              {/* Хосты, сгруппированные по кластерам внутри гипервизора */}
               <section>
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-2">
                   <Server className="w-4 h-4 text-red-500" /> Серверы-хосты
                 </h3>
-                {p.hosts.length === 0 ? (
+                {p.clusters.length === 0 ? (
                   <p className="text-sm text-gray-400 dark:text-gray-500">Хосты не назначены</p>
                 ) : (
-                  <div className="space-y-2">
-                    {p.hosts.map((h) => (
-                      <HostRow key={h.id} host={h} vmCount={p.virtualMachines.filter((v) => v.hostServerId === h.id).length} branchName={getBranchName(h.branchId)} onOpen={() => navigate(`/servers?host=${h.id}`)} />
+                  <div className="space-y-4">
+                    {p.clusters.map((c) => (
+                      <div key={c.name || '__none__'}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                            {c.name ? `Кластер: ${c.name}` : 'Без кластера'}
+                          </p>
+                          <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                            {c.hosts.length} хост(а) • {c.vms.length} ВМ
+                            {c.cpuTotal > 0 && ` • CPU ${c.cpuUsed}/${c.cpuTotal}`}
+                            {c.ramTotal > 0 && ` • RAM ${c.ramUsed}/${c.ramTotal} ГБ`}
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          {c.hosts.map((h) => (
+                            <HostRow key={h.id} host={h} vmCount={c.vms.filter((v) => v.hostServerId === h.id).length} branchName={getBranchName(h.branchId)} onOpen={() => navigate('/servers/physical')} />
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -96,7 +147,14 @@ export function VirtualizationPlatformPage() {
                         <div className="bg-cyan-50 dark:bg-cyan-900/30 p-2 rounded-lg"><HardDrive className="w-5 h-5 text-cyan-600 dark:text-cyan-400" /></div>
                         <div className="min-w-0 flex-1">
                           <p className="font-medium text-gray-800 dark:text-gray-100 truncate">{st.name}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">{st.brand} {st.model}{st.diskGB ? ` • ${st.diskGB} ГБ` : ''}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {st.brand} {st.model}
+                            {(st.storageType || st.storageProtocol || st.storageCapacityGB || st.diskGB) && ' • '}
+                            {st.storageType && storageTypeLabels[st.storageType]}
+                            {st.storageType && st.storageProtocol && ' / '}
+                            {st.storageProtocol && storageProtocolLabels[st.storageProtocol]}
+                            {(st.storageCapacityGB || st.diskGB) && ` • ${formatGB(st.storageCapacityGB || st.diskGB || 0)}`}
+                          </p>
                         </div>
                         <span className={`text-xs px-2 py-0.5 rounded-full ${serverRoleLabels.storage.color}`}>СХД</span>
                       </div>
@@ -141,17 +199,17 @@ export function VirtualizationPlatformPage() {
               {/* ВМ платформы */}
               <section>
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-2">
-                  <Cpu className="w-4 h-4 text-indigo-600" /> Виртуальные машины ({p.virtualMachines.length})
+                  <Cpu className="w-4 h-4 text-indigo-600" /> Виртуальные машины ({p.vms.length})
                 </h3>
-                {p.virtualMachines.length === 0 ? (
+                {p.vms.length === 0 ? (
                   <p className="text-sm text-gray-400 dark:text-gray-500">На этих хостах пока нет ВМ</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {p.virtualMachines.map((v) => (
+                    {p.vms.map((v) => (
                       <button
                         key={v.id}
                         onClick={() => navigate('/servers')}
-                        title={`${v.os || ''} • ${v.cpuCores} CPU / ${v.ramGB} ГБ RAM`}
+                        title={`${v.os || ''} • ${v.cpuCores} CPU / ${v.ramGB} ГБ RAM${v.provisionedOn ? ` • thin: ${v.provisionedOn}` : ''}`}
                         className="px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"
                       >
                         {v.name}

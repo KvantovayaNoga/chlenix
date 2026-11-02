@@ -47,7 +47,7 @@ async function loadOrientedBitmap(imageSrc: string): Promise<{ bmp: CanvasImageS
   const blob = await fetch(imageSrc).then((r) => r.blob());
   // 1) ImageCapture — надёжно применяет EXIF-поворот
   try {
-    if ('ImageCapture' in window && typeof MediaStreamTrackProcessor !== 'undefined') {
+    if ('ImageCapture' in window && typeof (globalThis as any).MediaStreamTrackProcessor !== 'undefined') {
       const imgEl = new Image();
       const url = URL.createObjectURL(blob);
       try {
