@@ -169,7 +169,11 @@ export function UsersPage() {
                   <tr key={user.id} onClick={() => canEditUser(user) && setEditingUser(user)} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 bg-indigo-100 dark:bg-indigo-900/50 rounded-full flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold text-sm">{user.fullName.charAt(0)}</div>
+                        <div className={`w-9 h-9 rounded-full overflow-hidden flex items-center justify-center font-bold text-sm ${user.avatar ? '' : 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300'}`}>
+                          {user.avatar
+                            ? <img src={user.avatar} alt="" className="w-full h-full object-cover" />
+                            : user.fullName.charAt(0)}
+                        </div>
                         <div>
                           <p className="font-medium text-gray-800 dark:text-gray-200">{user.fullName}</p>
                           {user.id === currentUser?.id && <span className="text-xs text-indigo-500 dark:text-indigo-400">(это вы)</span>}

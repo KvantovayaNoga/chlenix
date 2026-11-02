@@ -279,19 +279,9 @@ export function EquipmentPage() {
       </div>
 
       {(showAddModal || editingEquipment) && (
-        <EquipmentModal
+        <EquipmentModalWrapper
           equipment={editingEquipment}
-          branches={branches}
           onClose={() => { setShowAddModal(false); setEditingEquipment(null); }}
-          onSave={(data: any) => {
-            if (editingEquipment) {
-              updateEquipment(editingEquipment.id, data);
-            } else {
-              addEquipment(data);
-            }
-            setShowAddModal(false);
-            setEditingEquipment(null);
-          }}
         />
       )}
 
@@ -422,5 +412,26 @@ function EquipmentModal({
         </form>
       </div>
     </div>
+  );
+}
+
+// Публичная форма оборудования (используется и на странице, и из модалки
+// карточки оборудования): данные берёт из store, сохранение — через add/updateEquipment.
+export function EquipmentModalWrapper({ equipment, onClose }: { equipment: Equipment | null; onClose: () => void }) {
+  const { branches, addEquipment, updateEquipment } = useDataStore();
+  return (
+    <EquipmentModal
+      equipment={equipment}
+      branches={branches}
+      onClose={onClose}
+      onSave={(data: any) => {
+        if (equipment) {
+          updateEquipment(equipment.id, data);
+        } else {
+          addEquipment(data);
+        }
+        onClose();
+      }}
+    />
   );
 }

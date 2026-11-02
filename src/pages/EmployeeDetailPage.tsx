@@ -5,6 +5,7 @@ import { ArrowLeft, Mail, Phone, Building, MapPin, Calendar, Monitor, Server, Ar
 import type { EquipmentCategory } from '../types';
 import { useState } from 'react';
 import { AddEmployeeModal } from './EmployeesPage';
+import { EquipmentCardModal } from '../components/EquipmentCardModal';
 
 const categoryLabels: Record<EquipmentCategory, string> = {
   computer: 'Компьютер', monitor: 'Монитор', peripheral: 'Периферия', furniture: 'Мебель',
@@ -35,6 +36,8 @@ export function EmployeeDetailPage() {
   const { canEdit, users } = useAuthStore();
   const [showAssignEquipmentModal, setShowAssignEquipmentModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  // Карточка оборудования: просмотр из «Закреплённое имущество» без перехода на вкладку оборудования
+  const [viewingEquipmentId, setViewingEquipmentId] = useState<string | null>(null);
 
   const employee = getEmployeeById(id || '');
   const employeeEquipment = getEquipmentByEmployee(id || '');

@@ -179,33 +179,9 @@ export function PhysicalServersPage() {
       </div>
 
       {(showAddModal || editingServer) && (
-        <ServerModal
+        <ServerEditModal
           server={editingServer}
           onClose={() => { setShowAddModal(false); setEditingServer(null); }}
-          onSave={async (payload) => {
-            // п.5: не закрываем форму при ошибке сохранения/валидации
-            let base: Record<string, any>;
-            if (payload.__roleOnly) {
-              // Смена роли у существующего сервера — отправляем только роль и связанные поля,
-              // чтобы не затирать характеристики, которые форма не показывает (например CPU/RAM автономного сервера).
-              // Правила обнуления по ролям применяем к этому «ролевому» набору точечно.
-              const r: Record<string, any> = { ...payload };
-              delete r.__roleOnly;
-              if (r.serverRole === '') r.serverRole = null;
-              if (r.serverRole !== 'hypervisor_host') r.clusterName = null;
-              if (r.serverRole !== 'storage') { r.storageType = null; r.storageProtocol = null; r.storageCapacityGB = null; }
-              if (r.serverRole === 'storage' || r.serverRole === 'management_console') { r.cpuCores = null; r.ramGB = null; r.diskGB = null; }
-              if (r.serverRole === 'cluster') { r.cpuCores = null; r.ramGB = null; r.diskGB = null; r.parentClusterId = null; }
-              if (r.serverRole !== 'hypervisor_host' && r.serverRole !== 'storage') r.parentClusterId = null;
-              base = r;
-            } else {
-              base = normalizeServerPayload(payload, !editingServer);
-            }
-            const ok = editingServer ? await updateEquipment(editingServer.id, base as any) : await addEquipment(base as any);
-            if (ok !== false) { setShowAddModal(false); setEditingServer(null); }
-          }}
-          branches={branches}
-          allEquipment={equipment}
         />
       )}
 
@@ -213,26 +189,72 @@ export function PhysicalServersPage() {
           При редактировании в ней можно менять состав: добавлять новое железо
           (галочка) и убирать старое (снять галочку) — сервер применяет это атомарно. */}
       {(showClusterForm || editingCluster) && (
-        <ClusterForm
+        <ClusterEditModal
           cluster={editingCluster}
-          branches={branches}
-          dataCenters={dataCenters}
-          allEquipment={equipment}
           onClose={() => { setShowClusterForm(false); setEditingCluster(null); }}
-          onSave={async (payload, members) => {
-            // Состав кластера (members) сервер применяет атомарно в том же запросе:
-            // выбранные хосты/СХД/консоли получают parentClusterId, снятые — отвязываются.
-            // При ошибке сохранения форму не закрываем (п.5).
-            const ok = editingCluster
-              ? await updateEquipment(editingCluster.id, { ...payload, __members: members } as any)
-              : await addEquipment({ ...payload, __members: members } as any);
-            if (ok === false) return;
-            setShowClusterForm(false);
-            setEditingCluster(null);
-          }}
         />
       )}
     </div>
+  );
+}
+
+// Публичная форма кластера (используется и на странице, и из модалки карточки
+// оборудования). Данные берёт из store, сохранение — через add/updateEquipment.
+export function ClusterEditModal({ cluster, onClose }: { cluster: Equipment | null; onClose: () => void }) {
+  const { branches, dataCenters, equipment, addEquipment, updateEquipment } = useDataStore();
+  return (
+    <ClusterForm
+      cluster={cluster}
+      branches={branches}
+      dataCenters={dataCenters}
+      allEquipment={equipment}
+      onClose={onClose}
+      onSave={async (payload, members) => {
+        // Состав кластера (members) сервер применяет атомарно в том же запросе:
+        // выбранные хосты/СХД/консоли получают parentClusterId, снятые — отвязываются.
+        // При ошибке сохранения форму не закрываем (п.5).
+        const ok = cluster
+          ? await updateEquipment(cluster.id, { ...payload, __members: members } as any)
+          : await addEquipment({ ...payload, __members: members } as any);
+        if (ok === false) return;
+        onClose();
+      }}
+    />
+  );
+}
+
+// Публичная форма сервера виртуализации (используется и на странице, и из
+// модалки карточки оборудования): нормализует payload и сохраняет через store.
+export function ServerEditModal({ server, onClose }: { server: Equipment | null; onClose: () => void }) {
+  const { branches, equipment, addEquipment, updateEquipment } = useDataStore();
+  return (
+    <ServerModal
+      server={server}
+      branches={branches}
+      allEquipment={equipment}
+      onClose={onClose}
+      onSave={async (payload: any) => {
+        // п.5: не закрываем форму при ошибке сохранения/валидации
+        let base: Record<string, any>;
+        if (payload.__roleOnly) {
+          // Смена роли у существующего сервера — отправляем только роль и связанные поля,
+          // чтобы не затирать характеристики, которые форма не показывает (например CPU/RAM автономного сервера).
+          const r: Record<string, any> = { ...payload };
+          delete r.__roleOnly;
+          if (r.serverRole === '') r.serverRole = null;
+          if (r.serverRole !== 'hypervisor_host') r.clusterName = null;
+          if (r.serverRole !== 'storage') { r.storageType = null; r.storageProtocol = null; r.storageCapacityGB = null; }
+          if (r.serverRole === 'storage' || r.serverRole === 'management_console') { r.cpuCores = null; r.ramGB = null; r.diskGB = null; }
+          if (r.serverRole === 'cluster') { r.cpuCores = null; r.ramGB = null; r.diskGB = null; r.parentClusterId = null; }
+          if (r.serverRole !== 'hypervisor_host' && r.serverRole !== 'storage') r.parentClusterId = null;
+          base = r;
+        } else {
+          base = normalizeServerPayload(payload, !server);
+        }
+        const ok = server ? await updateEquipment(server.id, base as any) : await addEquipment(base as any);
+        if (ok !== false) onClose();
+      }}
+    />
   );
 }
 
