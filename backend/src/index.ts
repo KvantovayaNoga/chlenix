@@ -1386,8 +1386,9 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
     if (!data.inventoryNumber?.trim()) return c.json({ error: 'Укажите инвентарный номер' }, 400);
   }
 
-  // Место размещения: филиал ИЛИ ЦОД. Кластер может размещаться в ЦОД
-  // (арендованные/облачные мощности); остальная техника — только в филиале.
+  // Место размещения: филиал ИЛИ ЦОД. В ЦОД (арендованные/облачные мощности)
+  // может размещаться любая инфраструктурная техника: и кластеры, и физические
+  // серверы (хосты, СХД, консоли управления), поэтому роль здесь не ограничиваем.
   let branchId: string | null = null;
   let dataCenterId: string | null = null;
   let locationType: string | null = null;
@@ -1395,7 +1396,6 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
   const hasDC = !!data.dataCenterId?.trim();
   if (hasBranch && hasDC) return c.json({ error: 'Выберите что-то одно: филиал или ЦОД' }, 400);
   if (hasDC) {
-    if (data.serverRole !== CLUSTER_ROLE) return c.json({ error: 'Размещение в ЦОД доступно только для кластеров виртуализации' }, 400);
     dataCenterId = await resolveRef('dataCenter', data.dataCenterId!);
     if (!dataCenterId) return c.json({ error: 'ЦОД выбран некорректно' }, 400);
     locationType = 'data_center';
@@ -1511,10 +1511,8 @@ app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'materially_
       nextDataCenterId = rawDc === null ? null : await resolveRef('dataCenter', rawDc, undefined) ?? old.dataCenterId;
     }
     if (nextBranchId && nextDataCenterId) return c.json({ error: 'Выберите что-то одно: филиал или ЦОД' }, 400);
-    const isClusterAfter = newData.serverRole === CLUSTER_ROLE || (newData.serverRole === undefined && old.serverRole === CLUSTER_ROLE);
-    if (nextDataCenterId && !isClusterAfter) {
-      return c.json({ error: 'Размещение в ЦОД доступно только для кластеров виртуализации' }, 400);
-    }
+    // Размещение в ЦОД разрешено любой инфраструктурной технике (кластерам и
+    // физическим серверам на арендованных/облачных мощностях) — ограничение по роли снято.
     if ('branchId' in newData) newData.branchId = nextBranchId ?? null;
     if ('dataCenterId' in newData) newData.dataCenterId = nextDataCenterId ?? null;
     newData.locationType = newData.dataCenterId ? 'data_center' : newData.branchId ? 'branch' : null;

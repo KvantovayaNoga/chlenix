@@ -179,6 +179,9 @@ export interface PlatformCluster {
 
 export interface PlatformInfo {
   hypervisor: string;
+  /** true — безымянная псевдо-платформа «Гипервизор не указан»: её шапка не
+   *  создаёт новый гипервизор, а только приют для СХД/консолей без платформы. */
+  unnamed?: boolean;
   /** Версии гипервизора, встречающиеся на хостах (для заголовка платформы) */
   versions: string[];
   clusters: PlatformCluster[];
@@ -216,25 +219,41 @@ export function buildVirtualizationPlatforms(
   const physicalConsoles = equipment.filter((e) => e.serverRole === 'management_console');
   const managementConsoles = virtualMachines.filter((v) => v.serverRole === 'management_console');
 
-  // Группируем хосты по гипервизору; если имя не указано — «Гипервизор не указан»
+  // Группируем хосты по гипервизору. Если поле «Гипервизор / платформа» пустое —
+  // хост НЕ порождает новый гипервизор без имени: он попадает в общую категорию
+  // «Хосты без кластера» (standaloneHosts на странице) и не создаёт платформу.
   const groups = new Map<string, Equipment[]>();
   for (const h of hosts) {
-    const key = (h.hypervisorName || '').trim() || 'Гипервизор не указан';
+    const key = (h.hypervisorName || '').trim();
+    if (!key) continue;
     groups.set(key, [...(groups.get(key) || []), h]);
   }
   // Кластеры тоже привязываются к гипервизору — добавляем их группы,
-  // чтобы сущность-кластер была видна на платформе даже без хостов
+  // чтобы сущность-кластер была видна на платформе даже без хостов.
+  // Кластер без имени гипервизора — тоже отдельного гипервизора не создаёт.
   for (const cl of clusterEntities) {
-    const key = (cl.hypervisorName || '').trim() || 'Гипервизор не указан';
+    const key = (cl.hypervisorName || '').trim();
+    if (!key) continue;
     if (!groups.has(key)) groups.set(key, []);
   }
 
-  // Если хостов нет, но есть СХД/консоли — показываем одну сводную «платформу»
+  // Если реальных гипервизоров нет, но есть СХД/консоли — показываем одну сводную
+  // безымянную псевдо-платформу (она не является «новым гипервизором», unnamed).
+  let pseudoPlatformNeeded = false;
   if (groups.size === 0 && (storage.length || physicalConsoles.length || managementConsoles.length)) {
     groups.set('Гипервизор не указан', []);
+    pseudoPlatformNeeded = true;
   }
 
   const platforms: PlatformInfo[] = [];
+  // Хосты без имени гипервизора («Гипервизор не указан» больше не создаётся) —
+  // собираются в отдельный плоский список: они попадают в категорию
+  // «Хосты без кластера», при этом ВМ на них продолжают учитываться.
+  const hostsNoHypervisor = hosts.filter((h) => !(h.hypervisorName || '').trim());
+  const vmsOnHostsNoHypervisor = virtualMachines.filter(
+    (v) => v.hostServerId && hostsNoHypervisor.some((h) => h.id === v.hostServerId),
+  );
+
   for (const [hypervisor, hostList] of groups) {
     const hostIds = new Set(hostList.map((h) => h.id));
     const vms = virtualMachines.filter((v) => v.hostServerId && hostIds.has(v.hostServerId));
@@ -300,6 +319,7 @@ export function buildVirtualizationPlatforms(
 
     platforms.push({
       hypervisor,
+      unnamed: pseudoPlatformNeeded,
       versions,
       clusters: namedClusters,
       hostsWithoutCluster,
@@ -317,6 +337,28 @@ export function buildVirtualizationPlatforms(
     });
   }
   return platforms.sort((a, b) => a.hypervisor.localeCompare(b.hypervisor));
+}
+
+/**
+ * Хосты без кластера — ОБСОБЛЕННАЯ категория верхнего уровня страницы
+ * «Платформа виртуализации». Сюда попадают ВСЕ хосты гипервизора, которые не
+ * входят ни в один кластер: и с заполненным полем «Гипервизор / платформа», и с
+ * пустым (пустое поле НЕ создаёт новый гипервизор без имени). ВМ считаются по
+ * фактическому hostServerId, независимо от гипервизора хоста.
+ */
+export function buildHostsWithoutCluster(
+  equipment: Equipment[],
+  virtualMachines: VirtualMachine[],
+): { host: Equipment; vmCount: number }[] {
+  const hosts = equipment.filter((e) => e.serverRole === 'hypervisor_host');
+  const result: { host: Equipment; vmCount: number }[] = [];
+  for (const h of hosts) {
+    if ((h.parentClusterId || '').trim()) continue; // входит в кластер-сущность
+    if ((h.clusterName || '').trim()) continue;      // входит в именованный кластер (легаси)
+    const vmCount = virtualMachines.filter((v) => v.hostServerId === h.id).length;
+    result.push({ host: h, vmCount });
+  }
+  return result.sort((a, b) => (a.host.name || '').localeCompare(b.host.name || ''));
 }
 
 /** Форматирование объёма: ГБ -> «ТБ» при >= 1024 ГБ. */

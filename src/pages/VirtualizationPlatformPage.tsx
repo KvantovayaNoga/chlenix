@@ -7,6 +7,7 @@ import { EquipmentCardModal } from '../components/EquipmentCardModal';
 import { ClusterEditModal } from './PhysicalServersPage';
 import {
   buildVirtualizationPlatforms,
+  buildHostsWithoutCluster,
   serverRoleLabels,
   storageTypeLabels,
   storageProtocolLabels,
@@ -207,7 +208,7 @@ function ClusterBlock({
  * Всё наполнение гипервизора спрятано под кат — пользователь раскрывает сам.
  */
 export function VirtualizationPlatformPage() {
-  const { equipment, virtualMachines, branches } = useDataStore();
+  const { equipment, virtualMachines, branches, dataCenters } = useDataStore();
   const navigate = useNavigate();
 
   // Редактирование кластера из шапки платформы — ровно та же форма ClusterForm,
@@ -224,30 +225,27 @@ export function VirtualizationPlatformPage() {
 
   // «Хосты без кластера» — ОБСОБЛЕННАЯ категория верхнего уровня (на одном уровне с
   // платформами-гипервизорами), а не подраздел гипервизора: они не входят ни в один
-  // кластер. Внутри категории нет подкатегорий — только плоский список хостов.
-  const standaloneHosts = useMemo(() => {
-    const byId = new Map<string, { host: Equipment; vmCount: number }>();
-    for (const p of platforms) {
-      for (const h of p.hostsWithoutCluster.hosts) {
-        if (!byId.has(h.id)) {
-          byId.set(h.id, { host: h, vmCount: 0 });
-        }
-      }
-      for (const v of p.hostsWithoutCluster.vms) {
-        const entry = v.hostServerId ? byId.get(v.hostServerId) : undefined;
-        if (entry) entry.vmCount += 1;
-      }
-    }
-    return Array.from(byId.values()).sort((a, b) => (a.host.name || '').localeCompare(b.host.name || ''));
-  }, [platforms]);
+  // кластер. Сюда попадают и хосты с пустым полем «Гипервизор / платформа» — пустое
+  // поле НЕ создаёт новый гипервизор без имени. Внутри категории нет подкатегорий —
+  // только плоский список хостов (buildHostsWithoutCluster).
+  const standaloneHosts = useMemo(
+    () => buildHostsWithoutCluster(equipment, virtualMachines),
+    [equipment, virtualMachines],
+  );
 
   const getBranchName = (id: string) => branches.find((b) => b.id === id)?.name || '—';
+
+  /** Место размещения сервера: филиал или ЦОД (для списка «Хосты без кластера») */
+  const getLocationName = (eq: { branchId?: string | null; dataCenterId?: string | null }) => {
+    if (eq.dataCenterId) return `ЦОД: ${dataCenters.find((d) => d.id === eq.dataCenterId)?.name || '—'}`;
+    return getBranchName(eq.branchId || '');
+  };
 
   /** Найти Equipment-сущность кластера по clusterId (для кнопки «Редактировать») */
   const getClusterEntity = (clusterId?: string) =>
     clusterId ? equipment.find((eq) => eq.id === clusterId && eq.serverRole === 'cluster') || null : null;
 
-  if (platforms.length === 0) {
+  if (platforms.length === 0 && standaloneHosts.length === 0) {
     return (
       <div>
         <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100 mb-2">Платформа виртуализации</h1>
@@ -285,6 +283,14 @@ export function VirtualizationPlatformPage() {
               {/* Левая часть шапки: название и сводка платформы */}
               <div className="min-w-0">
                 <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100 truncate">{p.hypervisor}</h2>
+                {/* Псевдо-платформа «Гипервизор не указан» — это НЕ новый гипервизор:
+                    здесь живут только СХД/консоли без платформы; хосты без имени
+                    гипервизора показываются в категории «Хосты без кластера». */}
+                {p.unnamed && (
+                  <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">
+                    Сводная группа для оборудования без указанной платформы виртуализации (это не отдельный гипервизор)
+                  </p>
+                )}
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   {p.versions.length > 0 && <>Версии: {p.versions.join(', ')} • </>}
                   Хостов: {p.hosts.length} • Кластеров: {p.clusters.length} • ВМ: {p.vms.length} • СХД: {p.storage.length} • Консолей: {p.physicalConsoles.length + p.managementConsoles.length}
