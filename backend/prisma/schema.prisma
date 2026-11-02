@@ -43,8 +43,42 @@ model User {
   networkInterfaces NetworkInterface[] @relation("NIUpdater")
   services          Service[]          @relation("ServiceUpdater")
   auditLogs         AuditLog[]
+  joinRequests      JoinRequest[]      @relation("JoinRequestApplicant")
+  approvedRequests  JoinRequest[]      @relation("JoinRequestApprover")
 
   @@map("users")
+}
+
+// ============================================================
+// Заявки на вступление в организацию (раздел «Администрирование»)
+// Создаются при регистрации с выбором «Присоединиться к существующей
+// организации». Администратор системы одобряет заявку, назначая роль;
+// после одобрения пользователь привязывается к организации.
+// ============================================================
+model JoinRequest {
+  id             String            @id @default(uuid())
+  applicantId    String            @map("applicant_id")
+  organizationId String            @map("organization_id")
+  status         JoinRequestStatus @default(pending)
+  // Роль, которую администратор системы назначил при одобрении
+  assignedRole   Role?             @map("assigned_role")
+  approverId     String?           @map("approver_id")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  applicant    User         @relation("JoinRequestApplicant", fields: [applicantId], references: [id], onDelete: Cascade)
+  approver     User?        @relation("JoinRequestApprover", fields: [approverId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([applicantId])
+  @@map("join_requests")
+}
+
+enum JoinRequestStatus {
+  pending
+  approved
+  rejected
 }
 
 enum Role {
@@ -122,7 +156,7 @@ model DataCenter {
   updatedAt      DateTime @updatedAt @map("updated_at")
   updatedById    String?  @map("updated_by")
 
-  updatedBy User? @relation("DataCenterUpdater", fields: [updatedById], references: [id])
+  updatedBy User?       @relation("DataCenterUpdater", fields: [updatedById], references: [id])
   // ЦОД может быть местом размещения оборудования (кластеры на арендованных/облачных мощностях)
   equipment Equipment[]
 
@@ -239,10 +273,10 @@ model Equipment {
   dataCenter         DataCenter?   @relation(fields: [dataCenterId], references: [id])
   updatedBy          User?         @relation("EquipmentUpdater", fields: [updatedById], references: [id])
 
-  hostForVMs   VirtualMachine[]      @relation("HostServer")
+  hostForVMs  VirtualMachine[]      @relation("HostServer")
   // ВМ кластера вычисляются через состав кластера (members.parentClusterId),
   // отдельная связь VmCluster удалена как дублирующая и противоречащая логике
-  assignments  EquipmentAssignment[]
+  assignments EquipmentAssignment[]
 
   // Кластерные связи: кластер-сервер аккумулирует внутри себя хосты и СХД.
   parentCluster  Equipment?  @relation("EquipmentCluster", fields: [parentClusterId], references: [id], onDelete: SetNull)
@@ -484,6 +518,7 @@ model Organization {
   updatedById          String?  @map("updated_by")
 
   users           User[]
+  joinRequests    JoinRequest[]
   employees       Employee[]
   equipment       Equipment[]
   virtualMachines VirtualMachine[]

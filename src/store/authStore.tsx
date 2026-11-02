@@ -20,7 +20,7 @@ interface AuthState {
 
   bootstrap: () => Promise<void>;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  register: (email: string, password: string, fullName: string) => Promise<{ success: boolean; error?: string }>;
+  register: (email: string, password: string, fullName: string, joinOrganizationId?: string | null) => Promise<{ success: boolean; error?: string; pendingJoin?: boolean }>;
   logout: () => void;
   refreshUsers: () => Promise<void>;
   addUser: (data: { email: string; password: string; fullName: string; role: UserRole; isActive?: boolean; organizationId?: string | null }) => Promise<{ success: boolean; error?: string }>;

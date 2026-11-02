@@ -371,6 +371,9 @@ const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   fullName: z.string().min(2),
+  // Опционально: заявка на вступление в существующую организацию
+  // (чекбокс «Присоединиться к существующей организации» на форме регистрации).
+  joinOrganizationId: z.string().uuid().optional().nullable(),
 });
 
 function publicUser(u: any) {
@@ -441,7 +444,7 @@ app.post('/api/auth/register', async (c) => {
     return c.json({ error: 'Некорректные данные' }, 400);
   }
 
-  const { email, password, fullName } = parsed.data;
+  const { email, password, fullName, joinOrganizationId } = parsed.data;
 
   const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
@@ -452,18 +455,44 @@ app.post('/api/auth/register', async (c) => {
   const userCount = await prisma.user.count();
   const role = userCount === 0 ? 'admin' : 'viewer';
 
+  // Заявка на вступление: проверяем, что организация существует.
+  let joinOrg: { id: string; shortName: string | null; name: string } | null = null;
+  if (joinOrganizationId) {
+    joinOrg = await prisma.organization.findUnique({
+      where: { id: joinOrganizationId },
+      select: { id: true, shortName: true, name: true },
+    });
+    if (!joinOrg) {
+      return c.json({ error: 'Выбранная организация не найдена' }, 400);
+    }
+  }
+
   const passwordHash = await bcrypt.hash(password, 12);
 
   const user = await prisma.user.create({
     data: { email, password: passwordHash, fullName, role },
   });
 
+  if (joinOrg) {
+    await prisma.joinRequest.create({
+      data: { applicantId: user.id, organizationId: joinOrg.id },
+    });
+  }
+
   await createHistoryEntry('user', user.id, fullName);
   await writeAudit({ userId: user.id, fullName }, 'create', 'user', user.id, fullName, 'Зарегистрирован новый пользователь');
 
   const token = await issueToken(user);
 
-  return c.json({ token, user: publicUser(user) });
+  return c.json({
+    token,
+    user: publicUser(user),
+    // Флаг для клиента: учётная запись создана, но доступ к организации
+    // появится только после одобрения заявки администратором системы.
+    joinRequest: joinOrg
+      ? { status: 'pending', organization: joinOrg.shortName || joinOrg.name }
+      : null,
+  });
 });
 
 app.get('/api/auth/me', authMiddleware, async (c) => {
@@ -771,6 +800,19 @@ function publicOrganization(o: any) {
 app.get('/api/organizations', authMiddleware, async (c) => {
   const organizations = await prisma.organization.findMany({ orderBy: { createdAt: 'asc' } });
   return c.json(organizations.map(publicOrganization));
+});
+
+// Публичный краткий список организаций — используется ТОЛЬКО на форме
+// регистрации для выбора «Присоединиться к существующей организации».
+// Отдаём исключительно id + краткое наименование: реквизиты (ИНН, адрес и
+// т.п.) не раскрываются неаутентифицированному посетителю. Полные данные —
+// через GET /api/organizations (authMiddleware).
+app.get('/api/public/organizations', async (c) => {
+  const orgs = await prisma.organization.findMany({
+    orderBy: { name: 'asc' },
+    select: { id: true, shortName: true, name: true },
+  });
+  return c.json(orgs.map((o) => ({ id: o.id, shortName: o.shortName || o.name })));
 });
 
 app.get('/api/organizations/:id', authMiddleware, async (c) => {
@@ -2165,6 +2207,110 @@ for (const cfg of directoryConfigs) {
     return c.json({ success: true });
   });
 }
+
+// ============================================================
+// Администрирование системы: заявки на вступление в организации
+// ============================================================
+// Жёсткое соответствие UI↔бэкенду: все три эндпоинта доступны только
+// администратору системы (requireRole(['admin'])); в интерфейсе раздел
+// «Администрирование» скрыт для остальных ролей.
+const JOIN_ROLE_LABELS: Record<string, string> = {
+  admin: 'Администратор',
+  materially_responsible: 'Мат. ответственное лицо',
+  viewer: 'Пользователь',
+};
+
+function publicJoinRequest(r: any) {
+  return {
+    id: r.id,
+    status: r.status as 'pending' | 'approved' | 'rejected',
+    assignedRole: r.assignedRole ?? null,
+    createdAt: isoDate(r.createdAt),
+    updatedAt: isoDate(r.updatedAt),
+    applicant: { id: r.applicant.id, fullName: r.applicant.fullName, email: r.applicant.email },
+    organization: { id: r.organization.id, name: r.organization.name, shortName: r.organization.shortName },
+    approver: r.approver ? { id: r.approver.id, fullName: r.approver.fullName } : null,
+  };
+}
+
+const joinRequestInclude = {
+  applicant: { select: { id: true, fullName: true, email: true } },
+  organization: { select: { id: true, name: true, shortName: true } },
+  approver: { select: { id: true, fullName: true } },
+} as const;
+
+app.get('/api/join-requests', authMiddleware, requireRole(['admin']), async (c) => {
+  const status = c.req.query('status'); // pending | approved | rejected (опционально)
+  const where = ['pending', 'approved', 'rejected'].includes(status ?? '') ? { status: status as any } : {};
+  const requests = await prisma.joinRequest.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    include: joinRequestInclude,
+  });
+  return c.json(requests.map(publicJoinRequest));
+});
+
+// Одобрение заявки: пользователь сразу привязывается к организации,
+// роль выдаёт администратор системы (по умолчанию — «Пользователь»).
+app.post('/api/join-requests/:id/approve', authMiddleware, requireRole(['admin']), async (c) => {
+  const me = c.get('user');
+  const parsed = z
+    .object({ role: z.enum(['admin', 'materially_responsible', 'viewer']).optional() })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
+  const newRole = parsed.data.role ?? 'viewer';
+
+  const request = await prisma.joinRequest.findUnique({
+    where: { id: c.req.param('id') },
+    include: joinRequestInclude,
+  });
+  if (!request) return c.json({ error: 'Заявка не найдена' }, 404);
+  if (request.status !== 'pending') return c.json({ error: 'Заявка уже обработана' }, 409);
+
+  const [updated] = await prisma.$transaction([
+    prisma.user.update({
+      where: { id: request.applicantId },
+      data: { organizationId: request.organizationId, role: newRole },
+    }),
+    prisma.joinRequest.update({
+      where: { id: request.id },
+      data: { status: 'approved', assignedRole: newRole, approverId: me.userId },
+      include: joinRequestInclude,
+    }),
+  ]);
+
+  await createHistoryEntry('user', updated.id, me.fullName, 'updated', 'вступление в организацию');
+  await writeAudit(
+    me, 'update', 'join_request', request.id, request.applicant.fullName,
+    `Заявка одобрена: ${request.applicant.fullName} → организация «${request.organization.shortName || request.organization.name}», роль «${JOIN_ROLE_LABELS[newRole]}»`,
+    c.req.header('x-forwarded-for'),
+  );
+  return c.json(publicJoinRequest(updated));
+});
+
+// Отклонение заявки: пользователь остаётся без организации.
+app.post('/api/join-requests/:id/reject', authMiddleware, requireRole(['admin']), async (c) => {
+  const me = c.get('user');
+  const request = await prisma.joinRequest.findUnique({
+    where: { id: c.req.param('id') },
+    include: joinRequestInclude,
+  });
+  if (!request) return c.json({ error: 'Заявка не найдена' }, 404);
+  if (request.status !== 'pending') return c.json({ error: 'Заявка уже обработана' }, 409);
+
+  const updated = await prisma.joinRequest.update({
+    where: { id: request.id },
+    data: { status: 'rejected', approverId: me.userId },
+    include: joinRequestInclude,
+  });
+
+  await writeAudit(
+    me, 'update', 'join_request', request.id, request.applicant.fullName,
+    `Заявка отклонена: ${request.applicant.fullName} → организация «${request.organization.shortName || request.organization.name}»`,
+    c.req.header('x-forwarded-for'),
+  );
+  return c.json(publicJoinRequest(updated));
+});
 
 // ============================================================
 // Audit Log
