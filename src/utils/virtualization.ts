@@ -1,4 +1,80 @@
 // ============================================================
+// Утилиты для работы с числами и единицами измерения (косяки 9, 10)
+// ============================================================
+
+/** Единицы измерения объёма дисков. В БД всё хранится в ГБ. */
+export type StorageUnit = 'KB' | 'MB' | 'GB' | 'TB' | 'PB';
+
+export const storageUnitLabels: Record<StorageUnit, string> = {
+  KB: 'КБ',
+  MB: 'МБ',
+  GB: 'ГБ',
+  TB: 'ТБ',
+  PB: 'ПБ',
+};
+
+const UNIT_TO_GB: Record<StorageUnit, number> = {
+  KB: 1 / 1024 ** 3,
+  MB: 1 / 1024 ** 2,
+  GB: 1,
+  TB: 1024,
+  PB: 1024 ** 2,
+};
+
+/** Перевод значения из выбранной единицы в ГБ (для хранения в БД). */
+export function toGB(value: number, unit: StorageUnit): number {
+  return value * UNIT_TO_GB[unit];
+}
+
+/** Обратный перевод: ГБ -> значение в указанной единице. */
+export function fromGB(gb: number, unit: StorageUnit): number {
+  return gb / UNIT_TO_GB[unit];
+}
+
+/** Подбирает «удобную» единицу для отображения (>=1 и <1024). */
+export function autoUnit(gb: number): StorageUnit {
+  if (!gb || gb <= 0) return 'GB';
+  if (gb >= 1024 ** 2) return 'PB';
+  if (gb >= 1024) return 'TB';
+  if (gb < 1) return 'MB';
+  return 'GB';
+}
+
+/** Форматирование дробного числа по-русски: запятая как разделитель. */
+export function formatDecimal(value: number | null | undefined): string {
+  if (value === null || value === undefined || !isFinite(value)) return '';
+  // убираем «хвосты» от плавающей точки (Float в Postgres)
+  const rounded = Math.round(value * 1e6) / 1e6;
+  return String(rounded).replace('.', ',');
+}
+
+/** Парсит ввод пользователя: только цифры и одна запятая. Точка НЕ допускается. */
+export function parseDecimalInput(raw: string): number | null {
+  const s = raw.trim().replace(',', '.');
+  if (s === '') return null;
+  const n = Number(s);
+  return isFinite(n) ? n : null;
+}
+
+/** Санитизация строки ввода: пропускает только цифры и одну запятую.
+ *  Возвращает [чищеннаяСтрока, былОтброшенСимвол]. */
+export function sanitizeDecimalText(raw: string): [string, boolean] {
+  let dropped = false;
+  let result = '';
+  let seenComma = false;
+  for (const ch of raw) {
+    if (ch >= '0' && ch <= '9') {
+      result += ch;
+    } else if (ch === ',' && !seenComma) {
+      seenComma = true;
+      result += ch;
+    } else {
+      if (ch !== '') dropped = true;
+    }
+  }
+  return [result, dropped];
+}
+// ============================================================
 // Утилиты системы виртуализации: роли оборудования/ВМ в инфраструктуре
 // (гипервизор, кластеры, хосты, СХД, консоли управления).
 // Единый источник правды для лейблов, сайдбара и страницы «Платформа виртуализации».
@@ -9,6 +85,10 @@ export const serverRoleLabels: Record<ServerRole, { label: string; color: string
   hypervisor_host: {
     label: 'Хост гипервизора',
     color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+  },
+  cluster: {
+    label: 'Кластер виртуализации',
+    color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
   },
   storage: {
     label: 'СХД',
@@ -28,9 +108,16 @@ export const serverRoleLabels: Record<ServerRole, { label: string; color: string
 export const serverRoleOptions: Array<{ value: ServerRole | ''; label: string }> = [
   { value: '', label: '— Не участвует / автономный —' },
   { value: 'hypervisor_host', label: serverRoleLabels.hypervisor_host.label },
+  { value: 'cluster', label: serverRoleLabels.cluster.label },
   { value: 'storage', label: serverRoleLabels.storage.label },
   { value: 'management_console', label: serverRoleLabels.management_console.label },
 ];
+
+/** Косяк 7/8: у СХД и консолей управления не бывает CPU/RAM/Диска — эти поля
+ *  скрываются в формах и обнуляются при сохранении. */
+export function roleHasResourceFields(role: ServerRole | '' | null | undefined): boolean {
+  return role !== 'storage' && role !== 'management_console';
+}
 
 export const hypervisorSuggestions = [
   'VMware vSphere / ESXi',
@@ -76,13 +163,18 @@ export function hasVirtualizationFeature(
 
 export interface PlatformCluster {
   name: string; // '' — хосты без кластера
+  /** ID Equipment-кластера (serverRole === 'cluster'), если кластер заведён отдельной сущностью */
+  clusterId?: string;
   hosts: Equipment[];
+  /** СХД, помещённые внутрь этого кластера (parentClusterId) */
+  storages: Equipment[];
   /** ВМ, размещённые на хостах этого кластера */
   vms: VirtualMachine[];
   cpuTotal: number;
   cpuUsed: number; // суммарные vCPU ВМ (без учёта переподписки — как есть)
   ramTotal: number;
   ramUsed: number;
+  diskTotalGB: number; // аккумулированная ёмкость СХД кластера
 }
 
 export interface PlatformInfo {
@@ -112,6 +204,8 @@ export function buildVirtualizationPlatforms(
   virtualMachines: VirtualMachine[],
 ): PlatformInfo[] {
   const hosts = equipment.filter((e) => e.serverRole === 'hypervisor_host');
+  // Отдельные сущности-кластеры (косяк 6/11): аккумулируют хосты и СХД через parentClusterId
+  const clusterEntities = equipment.filter((e) => e.serverRole === 'cluster');
   const storage = equipment.filter(
     (e) => e.serverRole === 'storage' || e.category === ('storage' as any),
   );
@@ -124,6 +218,12 @@ export function buildVirtualizationPlatforms(
     const key = (h.hypervisorName || '').trim() || 'Гипервизор не указан';
     groups.set(key, [...(groups.get(key) || []), h]);
   }
+  // Кластеры тоже привязываются к гипервизору — добавляем их группы,
+  // чтобы сущность-кластер была видна на платформе даже без хостов
+  for (const cl of clusterEntities) {
+    const key = (cl.hypervisorName || '').trim() || 'Гипервизор не указан';
+    if (!groups.has(key)) groups.set(key, []);
+  }
 
   // Если хостов нет, но есть СХД/консоли — показываем одну сводную «платформу»
   if (groups.size === 0 && (storage.length || physicalConsoles.length || managementConsoles.length)) {
@@ -135,30 +235,54 @@ export function buildVirtualizationPlatforms(
     const hostIds = new Set(hostList.map((h) => h.id));
     const vms = virtualMachines.filter((v) => v.hostServerId && hostIds.has(v.hostServerId));
 
-    // Кластеры внутри гипервизора (clusterName у хостов)
+    // Кластеры внутри гипервизора. Источник имени: clusterName у хоста или
+    // отдельная сущность-кластер (serverRole === 'cluster'), в которую хост помещён.
     const clusterMap = new Map<string, Equipment[]>();
+    const clusterEntityByName = new Map<string, Equipment>();
+    for (const cl of clusterEntities) {
+      const cname = (cl.clusterName || cl.name || '').trim();
+      if (cname) clusterEntityByName.set(cname, cl);
+    }
     for (const h of hostList) {
-      const cname = (h.clusterName || '').trim();
+      const pc = h.parentClusterId ? clusterEntities.find((c) => c.id === h.parentClusterId) : null;
+      const cname = (pc?.clusterName || pc?.name || h.clusterName || '').trim();
       clusterMap.set(cname, [...(clusterMap.get(cname) || []), h]);
     }
+    // Пустые кластеры (сущность без членов-хостов) тоже показываем
+    for (const [cname, cl] of clusterEntityByName) {
+      if (!clusterMap.has(cname)) clusterMap.set(cname, []);
+    }
+
     const clusters: PlatformCluster[] = [];
     for (const [cname, clusterHosts] of clusterMap) {
       const ids = new Set(clusterHosts.map((h) => h.id));
       const clusterVms = vms.filter((v) => v.hostServerId && ids.has(v.hostServerId));
+      const entity = clusterEntityByName.get(cname);
+      // СХД, помещённые внутрь кластера (или названные так же, как кластер)
+      const clusterStorages = cname
+        ? storage.filter((st) => (entity && st.parentClusterId === entity.id) || (st.clusterName || '').trim() === cname)
+        : [];
       clusters.push({
         name: cname,
+        clusterId: entity?.id,
         hosts: clusterHosts,
+        storages: clusterStorages,
         vms: clusterVms,
         cpuTotal: clusterHosts.reduce((s, h) => s + num(h.cpuCores), 0),
         cpuUsed: clusterVms.reduce((s, v) => s + num(v.cpuCores), 0),
         ramTotal: clusterHosts.reduce((s, h) => s + num(h.ramGB), 0),
         ramUsed: clusterVms.reduce((s, v) => s + num(v.ramGB), 0),
+        diskTotalGB: clusterStorages.reduce((s, st) => s + (num(st.storageCapacityGB) || num(st.diskGB)), 0),
       });
     }
     clusters.sort((a, b) => (a.name || '\uffff').localeCompare(b.name || '\uffff'));
 
     const versions = Array.from(
-      new Set(hostList.map((h) => (h.hypervisorVersion || '').trim()).filter(Boolean)),
+      new Set(
+        [...hostList, ...clusterEntities]
+          .map((h) => (h.hypervisorVersion || '').trim())
+          .filter(Boolean),
+      ),
     );
 
     platforms.push({
@@ -197,7 +321,11 @@ export function usagePercent(used: number, total: number): { pct: number; over: 
 
 /** Нормализация данных сервера для POST/PUT /api/equipment:
  *  роль «storage» синхронизируется с категорией оборудования, пустые строки -> null,
- *  поля несуществующих ролей обнуляются (на хосте не бывает протокола СХД и наоборот). */
+ *  поля несуществующих ролей обнуляются (на хосте не бывает протокола СХД и наоборот).
+ *  Косяк 7: у СХД нет CPU/RAM — обнуляем.
+ *  Косяк 8: у консоли управления нет CPU/RAM/Диска — обнуляем.
+ *  Косяк 11: кластер аккумулирует хосты и СХД, сам ресурсов не имеет (CPU/RAM/Диск = null),
+ *  но может иметь гипервизор/версию как атрибуты платформы. */
 export function normalizeServerPayload<T extends Record<string, any>>(data: T, isCreate: boolean): T {
   const out: any = { ...data };
   if (out.serverRole === '') out.serverRole = null;
@@ -205,11 +333,16 @@ export function normalizeServerPayload<T extends Record<string, any>>(data: T, i
   out.hypervisorName = str(out.hypervisorName);
   out.clusterName = str(out.clusterName);
   out.hypervisorVersion = str(out.hypervisorVersion);
+  out.parentClusterId = str(out.parentClusterId);
   // Санитарная логика по ролям
   if (out.serverRole !== 'hypervisor_host') {
     out.clusterName = null;
-    out.hypervisorVersion = null;
-    out.hypervisorName = out.serverRole === 'management_console' ? out.hypervisorName : null;
+    out.hypervisorVersion = out.serverRole === 'cluster' ? out.hypervisorVersion : null;
+    out.hypervisorName = out.serverRole === 'management_console' || out.serverRole === 'cluster' ? out.hypervisorName : null;
+  }
+  if (out.serverRole === 'cluster' && !out.clusterName) {
+    // имя кластера совпадает с наименованием сервера, если не задано явно
+    out.clusterName = str(out.name);
   }
   if (out.serverRole !== 'storage') {
     out.storageType = null;
@@ -220,6 +353,31 @@ export function normalizeServerPayload<T extends Record<string, any>>(data: T, i
     out.storageProtocol = out.storageProtocol || null;
     if (out.storageCapacityGB === '' || out.storageCapacityGB == null) out.storageCapacityGB = null;
     else out.storageCapacityGB = Number(out.storageCapacityGB) || null;
+  }
+  // Косяк 11: кластер — только агрегатор, ресурсы нулевые
+  if (out.serverRole === 'cluster') {
+    out.cpuCores = null;
+    out.ramGB = null;
+    out.diskGB = null;
+    out.parentClusterId = null; // кластер не может входить в другой кластер
+  }
+  // Косяк 7: СХД без CPU/RAM (диск-ёмкость — в storageCapacityGB)
+  if (out.serverRole === 'storage') {
+    out.cpuCores = null;
+    out.ramGB = null;
+    out.diskGB = null;
+  }
+  // Косяк 8: консоль управления без CPU/RAM/Диска
+  if (out.serverRole === 'management_console') {
+    out.cpuCores = null;
+    out.ramGB = null;
+    out.diskGB = null;
+  }
+  // Кластер-родитель обязателен только для хостов/СХД, которые помещают в кластер
+  if (out.serverRole === 'hypervisor_host' || out.serverRole === 'storage') {
+    /* parentClusterId остаётся как есть */
+  } else {
+    out.parentClusterId = null;
   }
   if (isCreate) out.category = out.serverRole === 'storage' ? 'storage' : 'server';
   return out as T;

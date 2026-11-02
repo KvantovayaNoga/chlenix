@@ -1143,34 +1143,45 @@ app.delete('/api/employees/:id', authMiddleware, requireRole(['admin']), async (
 // ============================================================
 // Equipment Routes
 // ============================================================
+// Косяк 5: пустые строки и строковые "null"/"undefined" из форм превращаем в null,
+// иначе zod отклоняет весь объект с невнятной ошибкой «Некорректные данные».
+const emptyToNull = (v: any) => {
+  if (typeof v === 'string' && (v.trim() === '' || v === 'null' || v === 'undefined')) return null;
+  return v;
+};
+const numOrEmpty = (schema: any) =>
+  z.preprocess((v) => (emptyToNull(v) === null ? undefined : v), schema.optional().nullable());
+const strOrEmpty = (schema: any) =>
+  z.preprocess(emptyToNull, schema.optional().nullable());
+
 const equipmentSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().min(1, 'Укажите наименование'),
   category: z.enum(['computer', 'monitor', 'peripheral', 'furniture', 'server', 'storage', 'virtual_machine', 'network', 'phone', 'other']),
-  serialNumber: z.string().min(1),
-  inventoryNumber: z.string().min(1),
-  brand: z.string().optional().nullable(),
-  model: z.string().optional().nullable(),
-  purchaseDate: z.coerce.date().optional().nullable(),
-  writeOffDate: z.coerce.date().optional().nullable(),
+  serialNumber: z.string().min(1, 'Укажите серийный номер'),
+  inventoryNumber: z.string().min(1, 'Укажите инвентарный номер'),
+  brand: strOrEmpty(z.string()),
+  model: strOrEmpty(z.string()),
+  purchaseDate: z.preprocess((v) => (emptyToNull(v) === null ? undefined : v), z.coerce.date().optional().nullable()),
+  writeOffDate: z.preprocess((v) => (emptyToNull(v) === null ? undefined : v), z.coerce.date().optional().nullable()),
   condition: z.enum(['new', 'good', 'satisfactory', 'needs_repair', 'written_off']).optional(),
-  assignedToEmployeeId: z.string().optional().nullable(),
-  branchId: z.string().min(1),
-  floor: z.string().optional().nullable(),
-  room: z.string().optional().nullable(),
+  assignedToEmployeeId: strOrEmpty(z.string()),
+  branchId: z.string().min(1, 'Выберите филиал'),
+  floor: strOrEmpty(z.string()),
+  room: strOrEmpty(z.string()),
   serverRole: z.enum(['hypervisor_host', 'storage', 'management_console', 'standalone', 'cluster']).optional().nullable(),
-  hypervisorName: z.string().optional().nullable(),
-  clusterName: z.string().optional().nullable(),
-  hypervisorVersion: z.string().optional().nullable(),
+  hypervisorName: strOrEmpty(z.string()),
+  clusterName: strOrEmpty(z.string()),
+  hypervisorVersion: strOrEmpty(z.string()),
   storageType: z.enum(['san', 'nas', 'hci']).optional().nullable(),
   storageProtocol: z.enum(['iscsi', 'fc', 'fcoe', 'nfs', 'smb', 'sas', 'nvmeof', 'vsan', 'ceph']).optional().nullable(),
   // Объёмы хранятся в ГБ; дробные значения (ввод через запятую) допускаются
-  storageCapacityGB: z.number().min(0).optional().nullable(),
-  cpuCores: z.number().int().min(0).optional().nullable(),
-  ramGB: z.number().min(0).optional().nullable(),
-  diskGB: z.number().min(0).optional().nullable(),
+  storageCapacityGB: numOrEmpty(z.number().min(0)),
+  cpuCores: numOrEmpty(z.number().int().min(0)),
+  ramGB: numOrEmpty(z.number().min(0)),
+  diskGB: numOrEmpty(z.number().min(0)),
   /** Кластер-сервер, внутрь которого помещается этот сервер/СХД (косяк 11) */
-  parentClusterId: z.string().optional().nullable(),
-  notes: z.string().optional().nullable(),
+  parentClusterId: strOrEmpty(z.string()),
+  notes: strOrEmpty(z.string()),
 });
 
 const equipmentInclude = { assignedToEmployee: true, branch: true } as const;
@@ -1242,7 +1253,8 @@ app.get('/api/equipment/:id/history', authMiddleware, async (c) => {
 app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
   const parsed = equipmentSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
-    return c.json({ error: 'Некорректные данные оборудования' }, 400);
+    const first = parsed.error.issues[0];
+    return c.json({ error: first?.message && first.message !== 'Invalid input' ? `Некорректные данные оборудования: ${first.message}` : 'Некорректные данные оборудования' }, 400);
   }
   const currentUser = c.get('user');
   const data = parsed.data;
@@ -1309,7 +1321,8 @@ app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'materially_
   const { id } = c.req.param();
   const parsed = equipmentSchema.partial().safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
-    return c.json({ error: 'Некорректные данные' }, 400);
+    const first = parsed.error.issues[0];
+    return c.json({ error: first?.message && first.message !== 'Invalid input' ? `Некорректные данные: ${first.message}` : 'Некорректные данные' }, 400);
   }
   const currentUser = c.get('user');
 
@@ -1514,7 +1527,8 @@ app.get('/api/virtual-machines/:id/history', authMiddleware, async (c) => {
 app.post('/api/virtual-machines', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
   const parsed = vmSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
-    return c.json({ error: 'Некорректные данные ВМ' }, 400);
+    const first = parsed.error.issues[0];
+    return c.json({ error: first?.message && first.message !== 'Invalid input' ? `Некорректные данные ВМ: ${first.message}` : 'Некорректные данные ВМ' }, 400);
   }
   const currentUser = c.get('user');
   const data = parsed.data;
@@ -1523,6 +1537,21 @@ app.post('/api/virtual-machines', authMiddleware, requireRole(['admin', 'materia
   const hostServerId = await resolveRef('equipment', data.hostServerId);
   const responsibleEmployeeId = await resolveRef('employee', data.responsibleEmployeeId);
   const serviceResponsibleEmployeeId = await resolveRef('employee', data.serviceResponsibleEmployeeId);
+  // Косяк 11: хостом ВМ может быть только сервер-хост гипервизора, не кластер/СХД/консоль
+  try {
+    await assertVmHostIsHypervisor(hostServerId);
+  } catch (e) {
+    if (e instanceof VmHostError) return c.json({ error: e.message }, 400);
+    throw e;
+  }
+  // Косяк 11: ВМ может быть приписана к кластеру (агрегация), но не размещена на нём
+  let clusterId: string | null = null;
+  try {
+    clusterId = await validateParentCluster(await resolveRef('equipment', data.clusterId));
+  } catch (e) {
+    if (e instanceof VmHostError) return c.json({ error: e.message }, 400);
+    throw e;
+  }
 
   const vm = await prisma.virtualMachine.create({
     data: {
@@ -1539,6 +1568,7 @@ app.post('/api/virtual-machines', authMiddleware, requireRole(['admin', 'materia
       ramGB: data.ramGB ?? 4,
       diskGB: data.diskGB ?? 50,
       hostServerId,
+      clusterId,
       responsibleEmployeeId,
       serviceResponsibleEmployeeId,
       updatedById: currentUser.userId,
@@ -1556,7 +1586,8 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(['admin', 'mate
   const { id } = c.req.param();
   const parsed = vmSchema.partial().safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
-    return c.json({ error: 'Некорректные данные' }, 400);
+    const first = parsed.error.issues[0];
+    return c.json({ error: first?.message && first.message !== 'Invalid input' ? `Некорректные данные: ${first.message}` : 'Некорректные данные' }, 400);
   }
   const currentUser = c.get('user');
 
@@ -1564,7 +1595,23 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(['admin', 'mate
   if (!old) return c.json({ error: 'Not found' }, 404);
 
   const newData: any = { ...parsed.data };
-  if ('hostServerId' in newData) newData.hostServerId = await resolveRef('equipment', newData.hostServerId);
+  if ('hostServerId' in newData) {
+    newData.hostServerId = await resolveRef('equipment', newData.hostServerId);
+    try {
+      await assertVmHostIsHypervisor(newData.hostServerId);
+    } catch (e) {
+      if (e instanceof VmHostError) return c.json({ error: e.message }, 400);
+      throw e;
+    }
+  }
+  if ('clusterId' in newData) {
+    try {
+      newData.clusterId = await validateParentCluster(await resolveRef('equipment', newData.clusterId));
+    } catch (e) {
+      if (e instanceof VmHostError) return c.json({ error: e.message }, 400);
+      throw e;
+    }
+  }
   if ('responsibleEmployeeId' in newData) newData.responsibleEmployeeId = await resolveRef('employee', newData.responsibleEmployeeId);
   if ('serviceResponsibleEmployeeId' in newData) newData.serviceResponsibleEmployeeId = await resolveRef('employee', newData.serviceResponsibleEmployeeId);
   if ('serverRole' in newData) newData.serverRole = newData.serverRole || null;

@@ -6,7 +6,8 @@ import { useAuthStore } from '../store/authStore';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { HistoryLog } from '../components/HistoryLog';
 import type { Equipment, ServerRole } from '../types';
-import { serverRoleLabels, serverRoleOptions, hypervisorSuggestions, normalizeServerPayload, storageTypeLabels, storageProtocolLabels } from '../utils/virtualization';
+import { serverRoleLabels, serverRoleOptions, hypervisorSuggestions, normalizeServerPayload, storageTypeLabels, storageProtocolLabels, roleHasResourceFields } from '../utils/virtualization';
+import { StorageField } from '../components/StorageField';
 import type { StorageSystemType, StorageProtocol } from '../types';
 
 export function PhysicalServersPage() {
@@ -18,8 +19,11 @@ export function PhysicalServersPage() {
   const [viewingHistory, setViewingHistory] = useState<Equipment | null>(null);
 
   // Серверы организации: категория «Сервер» или «СХД», либо любой единице
-  // выставлена роль в системе виртуализации (хост/СХД/консоль управления).
+  // выставлена роль в системе виртуализации (хост/кластер/СХД/консоль управления).
   const servers = equipment.filter(eq => eq.category === 'server' || eq.category === ('storage' as any) || !!eq.serverRole);
+  // Косяк 6/11: кластер-серверы аккумулируют внутри себя хосты и СХД (children по parentClusterId)
+  const clusterChildren = (clusterId: string) =>
+    equipment.filter(eq => eq.parentClusterId === clusterId);
   const getBranchName = (id: string) => {
     const branch = branches.find(b => b.id === id);
     return branch?.name || '—';
@@ -123,7 +127,7 @@ export function PhysicalServersPage() {
   );
 }
 
-function ServerModal({ server, onClose, onSave, branches }: any) {
+function ServerModal({ server, onClose, onSave, branches, allEquipment }: any) {
   const [formData, setFormData] = useState({
     name: server?.name || '', serialNumber: server?.serialNumber || '', inventoryNumber: server?.inventoryNumber || '',
     brand: server?.brand || '', model: server?.model || '', purchaseDate: server?.purchaseDate || new Date().toISOString().split('T')[0],
@@ -137,8 +141,13 @@ function ServerModal({ server, onClose, onSave, branches }: any) {
     storageType: (server?.storageType || '') as StorageSystemType | '',
     storageProtocol: (server?.storageProtocol || '') as StorageProtocol | '',
     storageCapacityGB: server?.storageCapacityGB || null,
+    parentClusterId: server?.parentClusterId || null,
     notes: server?.notes || '',
   });
+  // Косяк 6/11: список кластеров-серверов для помещения хостов/СХД внутрь кластера
+  const clustersList = ((allEquipment || []) as Equipment[]).filter(
+    (eq) => eq.serverRole === 'cluster' && eq.id !== server?.id
+  );
 
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
 
@@ -156,9 +165,13 @@ function ServerModal({ server, onClose, onSave, branches }: any) {
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Инвентарный номер *</label><input type="text" value={formData.inventoryNumber} onChange={(e) => setFormData(p => ({ ...p, inventoryNumber: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Бренд</label><input type="text" value={formData.brand} onChange={(e) => setFormData(p => ({ ...p, brand: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Модель</label><input type="text" value={formData.model} onChange={(e) => setFormData(p => ({ ...p, model: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CPU (ядер)</label><input type="number" value={formData.cpuCores || ''} onChange={(e) => setFormData(p => ({ ...p, cpuCores: e.target.value ? +e.target.value : null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Например: 32" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RAM (ГБ)</label><input type="number" value={formData.ramGB || ''} onChange={(e) => setFormData(p => ({ ...p, ramGB: e.target.value ? +e.target.value : null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Например: 128" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Диск (ГБ)</label><input type="number" value={formData.diskGB || ''} onChange={(e) => setFormData(p => ({ ...p, diskGB: e.target.value ? +e.target.value : null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Например: 2000" /></div>
+            {roleHasResourceFields(formData.serverRole) && (
+              <>
+                <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CPU (ядер)</label><input type="number" value={formData.cpuCores || ''} onChange={(e) => setFormData(p => ({ ...p, cpuCores: e.target.value ? +e.target.value : null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Например: 32" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RAM (ГБ)</label><input type="number" value={formData.ramGB || ''} onChange={(e) => setFormData(p => ({ ...p, ramGB: e.target.value ? +e.target.value : null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Например: 128" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Диск (ГБ)</label><input type="number" value={formData.diskGB || ''} onChange={(e) => setFormData(p => ({ ...p, diskGB: e.target.value ? +e.target.value : null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Например: 2000" /></div>
+              </>
+            )}
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Филиал *</label><select value={formData.branchId} onChange={(e) => setFormData(p => ({ ...p, branchId: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required><option value="">Выберите филиал</option>{branches.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Этаж</label><input type="text" value={formData.floor} onChange={(e) => setFormData(p => ({ ...p, floor: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Необязательно" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Кабинет/помещение</label><input type="text" value={formData.room} onChange={(e) => setFormData(p => ({ ...p, room: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Серверная" /></div>
@@ -177,18 +190,36 @@ function ServerModal({ server, onClose, onSave, branches }: any) {
                   {serverRoleOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
-              {(formData.serverRole === 'hypervisor_host' || formData.serverRole === 'management_console') && (
+              {(formData.serverRole === 'hypervisor_host' || formData.serverRole === 'management_console' || formData.serverRole === 'cluster') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Гипервизор / платформа</label>
                   <input list="hypervisor-suggestions" type="text" value={formData.hypervisorName} onChange={(e) => setFormData(p => ({ ...p, hypervisorName: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="VMware ESXi, Proxmox VE…" />
                   <datalist id="hypervisor-suggestions">{hypervisorSuggestions.map(h => <option key={h} value={h} />)}</datalist>
                 </div>
               )}
+              {formData.serverRole === 'cluster' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Имя кластера</label>
+                    <input type="text" value={formData.clusterName} onChange={(e) => setFormData(p => ({ ...p, clusterName: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Например: HA-Cluster-01 (по умолчанию — как наименование)" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Версия гипервизора</label>
+                    <input type="text" value={formData.hypervisorVersion} onChange={(e) => setFormData(p => ({ ...p, hypervisorVersion: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="vSphere 8.0 U2, PVE 8.2…" />
+                  </div>
+                </>
+              )}
               {formData.serverRole === 'hypervisor_host' && (
                 <>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Кластер</label>
-                    <input type="text" value={formData.clusterName} onChange={(e) => setFormData(p => ({ ...p, clusterName: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Например: HA-Cluster-01 (если хост в кластере)" />
+                    <select value={formData.parentClusterId || ''} onChange={(e) => setFormData(p => ({ ...p, parentClusterId: e.target.value || null, clusterName: '' }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                      <option value="">— Вне кластера —</option>
+                      {clustersList.map((cl: Equipment) => <option key={cl.id} value={cl.id}>{cl.clusterName || cl.name}</option>)}
+                    </select>
+                    {clustersList.length === 0 && (
+                      <input type="text" value={formData.clusterName} onChange={(e) => setFormData(p => ({ ...p, clusterName: e.target.value }))} className="mt-1 w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Или укажите имя кластера текстом: HA-Cluster-01" />
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Версия гипервизора</label>
@@ -212,10 +243,24 @@ function ServerModal({ server, onClose, onSave, branches }: any) {
                       {Object.entries(storageProtocolLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Полезный объём (ГБ)</label>
-                    <input type="number" min={0} value={formData.storageCapacityGB || ''} onChange={(e) => setFormData(p => ({ ...p, storageCapacityGB: e.target.value ? +e.target.value : null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Например: 48000" />
+                  <div className="col-span-2">
+                    <StorageField
+                      label="Полезный объём"
+                      valueGB={formData.storageCapacityGB}
+                      onChange={(gb) => setFormData(p => ({ ...p, storageCapacityGB: gb }))}
+                      placeholder="Например: 48 или 12,5"
+                      hint="Объём хранится в системе в ГБ; выбирайте удобную единицу (КБ…ПБ). Дробные значения — только через запятую."
+                    />
                   </div>
+                  {clustersList.length > 0 && (
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Кластер, которому принадлежит СХД</label>
+                      <select value={formData.parentClusterId || ''} onChange={(e) => setFormData(p => ({ ...p, parentClusterId: e.target.value || null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                        <option value="">— Вне кластера —</option>
+                        {clustersList.map((cl: Equipment) => <option key={cl.id} value={cl.id}>{cl.clusterName || cl.name}</option>)}
+                      </select>
+                    </div>
+                  )}
                 </>
               )}
             </div>

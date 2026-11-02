@@ -136,8 +136,8 @@ export interface Employee {
 }
 
 // Роль сервера/оборудования в системе виртуализации.
-// Позволяет описать инфраструктуру: хосты гипервизора, СХД, консоли управления.
-export type ServerRole = 'hypervisor_host' | 'storage' | 'management_console' | 'standalone';
+// Позволяет описать инфраструктуру: хосты гипервизора, СХД, консоли управления, кластеры.
+export type ServerRole = 'hypervisor_host' | 'storage' | 'management_console' | 'standalone' | 'cluster';
 
 // Тип системы хранения (для роли «СХД»): SAN — выделенная СХД по FC/iSCSI,
 // NAS — сетевое хранилище (NFS/SMB), HCI — гиперконвергентная (Ceph, vSAN, StarWind).
@@ -214,6 +214,8 @@ export interface Equipment {
   storageProtocol?: StorageProtocol | null;
   /** Полезный объём СХД, ГБ */
   storageCapacityGB?: number | null;
+  /** Кластер-сервер (serverRole === 'cluster'), внутрь которого помещён этот сервер/СХД (косяк 11) */
+  parentClusterId?: string | null;
   notes: string;
   createdAt: string;
   updatedAt: string;
@@ -257,6 +259,8 @@ export interface VirtualMachine {
   hostname: string;
   type: VMType;
   hostServerId: string | null;
+  /** Кластер, которому принадлежит ВМ (косяк 11: ВМ размещается на хосте, а кластер лишь аккумулирует) */
+  clusterId?: string | null;
   os: string;
   cpuCores: number;
   ramGB: number;
