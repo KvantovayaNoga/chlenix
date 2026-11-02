@@ -464,8 +464,9 @@ export function VirtualizationPlatformPage() {
                 )}
               </CollapsibleSection>
 
-              {/* ВМ платформы: под названием — IP-адрес; если у ВМ есть белый (публичный) IP,
-                  показываем первоочерёдно именно он. */}
+              {/* ВМ платформы: под названием — отдельными строками серый (внутренний)
+                  и белый (публичный) IP. Белый отображается первоочерёдно; если белый
+                  совпадает с серым — дубликат не показываем. */}
               <CollapsibleSection
                 title={<>Виртуальные машины ({p.vms.length})</>}
                 icon={<Cpu className="w-4 h-4 text-indigo-600" />}
@@ -475,10 +476,11 @@ export function VirtualizationPlatformPage() {
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {p.vms.map((v) => {
-                      const publicIps = v.networkInterfaces.filter((ni) => ni.isPublic && ni.ipAddress);
-                      const allIps = v.networkInterfaces.filter((ni) => ni.ipAddress);
-                      // Первоочередно — белый IP; иначе первый доступный IP
-                      const shownIp = publicIps[0]?.ipAddress || allIps[0]?.ipAddress || '';
+                      const publicIps = v.networkInterfaces.filter((ni) => ni.isPublic && ni.ipAddress).map((ni) => ni.ipAddress);
+                      const grayIps = v.networkInterfaces.filter((ni) => !ni.isPublic && ni.ipAddress).map((ni) => ni.ipAddress);
+                      const whiteIp = publicIps[0] || '';
+                      // серый IP: исключаем дубликат, если он равен белому
+                      const grayIp = grayIps.find((ip) => ip !== whiteIp) || '';
                       return (
                         <button
                           key={v.id}
@@ -487,9 +489,14 @@ export function VirtualizationPlatformPage() {
                           className="px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors text-left"
                         >
                           <span className="block">{v.name}</span>
-                          {shownIp && (
-                            <span className={`block font-mono text-[10px] leading-tight ${publicIps.length ? 'text-orange-600 dark:text-orange-400' : 'text-gray-500 dark:text-gray-400'}`}>
-                              {shownIp}{publicIps.length ? ' • белый' : ''}
+                          {grayIp && (
+                            <span className="block font-mono text-[10px] leading-tight text-gray-500 dark:text-gray-400">
+                              Серый IP: {grayIp}
+                            </span>
+                          )}
+                          {whiteIp && (
+                            <span className="block font-mono text-[10px] leading-tight text-orange-600 dark:text-orange-400">
+                              Белый IP: {whiteIp}
                             </span>
                           )}
                         </button>
