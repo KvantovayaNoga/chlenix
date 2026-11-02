@@ -1532,8 +1532,8 @@ app.post('/api/equipment/:id/unassign', authMiddleware, requireRole(['admin', 'm
 // Virtual Machines Routes
 // ============================================================
 const vmSchema = z.object({
-  name: z.string().min(1, 'Укажите имя ВМ'),
-  hostname: z.string().min(1, 'Укажите hostname'),
+  name: z.string().trim().min(1, 'Укажите имя ВМ'),
+  hostname: z.string().trim().min(1, 'Укажите hostname'),
   type: z.enum(['virtual', 'container', 'cloud']).optional(),
   hostServerId: z.string().optional().nullable(),
   /** Кластер, которому принадлежит ВМ (косяк 11: кластер не является хостом) */

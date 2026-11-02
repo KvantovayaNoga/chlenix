@@ -101,12 +101,12 @@ export function ServersPage() {
     }
   }, [searchParams]);
 
-  const physicalServers = equipment.filter(eq => eq.category === 'server');
+  const physicalServers = equipment.filter(eq => eq.category === 'server' || eq.category === ('storage' as any) || !!eq.serverRole);
   // Косяк 5/11: хостом для ВМ может быть только гипервизор-хост (или сервер без роли —
   // автономный, legacy). Кластеры и СХД хостами быть не могут.
   const hypervisorHosts = physicalServers.filter(eq => eq.serverRole !== 'cluster' && eq.serverRole !== 'storage' && eq.serverRole !== 'management_console');
   // Отдельные сущности-кластеры (для опционального поля «Кластер» у ВМ)
-  const clusterEntities = equipment.filter(eq => eq.serverRole === 'cluster');
+  const clusterEntities = physicalServers.filter(eq => eq.serverRole === 'cluster');
   const activeEmployees = employees.filter(e => e.isEmployed);
 
   const filteredVMs = useMemo(() => {
@@ -535,9 +535,9 @@ function VMEditModal({ vm, onClose, onSave, servers, clusters, employees }: any)
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Роль в системе виртуализации</label>
               <select value={formData.serverRole} onChange={(e) => setFormData(p => ({ ...p, serverRole: e.target.value as ServerRole | '' }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">
-                {serverRoleOptions.filter(o => o.value !== 'storage').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {serverRoleOptions.filter(o => o.value !== 'storage' && o.value !== 'cluster').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Например: консоль управления гипервизором (vCenter / Proxmox VE), размещённая как ВМ.</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Например: консоль управления гипервизором (vCenter / Proxmox VE), размещённая как ВМ. Кластеры и СХД — только физические серверы.</p>
             </div>
             {(formData.serverRole === 'management_console' || formData.serverRole === 'hypervisor_host') && (
               <div>

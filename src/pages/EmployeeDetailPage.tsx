@@ -172,7 +172,7 @@ export function EmployeeDetailPage() {
         <AddEmployeeModal
           initial={employee}
           onClose={() => setShowEditModal(false)}
-          onAdd={(data) => { updateEmployee(employee.id, data as any); setShowEditModal(false); }}
+          onAdd={async (data) => { const ok = await updateEmployee(employee.id, data as any); if (ok) setShowEditModal(false); return ok; }}
         />
       )}
 
