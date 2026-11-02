@@ -1285,6 +1285,33 @@ function normalizeDateField(v: any) {
   return v instanceof Date ? v : new Date(v);
 }
 
+/** Состав кластера из ClusterForm (__members): выбранные хосты/СХД/консоли
+ *  управления получают parentClusterId, снятые участники — отвязываются.
+ *  Применяется после создания/обновления кластера в одной транзакции. */
+async function applyClusterMembers(clusterId: string, orgId: string | null, membersRaw: unknown) {
+  const memberIds = Array.isArray(membersRaw)
+    ? Array.from(new Set(membersRaw.filter((x): x is string => typeof x === 'string' && !!x)))
+    : [];
+  // В выборку попадают только единицы оборудования той же организации с «кластерной» ролью
+  await prisma.$transaction(async (tx) => {
+    if (memberIds.length > 0) {
+      const valid = await tx.equipment.findMany({
+        where: { id: { in: memberIds }, organizationId: orgId, serverRole: { in: ['hypervisor_host', 'storage', 'management_console'] } },
+        select: { id: true },
+      });
+      const validIds = valid.map((v) => v.id);
+      if (validIds.length > 0) {
+        await tx.equipment.updateMany({ where: { id: { in: validIds } }, data: { parentClusterId: clusterId } });
+      }
+    }
+    // Бывшие участники, которые были сняты галочкой в форме, отвязываются от кластера
+    await tx.equipment.updateMany({
+      where: { parentClusterId: clusterId, ...(memberIds.length > 0 ? { id: { notIn: memberIds } } : {}) },
+      data: { parentClusterId: null },
+    });
+  });
+}
+
 app.get('/api/equipment', authMiddleware, async (c) => {
   const scope = await getUserOrgScope(c.get('user').userId);
   const where: any = {};
@@ -1312,7 +1339,12 @@ app.get('/api/equipment/:id/history', authMiddleware, async (c) => {
 });
 
 app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
-  const parsed = equipmentSchema.safeParse(await c.req.json().catch(() => null));
+  const body = await c.req.json().catch(() => null);
+  // ClusterForm передаёт состав кластера служебным полем __members — извлекаем его
+  // до валидации схемы (в equipmentSchema его нет).
+  const requestedMembers = Array.isArray(body?.__members) ? body.__members : null;
+  if (body && '__members' in body) delete body.__members;
+  const parsed = equipmentSchema.safeParse(body);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
     return c.json({ error: first?.message && first.message !== 'Invalid input' ? `Некорректные данные оборудования: ${first.message}` : 'Некорректные данные оборудования' }, 400);
@@ -1382,6 +1414,15 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
   });
 
   await createHistoryEntry('equipment', item.id, currentUser.fullName);
+  // Состав кластера (ClusterForm): привязка выбранных хостов/СХД/консолей управления
+  if (requestedMembers !== null && item.serverRole === CLUSTER_ROLE) {
+    try {
+      await applyClusterMembers(item.id, item.organizationId, requestedMembers);
+    } catch (e) {
+      console.error('applyClusterMembers(create) failed:', e);
+      return c.json({ error: 'Не удалось применить состав кластера' }, 400);
+    }
+  }
   // У логических сущностей (кластеров) инвентарного номера может не быть —
   // не печатаем в аудите «инв. null».
   const invLabel = item.inventoryNumber ? ` (инв. ${item.inventoryNumber})` : '';
@@ -1392,7 +1433,11 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
 
 app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
   const { id } = c.req.param();
-  const parsed = equipmentSchema.partial().safeParse(await c.req.json().catch(() => null));
+  const body = await c.req.json().catch(() => null);
+  // ClusterForm передаёт состав кластера служебным полем __members — извлекаем до валидации
+  const requestedMembers = Array.isArray(body?.__members) ? body.__members : null;
+  if (body && '__members' in body) delete body.__members;
+  const parsed = equipmentSchema.partial().safeParse(body);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
     return c.json({ error: first?.message && first.message !== 'Invalid input' ? `Некорректные данные: ${first.message}` : 'Некорректные данные' }, 400);
@@ -1435,6 +1480,16 @@ app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'materially_
   newData.updatedById = currentUser.userId;
 
   const item = await prisma.equipment.update({ where: { id }, data: newData, include: equipmentInclude });
+
+  // Состав кластера (ClusterForm): привязка/отвязка хостов, СХД и консолей управления
+  if (requestedMembers !== null && item.serverRole === CLUSTER_ROLE) {
+    try {
+      await applyClusterMembers(item.id, item.organizationId, requestedMembers);
+    } catch (e) {
+      console.error('applyClusterMembers(update) failed:', e);
+      return c.json({ error: 'Не удалось применить состав кластера' }, 400);
+    }
+  }
 
   await applyUpdate({
     ctx: currentUser,

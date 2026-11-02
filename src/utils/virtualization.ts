@@ -405,6 +405,14 @@ export function normalizeClusterPayload<T extends Record<string, any>>(
   const str = (v: any) => (typeof v === 'string' && v.trim() ? v.trim() : null);
   const numOrNull = (v: any) => (v === '' || v == null || !isFinite(Number(v)) ? null : Number(v));
   const out: any = { ...data };
+  // Пустые строки -> null, чтобы валидатор не отклонял необязательные поля
+  // (branchId/name остаются как есть — они обязательны и проверяются формой).
+  for (const key of ['floor', 'room', 'notes', 'clusterName', 'hypervisorName', 'hypervisorVersion']) {
+    if (typeof out[key] === 'string') out[key] = out[key].trim() || null;
+  }
+  if ('assignedToEmployeeId' in out && (out.assignedToEmployeeId === '' || out.assignedToEmployeeId == null)) {
+    out.assignedToEmployeeId = null;
+  }
   // Инвентарная карточка у кластера отсутствует
   out.serialNumber = null;
   out.inventoryNumber = null;

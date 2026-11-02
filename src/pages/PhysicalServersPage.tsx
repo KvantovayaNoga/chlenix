@@ -245,17 +245,22 @@ function ServerModal({ server, initialCluster, onClose, onSave, branches, allEqu
     parentClusterId: server?.parentClusterId || null,
     notes: server?.notes || '',
   });
-  // Косяк 6/11: список кластеров-серверов для помещения хостов/СХД внутрь кластера
+  // Косяк 6/11: список кластеров-серверов для помещения хостов/СХД внутрь кластера.
+  // Кластеры создаются только отдельной формой ClusterForm — здесь они не предлагаются.
   const clustersList = ((allEquipment || []) as Equipment[]).filter(
     (eq) => eq.serverRole === 'cluster' && eq.id !== server?.id
   );
 
   const roleOptions: Array<{ value: ServerRole; label: string }> = [
     { value: 'hypervisor_host', label: serverRoleLabels.hypervisor_host.label },
-    { value: 'cluster', label: serverRoleLabels.cluster.label },
     { value: 'storage', label: serverRoleLabels.storage.label },
     { value: 'management_console', label: serverRoleLabels.management_console.label },
   ];
+
+  // Кластер — логическая сущность, создаётся/редактируется только через ClusterForm.
+  // Если у существующего сервера роль «cluster», не даём выбрать её повторно и
+  // показываем подсказку вместо селекта ролей.
+  const isClusterServer = server?.serverRole === 'cluster';
 
   const handleTogglePlatform = (checked: boolean) => {
     setIsPlatform(checked);
@@ -356,6 +361,12 @@ function ServerModal({ server, initialCluster, onClose, onSave, branches, allEqu
                   {roleOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
+              {/* Кластер открывается только отдельной формой ClusterForm (карточка на странице) */}
+              {isClusterServer && (
+                <p className="col-span-2 text-xs text-purple-600 dark:text-purple-400">
+                  Это кластер — логическая сущность. Для редактирования закройте окно и нажмите на карточку кластера: откроется форма кластера.
+                </p>
+              )}
               {(formData.serverRole === 'hypervisor_host' || formData.serverRole === 'management_console' || formData.serverRole === 'cluster') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Гипервизор / платформа</label>
