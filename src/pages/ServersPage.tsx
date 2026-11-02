@@ -597,9 +597,14 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
             />
           </div>
           <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Примечания</label><textarea value={formData.notes} onChange={(e) => setFormData(p => ({ ...p, notes: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" rows={2} /></div>
-          {formError && (
-            <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 px-4 py-3 text-sm text-red-700 dark:text-red-300">
-              {formError}
+          {(formError || saveError) && (
+            <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 px-4 py-3 text-sm text-red-700 dark:text-red-300 space-y-1">
+              {formError && <p>{formError}</p>}
+              {saveError && !formError && (
+                <p>
+                  Не удалось сохранить ВМ: {String(saveError)}. Проверьте, что выбранный хост-сервер существует в реестре и является физическим сервером с ролью «Хост гипервизора», а обязательные поля заполнены корректно.
+                </p>
+              )}
             </div>
           )}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
