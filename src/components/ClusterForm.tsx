@@ -30,7 +30,7 @@ import { EmployeeSearch } from './EmployeeSearch';
 export function LocationSelect({
   branches,
   dataCenters,
-  allowDataCenters,
+  allowDataCenters = true,
   branchId,
   dataCenterId,
   onChange,
@@ -38,8 +38,9 @@ export function LocationSelect({
 }: {
   branches: Branch[];
   dataCenters: DataCenter[];
-  /** ЦОД доступны только логическим сущностям (кластерам) — бэкенд это проверяет */
-  allowDataCenters: boolean;
+  /** ЦОД доступны для любой инфраструктурной техники (кластеры и физические
+   *  серверы — виртуализация может жить на арендованных/облачных мощностях). */
+  allowDataCenters?: boolean;
   branchId: string;
   dataCenterId: string;
   onChange: (v: { branchId: string; dataCenterId: string }) => void;

@@ -5,7 +5,7 @@ import { useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { HistoryLog } from '../components/HistoryLog';
-import { ClusterForm } from '../components/ClusterForm';
+import { ClusterForm, LocationSelect } from '../components/ClusterForm';
 import type { Equipment, ServerRole } from '../types';
 import { serverRoleLabels, hypervisorSuggestions, normalizeServerPayload, storageTypeLabels, storageProtocolLabels, roleHasResourceFields, formatGB } from '../utils/virtualization';
 import { StorageField } from '../components/StorageField';
@@ -223,11 +223,12 @@ export function ClusterEditModal({ cluster, onClose }: { cluster: Equipment | nu
 // Публичная форма сервера виртуализации (используется и на странице, и из
 // модалки карточки оборудования): нормализует payload и сохраняет через store.
 export function ServerEditModal({ server, onClose }: { server: Equipment | null; onClose: () => void }) {
-  const { branches, equipment, addEquipment, updateEquipment } = useDataStore();
+  const { branches, dataCenters, equipment, addEquipment, updateEquipment } = useDataStore();
   return (
     <ServerModal
       server={server}
       branches={branches}
+      dataCenters={dataCenters}
       allEquipment={equipment}
       onClose={onClose}
       onSave={async (payload: any) => {
@@ -255,7 +256,7 @@ export function ServerEditModal({ server, onClose }: { server: Equipment | null;
   );
 }
 
-function ServerModal({ server, onClose, onSave, branches, allEquipment }: any) {
+function ServerModal({ server, onClose, onSave, branches, dataCenters, allEquipment }: any) {
   // Косяк 6: чекбокс «Является платформой виртуализации». Если снят — сервер
   // создаётся как обычный физический (роль не задаётся, поля платформы скрыты).
   // Кластеры здесь не создаются и не редактируются — для них есть ClusterForm.
@@ -264,7 +265,7 @@ function ServerModal({ server, onClose, onSave, branches, allEquipment }: any) {
     name: server?.name || '', serialNumber: server?.serialNumber || '', inventoryNumber: server?.inventoryNumber || '',
     brand: server?.brand || '', model: server?.model || '', purchaseDate: server?.purchaseDate || new Date().toISOString().split('T')[0],
     condition: server?.condition || 'good', assignedToEmployeeId: server?.assignedToEmployeeId || null,
-    branchId: server?.branchId || '', floor: server?.floor || '', room: server?.room || '',
+    branchId: server?.branchId || '', dataCenterId: server?.dataCenterId || '', floor: server?.floor || '', room: server?.room || '',
     cpuCores: server?.cpuCores || null, ramGB: server?.ramGB || null, diskGB: server?.diskGB || null,
     serverRole: (server?.serverRole || '') as ServerRole | '',
     hypervisorName: server?.hypervisorName || '',
@@ -356,7 +357,17 @@ function ServerModal({ server, onClose, onSave, branches, allEquipment }: any) {
                 <div><StorageField label="Диск" valueGB={formData.diskGB} onChange={(gb) => setFormData(p => ({ ...p, diskGB: gb }))} placeholder="Например: 2000 или 12,5" hint="Объём хранится в ГБ; единица выбора (КБ…ПБ) — для удобства ввода." /></div>
               </>
             )}
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Филиал *</label><select value={formData.branchId} onChange={(e) => setFormData(p => ({ ...p, branchId: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required><option value="">Выберите филиал</option>{branches.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
+            {/* Место размещения: выбор одновременно из справочника филиалов И ЦОД
+                (виртуализация/серверы могут стоять как на филиале, так и на
+                арендованных/облачных мощностях) — единый селект с группировкой. */}
+            <LocationSelect
+              branches={branches}
+              dataCenters={dataCenters ?? []}
+              branchId={formData.branchId}
+              dataCenterId={formData.dataCenterId}
+              onChange={({ branchId, dataCenterId }) => setFormData(p => ({ ...p, branchId, dataCenterId }))}
+              label="Филиал / ЦОД *"
+            />
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Этаж</label><input type="text" value={formData.floor} onChange={(e) => setFormData(p => ({ ...p, floor: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Необязательно" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Кабинет/помещение</label><input type="text" value={formData.room} onChange={(e) => setFormData(p => ({ ...p, room: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Серверная" /></div>
           </div>
