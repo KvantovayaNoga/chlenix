@@ -102,13 +102,16 @@ export function ServersPage() {
   }, [searchParams]);
 
   const physicalServers = equipment.filter(eq => eq.category === 'server' || eq.category === ('storage' as any) || !!eq.serverRole);
-  // Косяк 5/11: хостом для ВМ может быть только гипервизор-хост (или сервер без роли —
-  // автономный, legacy). Кластеры и СХД хостами быть не могут.
-  // Дополнительно исключаем объекты категории storage/serverRole без явной роли —
+  // Жёсткой привязки ВМ к гипервизору нет: хостом может быть любой физический
+  // сервер — и хост кластера, и автономный сервер без роли («поднял пару
+  // виртуалок на обычном сервере»). Запрещены только заведомо неподходящие
+  // сущности: сам кластер (логическая), СХД, консоль управления и не-серверы.
+  // Дополнительно исключаем объекты категории storage без явной роли —
   // раньше они могли «проскакивать» в список хостов из-за приведения категорий.
   const rolelessStorageIds = new Set(equipment.filter(eq => !eq.serverRole && eq.category === ('storage' as any)).map(eq => eq.id));
   const hypervisorHosts = physicalServers.filter(eq =>
-    eq.serverRole !== 'cluster' && eq.serverRole !== 'storage' && eq.serverRole !== 'management_console'
+    eq.category === 'server'
+    && eq.serverRole !== 'cluster' && eq.serverRole !== 'storage' && eq.serverRole !== 'management_console'
     && !rolelessStorageIds.has(eq.id)
   );
   // Отдельные сущности-кластеры (для опционального поля «Кластер» у ВМ)
@@ -529,8 +532,8 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
     if (!formData.hostServerId) {
       setFormError(
         servers.length === 0
-          ? 'Нельзя создать ВМ: в реестре нет ни одного сервера-хоста гипервизора. Сначала добавьте физический сервер с ролью «Хост гипервизора» на странице «Физические серверы», затем вернитесь сюда.'
-          : 'Не выбран хост-сервер. ВМ должна быть размещена на конкретном физическом сервере-хосте — выберите его из списка. Кластер определяется автоматически по хосту.'
+          ? 'Нельзя создать ВМ: в реестре нет ни одного физического сервера. Сначала добавьте сервер на странице «Физические серверы» (хостом может быть любой сервер — хост кластера или автономный), затем вернитесь сюда.'
+          : 'Не выбран хост-сервер. Укажите физический сервер, на котором размещена ВМ. Кластер определяется автоматически: если хост входит в кластер — ВМ относится к нему.'
       );
       return;
     }
@@ -555,14 +558,14 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hostname *</label><input type="text" value={formData.hostname} onChange={(e) => setFormData(p => ({ ...p, hostname: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required placeholder="web01.company.local" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ОС *</label><input type="text" value={formData.os} onChange={(e) => setFormData(p => ({ ...p, os: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required placeholder="Ubuntu 22.04 LTS" /></div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Хост-сервер (гипервизор) *</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Хост-сервер *</label>
               <select value={formData.hostServerId || ''} onChange={(e) => { setFormData(p => ({ ...p, hostServerId: e.target.value || null })); setFormError(null); }} className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 ${formData.hostServerId ? 'border-gray-200 dark:border-gray-600' : 'border-red-300 dark:border-red-600'}`}>
                 <option value="">— Выберите хост —</option>
                 {servers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Физический сервер-хост, на котором размещена ВМ. Принадлежность ВМ к кластеру определяется автоматически: если выбранный хост входит в кластер — ВМ относится к тому же кластеру.</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Физический сервер, на котором размещена ВМ. Это может быть как хост кластера, так и обычный автономный сервер (без роли гипервизора). Принадлежность к кластеру определяется автоматически: если хост входит в кластер — ВМ относится к тому же кластеру.</p>
               {servers.length === 0 && (
-                <p className="text-xs text-red-500 mt-1">Нет доступных хостов: добавьте физический сервер с ролью «Хост гипервизора» во вкладке «Физические серверы».</p>
+                <p className="text-xs text-red-500 mt-1">Нет доступных хостов: добавьте физический сервер во вкладке «Физические серверы» (гипервизор не обязателен — подойдёт любой сервер).</p>
               )}
             </div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CPU (ядер)</label><input type="number" value={formData.cpuCores} onChange={(e) => setFormData(p => ({ ...p, cpuCores: +e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" min="1" /></div>
@@ -602,7 +605,7 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
               {formError && <p>{formError}</p>}
               {saveError && !formError && (
                 <p>
-                  Не удалось сохранить ВМ: {String(saveError)}. Проверьте, что выбранный хост-сервер существует в реестре и является физическим сервером с ролью «Хост гипервизора», а обязательные поля заполнены корректно.
+                  Не удалось сохранить ВМ: {String(saveError)}
                 </p>
               )}
             </div>

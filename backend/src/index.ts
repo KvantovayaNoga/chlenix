@@ -1257,8 +1257,10 @@ const equipmentInclude = { assignedToEmployee: true, branch: true, dataCenter: t
 // ============================================================
 const VIRT_ROLES = ['hypervisor_host', 'storage', 'management_console', 'cluster'];
 
-/** Виртуальные машины не размещаются на кластере напрямую (косяк 11):
- *  хостом может быть только физический сервер-хост гипервизора. */
+/** Жёсткой привязки ВМ к гипервизору нет: ВМ может жить на любом сервере —
+ *  хосте кластера, автономном сервере без роли («как обычный компьютер, на
+ *  котором подняли пару виртуалок»). Запрещены только заведомо неподходящие
+ *  сущности: сам кластер (логическая сущность), СХД и консоль управления. */
 async function assertVmHostIsHypervisor(hostServerId: string | null | undefined): Promise<string | null> {
   if (!hostServerId) return hostServerId ?? null;
   const host = await prisma.equipment.findUnique({ where: { id: hostServerId }, select: { serverRole: true, category: true, name: true } });
@@ -1267,17 +1269,17 @@ async function assertVmHostIsHypervisor(hostServerId: string | null | undefined)
   }
   // Явно запрещённые роли: кластер, СХД, консоль управления
   if (host.serverRole === 'cluster') {
-    throw new VmHostError(`«${host.name}» — это кластер виртуализации, а не физический хост. ВМ размещаются на конкретных хостах гипервизора, а принадлежность к кластеру определяется автоматически по хосту.`);
+    throw new VmHostError(`«${host.name}» — это кластер виртуализации, а не физический хост. ВМ размещаются на конкретных хостах, а принадлежность к кластеру определяется автоматически по хосту.`);
   }
   if (host.serverRole === 'storage') {
-    throw new VmHostError(`«${host.name}» — СХД (система хранения), на ней нельзя разместить ВМ. Выберите сервер-хост гипервизора.`);
+    throw new VmHostError(`«${host.name}» — СХД (система хранения), на ней нельзя разместить ВМ. Выберите сервер-хост.`);
   }
   if (host.serverRole === 'management_console') {
     throw new VmHostError(`«${host.name}» — консоль управления гипервизором, а не хост размещения. ВМ нельзя разместить на консоли — выберите сервер-хост.`);
   }
   // Оборудование не-серверного типа тоже не может быть хостом
   if (host.category !== 'server') {
-    throw new VmHostError(`«${host.name}» не является сервером и не может быть хостом для ВМ. Выберите физический сервер-хост гипервизора.`);
+    throw new VmHostError(`«${host.name}» не является сервером и не может быть хостом для ВМ. Выберите физический сервер.`);
   }
   return hostServerId;
 }
@@ -1689,7 +1691,13 @@ const vmSchema = z.object({
   responsibleEmployeeId: z.string().optional().nullable(),
   serviceResponsibleEmployeeId: z.string().optional().nullable(),
   status: z.enum(['running', 'stopped', 'maintenance', 'decommissioned']).optional(),
-  serverRole: z.enum(['hypervisor_host', 'storage', 'management_console', 'standalone']).optional().nullable(),
+  // Пустая строка / null = «роль не назначена» (автономный сервер без роли в
+  // виртуализации тоже может быть хостом для ВМ) — нормализуем в null, чтобы
+  // zod не падал с «Invalid enum value ... received ''».
+  serverRole: z.preprocess(
+    (v) => (v === '' || v == null ? null : v),
+    z.enum(['hypervisor_host', 'storage', 'management_console', 'standalone']).nullable().optional(),
+  ),
   provisionedOn: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
 });
