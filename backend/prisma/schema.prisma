@@ -312,7 +312,6 @@ model VirtualMachine {
   // Связи
   organization               Organization? @relation(fields: [organizationId], references: [id])
   hostServer                 Equipment?    @relation("HostServer", fields: [hostServerId], references: [id])
-  cluster                    Equipment?    @relation("VmCluster", fields: [clusterId], references: [id], onDelete: SetNull)
   responsibleEmployee        Employee?     @relation("VMInfraResponsible", fields: [responsibleEmployeeId], references: [id])
   serviceResponsibleEmployee Employee?     @relation("VMServiceResponsible", fields: [serviceResponsibleEmployeeId], references: [id])
   updatedBy                  User?         @relation("VMUpdater", fields: [updatedById], references: [id])

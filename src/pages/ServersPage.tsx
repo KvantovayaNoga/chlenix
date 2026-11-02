@@ -112,7 +112,6 @@ export function ServersPage() {
     && !rolelessStorageIds.has(eq.id)
   );
   // Отдельные сущности-кластеры (для опционального поля «Кластер» у ВМ)
-  const clusterEntities = physicalServers.filter(eq => eq.serverRole === 'cluster');
   const activeEmployees = employees.filter(e => e.isEmployed);
 
   const filteredVMs = useMemo(() => {
@@ -147,6 +146,13 @@ export function ServersPage() {
     if (!clusterId) return '—';
     const cl = equipment.find(s => s.id === clusterId);
     return cl ? (cl.clusterName || cl.name) : clusterId;
+  };
+  // Кластер ВМ определяется автоматически по хост-серверу: ВМ живёт на хосте,
+  // а хост (если входит в кластер) имеет parentClusterId -> кластер.
+  const getVmClusterName = (vm: any): string => {
+    const host = vm?.hostServerId ? equipment.find(s => s.id === vm.hostServerId) : null;
+    if (!host?.parentClusterId) return '—';
+    return getClusterName(host.parentClusterId);
   };
   const getUserName = (userId: string | null) => {
     if (!userId) return '—';
@@ -287,7 +293,7 @@ export function ServersPage() {
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-3">
                 <div><span className="text-gray-600 dark:text-gray-400 text-xs">Хост:</span><p className="font-medium text-gray-700 dark:text-gray-200">{getServerName(vm.hostServerId)}</p></div>
-                <div><span className="text-gray-600 dark:text-gray-400 text-xs">Кластер:</span><p className="font-medium text-gray-700 dark:text-gray-200">{getClusterName((vm as any).clusterId)}</p></div>
+                <div><span className="text-gray-600 dark:text-gray-400 text-xs">Кластер:</span><p className="font-medium text-gray-700 dark:text-gray-200">{getVmClusterName(vm)}</p></div>
                 <div><span className="text-gray-600 dark:text-gray-400 text-xs">Ресурсы:</span><p className="font-medium text-gray-700 dark:text-gray-200">{vm.cpuCores} CPU / {vm.ramGB} ГБ / {vm.diskGB} ГБ</p></div>
                 <div><span className="text-gray-600 dark:text-gray-400 text-xs">Ответ. (инфра):</span><p className="font-medium text-gray-700 dark:text-gray-200">{getEmployeeName(vm.responsibleEmployeeId)}</p></div>
                 <div><span className="text-gray-600 dark:text-gray-400 text-xs">Ответ. (сервисы):</span><p className="font-medium text-gray-700 dark:text-gray-200">{getEmployeeName(vm.serviceResponsibleEmployeeId)}</p></div>
@@ -348,7 +354,8 @@ export function ServersPage() {
           onDeleteService={(svcId) => { deleteService(svcId); }} 
           getEmployeeName={getEmployeeName} 
           getServerName={getServerName} 
-          getClusterName={getClusterName} 
+          getClusterName={getClusterName}
+          getVmClusterName={getVmClusterName} 
           getUserName={getUserName} 
         />
       )}
@@ -365,7 +372,6 @@ export function ServersPage() {
             if (ok !== false) setEditingVM(null);
           }}
           servers={hypervisorHosts}
-          clusters={clusterEntities}
           employees={activeEmployees}
         />
       )}
@@ -412,7 +418,7 @@ export function ServersPage() {
   );
 }
 
-function VMDetailModal({ vm, onClose, canEdit, employees, services, onAddInterface, onEditInterface, onRemoveInterface, onAddService, onEditService, onDeleteService, getEmployeeName, getServerName, getClusterName, getUserName }: any) {
+function VMDetailModal({ vm, onClose, canEdit, employees, services, onAddInterface, onEditInterface, onRemoveInterface, onAddService, onEditService, onDeleteService, getEmployeeName, getServerName, getClusterName, getVmClusterName, getUserName }: any) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-800 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -428,7 +434,7 @@ function VMDetailModal({ vm, onClose, canEdit, employees, services, onAddInterfa
             <div><span className="text-gray-400">RAM:</span> <span className="text-gray-200">{vm.ramGB} ГБ</span></div>
             <div><span className="text-gray-400">Диск:</span> <span className="text-gray-200">{vm.diskGB} ГБ</span></div>
             <div><span className="text-gray-400">Хост:</span> <span className="text-gray-200">{getServerName(vm.hostServerId)}</span></div>
-            <div><span className="text-gray-400">Кластер:</span> <span className="text-gray-200">{getClusterName(vm.clusterId)}</span></div>
+            <div><span className="text-gray-400">Кластер:</span> <span className="text-gray-200">{getVmClusterName(vm)}</span></div>
             <div><span className="text-gray-400">Статус:</span> <span className={`px-2 py-0.5 rounded text-xs ${vmStatusLabels[vm.status as keyof typeof vmStatusLabels].color}`}>{vmStatusLabels[vm.status as keyof typeof vmStatusLabels].label}</span></div>
             <div><span className="text-gray-400">Тип:</span> <span className="text-gray-200">{vm.type}</span></div>
           </div>
@@ -500,10 +506,12 @@ function VMDetailModal({ vm, onClose, canEdit, employees, services, onAddInterfa
   );
 }
 
-function VMEditModal({ vm, onClose, onSave, servers, clusters, employees }: any) {
+function VMEditModal({ vm, onClose, onSave, servers, employees }: any) {
+  // Выбор кластера в форме ВМ убран: принадлежность к кластеру определяется
+  // автоматически по хост-серверу (хост входит в кластер => ВМ в этом кластере).
+  const [formError, setFormError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: vm?.name || '', hostname: vm?.hostname || '', type: vm?.type || 'virtual', hostServerId: vm?.hostServerId || null,
-    clusterId: (vm as any)?.clusterId || null,
     os: vm?.os || '', cpuCores: vm?.cpuCores || 2, ramGB: vm?.ramGB || 4, diskGB: vm?.diskGB || 50,
     responsibleEmployeeId: vm?.responsibleEmployeeId || null, serviceResponsibleEmployeeId: vm?.serviceResponsibleEmployeeId || null,
     status: vm?.status || 'running', notes: vm?.notes || '',
@@ -513,6 +521,18 @@ function VMEditModal({ vm, onClose, onSave, servers, clusters, employees }: any)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // Понятные ошибки: почему нельзя создать/сохранить ВМ
+    if (!formData.name.trim()) { setFormError('Укажите имя ВМ — без имени машину не найти в реестре.'); return; }
+    if (!formData.hostname.trim()) { setFormError('Укажите hostname ВМ (например, web01.company.local).'); return; }
+    if (!formData.hostServerId) {
+      setFormError(
+        servers.length === 0
+          ? 'Нельзя создать ВМ: в реестре нет ни одного сервера-хоста гипервизора. Сначала добавьте физический сервер с ролью «Хост гипервизора» на странице «Физические серверы», затем вернитесь сюда.'
+          : 'Не выбран хост-сервер. ВМ должна быть размещена на конкретном физическом сервере-хосте — выберите его из списка. Кластер определяется автоматически по хосту.'
+      );
+      return;
+    }
+    setFormError(null);
     // ВМ не может быть СХД; «назначенный хост» имеет смысл только для консолей/хостов-ролей
     const payload = { ...formData };
     if (payload.serverRole === '' || payload.serverRole === 'storage') payload.serverRole = '' as any;
@@ -532,8 +552,17 @@ function VMEditModal({ vm, onClose, onSave, servers, clusters, employees }: any)
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Имя ВМ *</label><input type="text" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required placeholder="prod-web-01" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hostname *</label><input type="text" value={formData.hostname} onChange={(e) => setFormData(p => ({ ...p, hostname: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required placeholder="web01.company.local" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ОС *</label><input type="text" value={formData.os} onChange={(e) => setFormData(p => ({ ...p, os: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required placeholder="Ubuntu 22.04 LTS" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Хост-сервер (гипервизор)</label><select value={formData.hostServerId || ''} onChange={(e) => setFormData(p => ({ ...p, hostServerId: e.target.value || null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"><option value="">— Не указан —</option>{servers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Кластер</label><select value={formData.clusterId || ''} onChange={(e) => setFormData(p => ({ ...p, clusterId: e.target.value || null }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"><option value="">— Не указан —</option>{(clusters ?? []).map((cl: any) => <option key={cl.id} value={cl.id}>{cl.clusterName || cl.name}</option>)}</select><p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Кластер не является хостом — ВМ размещается на сервере-хосте, а кластер только группирует её.</p></div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Хост-сервер (гипервизор) *</label>
+              <select value={formData.hostServerId || ''} onChange={(e) => { setFormData(p => ({ ...p, hostServerId: e.target.value || null })); setFormError(null); }} className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 ${formData.hostServerId ? 'border-gray-200 dark:border-gray-600' : 'border-red-300 dark:border-red-600'}`}>
+                <option value="">— Выберите хост —</option>
+                {servers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Физический сервер-хост, на котором размещена ВМ. Принадлежность ВМ к кластеру определяется автоматически: если выбранный хост входит в кластер — ВМ относится к тому же кластеру.</p>
+              {servers.length === 0 && (
+                <p className="text-xs text-red-500 mt-1">Нет доступных хостов: добавьте физический сервер с ролью «Хост гипервизора» во вкладке «Физические серверы».</p>
+              )}
+            </div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CPU (ядер)</label><input type="number" value={formData.cpuCores} onChange={(e) => setFormData(p => ({ ...p, cpuCores: +e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" min="1" /></div>
             <div><DecimalInput label="RAM (ГБ)" value={formData.ramGB} onChange={(v) => setFormData(p => ({ ...p, ramGB: v ?? 0 }))} placeholder="Например: 8 или 4,5" /></div>
             <div><StorageField label="Диск" valueGB={formData.diskGB} onChange={(gb) => setFormData(p => ({ ...p, diskGB: gb ?? 0 }))} placeholder="Например: 100 или 1,5" hint="Объём хранится в ГБ; единица выбора (КБ…ПБ) — для удобства ввода." /></div>
@@ -566,6 +595,11 @@ function VMEditModal({ vm, onClose, onSave, servers, clusters, employees }: any)
             />
           </div>
           <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Примечания</label><textarea value={formData.notes} onChange={(e) => setFormData(p => ({ ...p, notes: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" rows={2} /></div>
+          {formError && (
+            <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+              {formError}
+            </div>
+          )}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Отмена</button>
             <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">{vm?.id ? 'Сохранить' : 'Создать'}</button>

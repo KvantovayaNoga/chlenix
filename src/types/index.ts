@@ -280,8 +280,8 @@ export interface VirtualMachine {
   hostname: string;
   type: VMType;
   hostServerId: string | null;
-  /** Кластер, которому принадлежит ВМ (косяк 11: ВМ размещается на хосте, а кластер лишь аккумулирует) */
-  clusterId?: string | null;
+  /** Кластер ВМ не хранится явно: определяется автоматически по хост-серверу
+   *  (hostServer.parentClusterId). Поле clusterId удалено из модели и формы ВМ. */
   os: string;
   cpuCores: number;
   ramGB: number;
