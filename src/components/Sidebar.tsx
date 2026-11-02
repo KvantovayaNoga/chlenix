@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from '../router';
+import { NavLink, useNavigate, useLocation } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { useDataStore } from '../store/dataStore';
 import { useState } from 'react';
@@ -43,6 +43,11 @@ export function Sidebar() {
   const organization = organizations.find((o) => o.id === currentUser?.organizationId);
   const hasOrganization = !!currentUser?.organizationId;
   const navigate = useNavigate();
+  const location = useLocation();
+  // Активный пункт (для окраски иконки): совпадение с NavLink end — точное,
+  // но для вложенных маршрутов (например /employees/123) считаем активным родителя.
+  const isActiveItem = (to: string) =>
+    location.pathname === to || location.pathname.startsWith(to + '/');
   const [isMinimized, setIsMinimized] = useState(false);
 
   // Список организаций для отображения кнопки «Сменить организацию» (админ — все организации системы).
@@ -62,33 +67,34 @@ export function Sidebar() {
 
   // Логика: нет организации — нет её наполнения.
   // Без активной организации показываем только «Обзор» и «Организация» (создание).
-  // Пункты навигации. activeColor — цвет иконки/текста активной ссылки:
-  // неактивные остаются светлыми (text-slate-300), активная подсвечивается цветом раздела.
+  // Пункты навигации. activeIconColor — ЯРКИЙ цвет иконки активной ссылки
+  // (по аналогии с цветными иконками ролей на «Физических серверах»);
+  // текст активной ссылки остаётся белым, неактивные пункты — как раньше.
   const navItems = [
-    { to: '/dashboard', label: 'Обзор', icon: LayoutDashboard, activeColor: 'text-indigo-200' },
+    { to: '/dashboard', label: 'Обзор', icon: LayoutDashboard, activeIconColor: 'text-indigo-400' },
     {
       to: hasOrganization ? '/organization' : '/organization/create',
       label: organization ? organization.shortName || organization.name : 'Создать организацию',
       icon: Building2,
-      activeColor: 'text-emerald-200',
+      activeIconColor: 'text-emerald-400',
     },
     ...(hasOrganization
       ? [
-          { to: '/staff', label: 'Штатное расписание', icon: BookMarked, activeColor: 'text-sky-200' },
-          { to: '/employees', label: 'Сотрудники', icon: Users, activeColor: 'text-blue-200' },
-          { to: '/equipment', label: 'Оборудование', icon: Monitor, activeColor: 'text-teal-200' },
-          { to: '/servers/physical', label: 'Физические серверы', icon: Server, activeColor: 'text-red-200' },
-          { to: '/servers', label: 'Виртуальные машины', icon: Cpu, activeColor: 'text-violet-200' },
+          { to: '/staff', label: 'Штатное расписание', icon: BookMarked, activeIconColor: 'text-sky-400' },
+          { to: '/employees', label: 'Сотрудники', icon: Users, activeIconColor: 'text-blue-400' },
+          { to: '/equipment', label: 'Оборудование', icon: Monitor, activeIconColor: 'text-teal-400' },
+          { to: '/servers/physical', label: 'Физические серверы', icon: Server, activeIconColor: 'text-red-400' },
+          { to: '/servers', label: 'Виртуальные машины', icon: Cpu, activeIconColor: 'text-violet-400' },
           ...(showVirtualization
-            ? [{ to: '/servers/virtualization', label: 'Платформа виртуализации', icon: Layers, activeColor: 'text-purple-200' }]
+            ? [{ to: '/servers/virtualization', label: 'Платформа виртуализации', icon: Layers, activeIconColor: 'text-purple-400' }]
             : []),
         ]
       : []),
   ];
 
   if (canManageUsers()) {
-    if (hasOrganization) navItems.push({ to: '/users', label: 'Пользователи', icon: UserCog, activeColor: 'text-amber-200' });
-    navItems.push({ to: '/about', label: 'О системе', icon: Info, activeColor: 'text-slate-100' });
+    if (hasOrganization) navItems.push({ to: '/users', label: 'Пользователи', icon: UserCog, activeIconColor: 'text-amber-400' });
+    navItems.push({ to: '/about', label: 'О системе', icon: Info, activeIconColor: 'text-slate-200' });
   }
 
   return (
@@ -158,13 +164,13 @@ export function Sidebar() {
               className={({ isActive }) =>
                 `flex items-center ${isMinimized ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-lg transition-all duration-200 ${
                   isActive
-                    ? `bg-indigo-600 ${item.activeColor} shadow-lg shadow-indigo-600/30`
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
                     : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                 }`
               }
               title={isMinimized ? item.label : ''}
             >
-              <item.icon className="w-5 h-5 flex-shrink-0" />
+              <item.icon className={`w-5 h-5 flex-shrink-0 ${isActiveItem(item.to) ? item.activeIconColor : ''}`} />
               {!isMinimized && <span className="font-medium truncate">{item.label}</span>}
             </NavLink>
 
