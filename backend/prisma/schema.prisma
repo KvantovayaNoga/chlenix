@@ -83,6 +83,8 @@ enum JoinRequestStatus {
 
 enum Role {
   admin
+  hr_specialist            // Специалист по кадрам
+  sysadmin                 // Системный администратор
   materially_responsible
   viewer
 }

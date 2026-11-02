@@ -98,6 +98,12 @@ const authMiddleware = async (c: any, next: any) => {
   }
 };
 
+// ============================================================
+// Роли и матрица прав (синхронизировано с UI: src/store/authStore.tsx)
+// ============================================================
+const ALL_ROLES = ['admin', 'hr_specialist', 'sysadmin', 'materially_responsible', 'viewer'] as const;
+type AppRole = (typeof ALL_ROLES)[number];
+
 // Middleware для проверки роли
 const requireRole = (roles: string[]) => {
   return async (c: any, next: any) => {
@@ -108,6 +114,34 @@ const requireRole = (roles: string[]) => {
     await next();
   };
 };
+
+/** Все роли, кроме «Пользователь» (viewer) — т.е. любые права на запись. */
+const EDITOR_ROLES = ALL_ROLES.filter((r) => r !== 'viewer');
+/** Право создавать организации: администратор системы и специалист по кадрам. */
+const ORG_CREATE_ROLES: string[] = ['admin', 'hr_specialist'];
+/** Полное управление сотрудниками (CRUD): admin + HR. */
+const EMPLOYEE_MANAGE_ROLES: string[] = ['admin', 'hr_specialist'];
+/** Связка «сотрудник ↔ оборудование»: admin, HR, МОЛ. */
+const ASSIGN_ROLES: string[] = ['admin', 'hr_specialist', 'materially_responsible'];
+/** Серверные разделы (физические серверы / ВМ / платформы виртуализации): admin + системный администратор. */
+const SERVER_ROLES: string[] = ['admin', 'sysadmin'];
+
+/** Роль пользователя из JWT-payload (c.get('user').role). */
+const roleOf = (c: any): string => c.get('user')?.role ?? '';
+
+/**
+ * Права на справочники (отделы/должности/филиалы/ЦОД) по ролям:
+ * - admin          — всё;
+ * - hr_specialist  — отделы/должности/филиалы (полностью), ЦОД — только просмотр;
+ * - sysadmin       — ЦОД (полностью), остальные — только просмотр;
+ * - остальные      — только просмотр.
+ */
+function canEditDirectory(role: string, model: string): boolean {
+  if (role === 'admin') return true;
+  if (role === 'hr_specialist') return model !== 'dataCenter';
+  if (role === 'sysadmin') return model === 'dataCenter';
+  return false;
+}
 
 // ============================================================
 // Вспомогательные функции: аудит и история изменений
@@ -599,7 +633,7 @@ app.post('/api/users', authMiddleware, requireRole(['admin']), async (c) => {
     email: z.string().email(),
     password: z.string().min(6),
     fullName: z.string().min(2),
-    role: z.enum(['admin', 'materially_responsible', 'viewer']),
+    role: z.enum(ALL_ROLES),
     isActive: z.boolean().optional(),
     organizationId: z.string().uuid().optional().nullable(),
   });
@@ -679,7 +713,7 @@ app.put('/api/users/:id', authMiddleware, async (c) => {
   // Привилегированные поля — только для администратора
   if (isAdmin) {
     if (body.role !== undefined) {
-      const r = z.enum(['admin', 'materially_responsible', 'viewer']).safeParse(body.role);
+      const r = z.enum(ALL_ROLES).safeParse(body.role);
       if (r.success) updateData.role = r.data;
     }
     if (body.isActive !== undefined) updateData.isActive = !!body.isActive;
@@ -829,7 +863,7 @@ app.get('/api/organizations/:id/history', authMiddleware, async (c) => {
   return c.json(history.map(publicHistory));
 });
 
-app.post('/api/organizations', authMiddleware, requireRole(['admin']), async (c) => {
+app.post('/api/organizations', authMiddleware, requireRole(ORG_CREATE_ROLES), async (c) => {
   const parsed = organizationSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
     return c.json({ error: 'Некорректные данные организации' }, 400);
@@ -1123,7 +1157,7 @@ async function syncEmployeeUserLink(employeeId: string): Promise<void> {
   }
 }
 
-app.post('/api/employees', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+app.post('/api/employees', authMiddleware, requireRole(EMPLOYEE_MANAGE_ROLES), async (c) => {
   const parsed = employeeSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
     return c.json({ error: 'Некорректные данные сотрудника' }, 400);
@@ -1176,7 +1210,7 @@ app.post('/api/employees', authMiddleware, requireRole(['admin', 'materially_res
   return c.json(publicEmployee(await prisma.employee.findUnique({ where: { id: employee.id }, include: employeeInclude })), 201);
 });
 
-app.put('/api/employees/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+app.put('/api/employees/:id', authMiddleware, requireRole(EMPLOYEE_MANAGE_ROLES), async (c) => {
   const { id } = c.req.param();
   const parsed = employeeSchema.partial().safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
@@ -1225,7 +1259,7 @@ app.put('/api/employees/:id', authMiddleware, requireRole(['admin', 'materially_
   return c.json(publicEmployee(employee));
 });
 
-app.delete('/api/employees/:id', authMiddleware, requireRole(['admin']), async (c) => {
+app.delete('/api/employees/:id', authMiddleware, requireRole(EMPLOYEE_MANAGE_ROLES), async (c) => {
   const { id } = c.req.param();
   const currentUser = c.get('user');
   const old = await prisma.employee.findUnique({ where: { id } });
@@ -1406,7 +1440,7 @@ app.get('/api/equipment/:id/history', authMiddleware, async (c) => {
   return c.json(history.map(publicHistory));
 });
 
-app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+app.post('/api/equipment', authMiddleware, requireRole(['admin', 'hr_specialist']), async (c) => {
   const body = await c.req.json().catch(() => null);
   // ClusterForm передаёт состав кластера служебным полем __members — извлекаем его
   // до валидации схемы (в equipmentSchema его нет).
@@ -1522,7 +1556,7 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
   return c.json(publicEquipmentBrief(item), 201);
 });
 
-app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'hr_specialist']), async (c) => {
   const { id } = c.req.param();
   const body = await c.req.json().catch(() => null);
   // ClusterForm передаёт состав кластера служебным полем __members — извлекаем до валидации
@@ -1615,7 +1649,7 @@ app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'materially_
   return c.json(publicEquipmentBrief(item));
 });
 
-app.delete('/api/equipment/:id', authMiddleware, requireRole(['admin']), async (c) => {
+app.delete('/api/equipment/:id', authMiddleware, requireRole(SERVER_ROLES), async (c) => {
   const { id } = c.req.param();
   const currentUser = c.get('user');
   const old = await prisma.equipment.findUnique({ where: { id } });
@@ -1632,7 +1666,7 @@ app.delete('/api/equipment/:id', authMiddleware, requireRole(['admin']), async (
 });
 
 // Assign / unassign equipment to employee
-app.post('/api/equipment/:id/assign', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+app.post('/api/equipment/:id/assign', authMiddleware, requireRole(ASSIGN_ROLES), async (c) => {
   const { id } = c.req.param();
   const parsed = z.object({ employeeId: z.string().min(1) }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
@@ -1677,7 +1711,7 @@ app.post('/api/equipment/:id/assign', authMiddleware, requireRole(['admin', 'mat
   return c.json(publicEquipmentBrief(updated));
 });
 
-app.post('/api/equipment/:id/unassign', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+app.post('/api/equipment/:id/unassign', authMiddleware, requireRole(ASSIGN_ROLES), async (c) => {
   const { id } = c.req.param();
   const currentUser = c.get('user');
   const item = await prisma.equipment.findUnique({ where: { id } });
@@ -1789,7 +1823,7 @@ app.get('/api/virtual-machines/:id/history', authMiddleware, async (c) => {
   return c.json(history.map(publicHistory));
 });
 
-app.post('/api/virtual-machines', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+app.post('/api/virtual-machines', authMiddleware, requireRole(SERVER_ROLES), async (c) => {
   const parsed = vmSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
     const first = parsed.error.issues[0];
@@ -1847,7 +1881,7 @@ app.post('/api/virtual-machines', authMiddleware, requireRole(['admin', 'materia
   return c.json(publicVM(vm), 201);
 });
 
-app.put('/api/virtual-machines/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+app.put('/api/virtual-machines/:id', authMiddleware, requireRole(SERVER_ROLES), async (c) => {
   const { id } = c.req.param();
   const parsed = vmSchema.partial().safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
@@ -1897,7 +1931,7 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(['admin', 'mate
   return c.json(publicVM(vm));
 });
 
-app.delete('/api/virtual-machines/:id', authMiddleware, requireRole(['admin']), async (c) => {
+app.delete('/api/virtual-machines/:id', authMiddleware, requireRole(SERVER_ROLES), async (c) => {
   const { id } = c.req.param();
   const currentUser = c.get('user');
   const old = await prisma.virtualMachine.findUnique({ where: { id } });
@@ -1913,7 +1947,7 @@ app.delete('/api/virtual-machines/:id', authMiddleware, requireRole(['admin']), 
 });
 
 // Network Interfaces
-app.post('/api/virtual-machines/:vmId/network-interfaces', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+app.post('/api/virtual-machines/:vmId/network-interfaces', authMiddleware, requireRole(SERVER_ROLES), async (c) => {
   const { vmId } = c.req.param();
   const parsed = z.object({
     name: z.string().min(1),
@@ -1946,7 +1980,7 @@ app.post('/api/virtual-machines/:vmId/network-interfaces', authMiddleware, requi
   return c.json(ni, 201);
 });
 
-app.put('/api/network-interfaces/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+app.put('/api/network-interfaces/:id', authMiddleware, requireRole(SERVER_ROLES), async (c) => {
   const { id } = c.req.param();
   const parsed = z.object({
     name: z.string().min(1).optional(),
@@ -1971,7 +2005,7 @@ app.put('/api/network-interfaces/:id', authMiddleware, requireRole(['admin', 'ma
   return c.json(ni);
 });
 
-app.delete('/api/network-interfaces/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+app.delete('/api/network-interfaces/:id', authMiddleware, requireRole(SERVER_ROLES), async (c) => {
   const { id } = c.req.param();
   const currentUser = c.get('user');
   const old = await prisma.networkInterface.findUnique({ where: { id } });
@@ -2002,7 +2036,7 @@ function parsePorts(v: unknown): { value?: string | null; error?: string } {
 }
 
 // Services on VMs
-app.post('/api/virtual-machines/:vmId/services', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+app.post('/api/virtual-machines/:vmId/services', authMiddleware, requireRole(SERVER_ROLES), async (c) => {
   const { vmId } = c.req.param();
   const parsed = z.object({
     name: z.string().min(1),
@@ -2035,7 +2069,7 @@ app.post('/api/virtual-machines/:vmId/services', authMiddleware, requireRole(['a
   return c.json(service, 201);
 });
 
-app.put('/api/services/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+app.put('/api/services/:id', authMiddleware, requireRole(SERVER_ROLES), async (c) => {
   const { id } = c.req.param();
   const parsed = z.object({
     name: z.string().min(1).optional(),
@@ -2062,7 +2096,7 @@ app.put('/api/services/:id', authMiddleware, requireRole(['admin', 'materially_r
   return c.json(service);
 });
 
-app.delete('/api/services/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
+app.delete('/api/services/:id', authMiddleware, requireRole(SERVER_ROLES), async (c) => {
   const { id } = c.req.param();
   const currentUser = c.get('user');
   const old = await prisma.service.findUnique({ where: { id } });
@@ -2255,7 +2289,7 @@ app.get('/api/join-requests', authMiddleware, requireRole(['admin']), async (c) 
 app.post('/api/join-requests/:id/approve', authMiddleware, requireRole(['admin']), async (c) => {
   const me = c.get('user');
   const parsed = z
-    .object({ role: z.enum(['admin', 'materially_responsible', 'viewer']).optional() })
+    .object({ role: z.enum(ALL_ROLES).optional() })
     .safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
   const newRole = parsed.data.role ?? 'viewer';
