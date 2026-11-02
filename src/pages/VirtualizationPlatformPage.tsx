@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from '../router';
 import { useDataStore } from '../store/dataStore';
-import { Layers, Server, HardDrive, TerminalSquare, Cpu } from 'lucide-react';
+import { Layers, Server, HardDrive, TerminalSquare, Cpu, ChevronDown } from 'lucide-react';
 import {
   buildVirtualizationPlatforms,
   serverRoleLabels,
@@ -11,6 +11,8 @@ import {
   usagePercent,
 } from '../utils/virtualization';
 import type { Equipment } from '../types';
+
+type PlatformCluster = ReturnType<typeof buildVirtualizationPlatforms>[number]['clusters'][number];
 
 /** Полоса загрузки (использование/ёмкость); переподписка >100% подсвечется красным. */
 function UsageBar({ label, used, total, unit, fmt }: { label: string; used: number; total: number; unit?: string; fmt?: (gb: number) => string }) {
@@ -34,11 +36,150 @@ function UsageBar({ label, used, total, unit, fmt }: { label: string; used: numb
   );
 }
 
+/** Сворачиваемый раздел платформы: заголовок со стрелкой, содержимое скрыто по умолчанию. */
+function CollapsibleSection({
+  title,
+  icon,
+  defaultOpen = false,
+  children,
+}: {
+  title: React.ReactNode;
+  icon: React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="rounded-xl border border-gray-100 dark:border-gray-700 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-2 px-4 py-3 bg-gray-50/70 dark:bg-gray-900/30 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left"
+      >
+        <span className="text-sm font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300 flex items-center gap-2 min-w-0 truncate">
+          {icon}
+          {title}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && <div className="p-4 space-y-3">{children}</div>}
+    </section>
+  );
+}
+
+/** Кластер — отдельный блок (по аналогии с хостами): сводные аккумулированные
+ *  характеристики + вложенные хосты и СХД. Наполнение скрыто до раскрытия. */
+function ClusterBlock({
+  cluster,
+  branchName,
+  onOpenVms,
+  onOpenPhysical,
+}: {
+  cluster: PlatformCluster;
+  branchName: string;
+  onOpenVms: () => void;
+  onOpenPhysical: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const hasResources = cluster.cpuTotal > 0 || cluster.ramTotal > 0 || cluster.diskTotalGB > 0;
+  return (
+    <div className="rounded-xl border border-purple-100 dark:border-purple-900/50 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="w-full flex items-center gap-3 p-3 text-left hover:bg-purple-50/50 dark:hover:bg-purple-900/20 transition-colors"
+      >
+        <div className="bg-purple-100 dark:bg-purple-900/40 p-2 rounded-lg shrink-0">
+          <Layers className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-gray-800 dark:text-gray-100 truncate">{cluster.name}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {cluster.hosts.length} хост(а) • {cluster.storages.length} СХД • {cluster.vms.length} ВМ • {branchName}
+          </p>
+        </div>
+        {hasResources && (
+          <span className="text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap hidden sm:inline">
+            {cluster.cpuTotal > 0 && `CPU ${cluster.cpuUsed}/${cluster.cpuTotal}`}
+            {cluster.cpuTotal > 0 && cluster.ramTotal > 0 && ' • '}
+            {cluster.ramTotal > 0 && `RAM ${cluster.ramUsed}/${cluster.ramTotal} ГБ`}
+            {cluster.diskTotalGB > 0 && ` • Диски ${formatGB(cluster.diskTotalGB)}`}
+          </span>
+        )}
+        <ChevronDown className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="px-3 pb-3 pt-1 space-y-3 border-t border-purple-100 dark:border-purple-900/40">
+          {/* Аккумулированные характеристики кластера (суммы хостов и СХД) */}
+          {hasResources && (
+            <div className="flex flex-wrap gap-4 pt-3">
+              <UsageBar label="vCPU кластера" used={cluster.cpuUsed} total={cluster.cpuTotal} unit="" />
+              <UsageBar label="RAM кластера" used={cluster.ramUsed} total={cluster.ramTotal} unit=" ГБ" />
+              <UsageBar label="Ёмкость СХД" used={0} total={cluster.diskTotalGB} fmt={formatGB} />
+            </div>
+          )}
+          {/* Вложенные хосты */}
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1.5">
+              Хосты внутри кластера
+            </p>
+            {cluster.hosts.length === 0 ? (
+              <p className="text-xs text-gray-400 dark:text-gray-500">В кластер пока не добавлены хосты</p>
+            ) : (
+              <div className="space-y-2 pl-3 border-l-2 border-purple-100 dark:border-purple-900/40">
+                {cluster.hosts.map((h) => (
+                  <HostRow
+                    key={h.id}
+                    host={h}
+                    vmCount={cluster.vms.filter((v) => v.hostServerId === h.id).length}
+                    branchName={branchName}
+                    onOpen={onOpenVms}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Вложенные СХД */}
+          {cluster.storages.length > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1.5">
+                СХД внутри кластера
+              </p>
+              <div className="space-y-2 pl-3 border-l-2 border-cyan-100 dark:border-cyan-900/40">
+                {cluster.storages.map((st) => (
+                  <div key={st.id} className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+                    <div className="bg-cyan-50 dark:bg-cyan-900/30 p-2 rounded-lg"><HardDrive className="w-5 h-5 text-cyan-600 dark:text-cyan-400" /></div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-gray-800 dark:text-gray-100 truncate">{st.name}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {st.brand} {st.model}
+                        {(st.storageType || st.storageProtocol || st.storageCapacityGB || st.diskGB) && ' • '}
+                        {st.storageType && storageTypeLabels[st.storageType]}
+                        {st.storageType && st.storageProtocol && ' / '}
+                        {st.storageProtocol && storageProtocolLabels[st.storageProtocol]}
+                        {(st.storageCapacityGB || st.diskGB) && ` • ${formatGB(st.storageCapacityGB || st.diskGB || 0)}`}
+                      </p>
+                    </div>
+                    <button onClick={onOpenPhysical} className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline whitespace-nowrap">
+                      Открыть
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Платформа виртуализации — агрегированный взгляд на инфраструктуру:
- * гипервизор, серверы-хосты, СХД и консоли управления (физические или ВМ).
- * Пункт появляется в сайдбаре только когда хотя бы у одного сервера/ВМ
- * выставлена роль в системе виртуализации (см. hasVirtualizationFeature).
+ * гипервизор, кластеры (отдельные блоки со вложенными хостами/СХД), СХД и консоли.
+ * Всё наполнение гипервизора спрятано под кат — пользователь раскрывает сам.
  */
 export function VirtualizationPlatformPage() {
   const { equipment, virtualMachines, branches } = useDataStore();
@@ -101,44 +242,59 @@ export function VirtualizationPlatformPage() {
               </div>
             </div>
 
-            <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Хосты, сгруппированные по кластерам внутри гипервизора */}
-              <section>
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-2">
-                  <Server className="w-4 h-4 text-red-500" /> Серверы-хосты
-                </h3>
-                {p.clusters.length === 0 ? (
-                  <p className="text-sm text-gray-400 dark:text-gray-500">Хосты не назначены</p>
+            {/* Наполнение гипервизора спрятано под кат: пользователь раскрывает сам */}
+            <div className="p-6 space-y-4">
+              {/* Кластеры — отдельные блоки (по аналогии с хостами), хосты вложены внутрь */}
+              <CollapsibleSection
+                title={<>Кластеры ({p.clusters.filter((c) => c.name).length})</>}
+                icon={<Layers className="w-4 h-4 text-purple-500" />}
+              >
+                {p.clusters.filter((c) => c.name).length === 0 ? (
+                  <p className="text-sm text-gray-400 dark:text-gray-500">Кластеры не созданы</p>
                 ) : (
-                  <div className="space-y-4">
-                    {p.clusters.map((c) => (
-                      <div key={c.name || '__none__'}>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 flex items-center gap-1.5">
-                            {c.name ? (<><Layers className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />Кластер: {c.name}</>) : 'Без кластера'}
-                          </p>
-                          <span className="text-[11px] text-gray-400 dark:text-gray-500">
-                            {c.hosts.length} хост(а) • {c.vms.length} ВМ
-                            {c.cpuTotal > 0 && ` • CPU ${c.cpuUsed}/${c.cpuTotal}`}
-                            {c.ramTotal > 0 && ` • RAM ${c.ramUsed}/${c.ramTotal} ГБ`}
-                          </span>
-                        </div>
-                        <div className="space-y-2">
-                          {c.hosts.map((h) => (
-                            <HostRow key={h.id} host={h} vmCount={c.vms.filter((v) => v.hostServerId === h.id).length} branchName={getBranchName(h.branchId)} onOpen={() => navigate('/servers/physical')} />
-                          ))}
-                        </div>
-                      </div>
+                  <div className="space-y-3">
+                    {p.clusters
+                      .filter((c) => c.name)
+                      .map((c) => (
+                        <ClusterBlock
+                          key={c.clusterId || c.name}
+                          cluster={c}
+                          branchName={getBranchName(c.hosts[0]?.branchId || p.storage[0]?.branchId || '')}
+                          onOpenVms={() => navigate('/servers')}
+                          onOpenPhysical={() => navigate('/servers/physical')}
+                        />
+                      ))}
+                  </div>
+                )}
+              </CollapsibleSection>
+
+              {/* Хосты без кластера */}
+              <CollapsibleSection
+                title={<>Хосты без кластера ({(p.clusters.find((c) => !c.name)?.hosts || []).length})</>}
+                icon={<Server className="w-4 h-4 text-red-500" />}
+              >
+                {(p.clusters.find((c) => !c.name)?.hosts || []).length === 0 ? (
+                  <p className="text-sm text-gray-400 dark:text-gray-500">Хосты вне кластеров не назначены</p>
+                ) : (
+                  <div className="space-y-2">
+                    {(p.clusters.find((c) => !c.name)?.hosts || []).map((h) => (
+                      <HostRow
+                        key={h.id}
+                        host={h}
+                        vmCount={(p.clusters.find((c) => !c.name)?.vms || []).filter((v) => v.hostServerId === h.id).length}
+                        branchName={getBranchName(h.branchId)}
+                        onOpen={() => navigate('/servers')}
+                      />
                     ))}
                   </div>
                 )}
-              </section>
+              </CollapsibleSection>
 
-              {/* СХД */}
-              <section>
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-2">
-                  <HardDrive className="w-4 h-4 text-cyan-600" /> Системы хранения (СХД)
-                </h3>
+              {/* СХД вне кластеров */}
+              <CollapsibleSection
+                title={<>Системы хранения (СХД) ({p.storage.length})</>}
+                icon={<HardDrive className="w-4 h-4 text-cyan-600" />}
+              >
                 {p.storage.length === 0 ? (
                   <p className="text-sm text-gray-400 dark:text-gray-500">СХД не назначены</p>
                 ) : (
@@ -162,15 +318,15 @@ export function VirtualizationPlatformPage() {
                     ))}
                   </div>
                 )}
-              </section>
+              </CollapsibleSection>
 
               {/* Консоли управления */}
-              <section>
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-2">
-                  <TerminalSquare className="w-4 h-4 text-amber-600" /> Консоли управления
-                </h3>
+              <CollapsibleSection
+                title={<>Консоли управления ({p.physicalConsoles.length + p.managementConsoles.length})</>}
+                icon={<TerminalSquare className="w-4 h-4 text-amber-600" />}
+              >
                 {p.physicalConsoles.length === 0 && p.managementConsoles.length === 0 ? (
-                  <p className="text-sm text-gray-400 dark:text-gray-500">Консоли не назначены</p>
+                  <p className="text-sm text-gray-400 dark:text-gray-500">Консоли не назначены (поле необязательное при создании кластера)</p>
                 ) : (
                   <div className="space-y-2">
                     {p.physicalConsoles.map((c) => (
@@ -195,13 +351,13 @@ export function VirtualizationPlatformPage() {
                     ))}
                   </div>
                 )}
-              </section>
+              </CollapsibleSection>
 
               {/* ВМ платформы */}
-              <section>
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-2">
-                  <Cpu className="w-4 h-4 text-indigo-600" /> Виртуальные машины ({p.vms.length})
-                </h3>
+              <CollapsibleSection
+                title={<>Виртуальные машины ({p.vms.length})</>}
+                icon={<Cpu className="w-4 h-4 text-indigo-600" />}
+              >
                 {p.vms.length === 0 ? (
                   <p className="text-sm text-gray-400 dark:text-gray-500">На этих хостах пока нет ВМ</p>
                 ) : (
@@ -218,7 +374,7 @@ export function VirtualizationPlatformPage() {
                     ))}
                   </div>
                 )}
-              </section>
+              </CollapsibleSection>
             </div>
           </div>
         ))}
