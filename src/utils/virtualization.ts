@@ -406,10 +406,18 @@ export function normalizeClusterPayload<T extends Record<string, any>>(
   const numOrNull = (v: any) => (v === '' || v == null || !isFinite(Number(v)) ? null : Number(v));
   const out: any = { ...data };
   // Пустые строки -> null, чтобы валидатор не отклонял необязательные поля
-  // (branchId/name остаются как есть — они обязательны и проверяются формой).
+  // (name остаётся как есть — он обязателен и проверяется формой).
   for (const key of ['floor', 'room', 'notes', 'clusterName', 'hypervisorName', 'hypervisorVersion']) {
     if (typeof out[key] === 'string') out[key] = out[key].trim() || null;
   }
+  // Место размещения: ровно одно из двух — филиал (branchId) или ЦОД (dataCenterId).
+  // ClusterForm использует единый селект «Филиал / ЦОД»; здесь приводим пустые
+  // строки к null и подставляем locationType (бэкенд проверяет его на POST).
+  if (typeof out.branchId === 'string') out.branchId = out.branchId.trim() || null;
+  if (typeof out.dataCenterId === 'string') out.dataCenterId = out.dataCenterId.trim() || null;
+  if (out.dataCenterId && !out.branchId) out.locationType = 'data_center';
+  else if (out.branchId && !out.dataCenterId) out.locationType = 'branch';
+  else { out.locationType = null; }
   if ('assignedToEmployeeId' in out && (out.assignedToEmployeeId === '' || out.assignedToEmployeeId == null)) {
     out.assignedToEmployeeId = null;
   }

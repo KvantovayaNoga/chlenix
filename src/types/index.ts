@@ -208,8 +208,13 @@ export interface Equipment {
   writeOffDate: string | null;
   condition: 'new' | 'good' | 'satisfactory' | 'needs_repair' | 'written_off';
   assignedToEmployeeId: string | null;
-  // Расположение
-  branchId: string;
+  /** ФИО сотрудника, закреплённого за оборудованием (сервер отдаёт вложенный объект) */
+  assignedToEmployee?: { id: string; firstName: string; lastName: string; middleName?: string } | null;
+  // Расположение: филиал (branchId) ИЛИ внешний/облачный ЦОД (dataCenterId).
+  // Для физической техники — всегда филиал; ЦОД доступен кластерам виртуализации.
+  branchId: string | null;
+  dataCenterId?: string | null;
+  locationType?: 'branch' | 'data_center' | null;
   floor: string;
   room: string;
   // Характеристики (для серверов)

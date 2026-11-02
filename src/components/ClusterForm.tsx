@@ -9,7 +9,7 @@
 // ============================================================
 import { useMemo, useState } from 'react';
 import { X, Server, HardDrive, TerminalSquare, Layers } from 'lucide-react';
-import type { Branch, Equipment } from '../types';
+import type { Branch, DataCenter, Equipment } from '../types';
 import {
   hypervisorSuggestions,
   normalizeClusterPayload,
@@ -21,10 +21,66 @@ import { DecimalInput } from './DecimalInput';
 import { StorageField } from './StorageField';
 import { EmployeeSearch } from './EmployeeSearch';
 
+/**
+ * LocationSelect — единый выбор места размещения: филиалы организации И ЦОД
+ * (справочник сторонних/облачных мощностей) в одном выпадающем списке с
+ * группировкой. Виртуализация может жить как на филиале (своя серверная),
+ * так и на арендованных/облачных мощностях. Значение — { branchId } или
+ * { dataCenterId } (ровно одно из двух).
+ */
+export function LocationSelect({
+  branches,
+  dataCenters,
+  allowDataCenters,
+  branchId,
+  dataCenterId,
+  onChange,
+  label = 'Место размещения *',
+}: {
+  branches: Branch[];
+  dataCenters: DataCenter[];
+  /** ЦОД доступны только логическим сущностям (кластерам) — бэкенд это проверяет */
+  allowDataCenters: boolean;
+  branchId: string;
+  dataCenterId: string;
+  onChange: (v: { branchId: string; dataCenterId: string }) => void;
+  label?: string;
+}) {
+  const cls = 'w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200';
+  // Текущее значение кодируем префиксом, чтобы филиал и ЦОД могли сосуществовать в одном select
+  const value = dataCenterId ? `dc:${dataCenterId}` : branchId ? `br:${branchId}` : '';
+  const handleChange = (next: string) => {
+    if (next.startsWith('br:')) onChange({ branchId: next.slice(3), dataCenterId: '' });
+    else if (next.startsWith('dc:')) onChange({ branchId: '', dataCenterId: next.slice(3) });
+    else onChange({ branchId: '', dataCenterId: '' });
+  };
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
+      <select value={value} onChange={(e) => handleChange(e.target.value)} className={cls} required>
+        <option value="">Выберите место размещения</option>
+        <optgroup label="Филиалы">
+          {branches.map((b) => <option key={`br-${b.id}`} value={`br:${b.id}`}>{b.name}</option>)}
+        </optgroup>
+        {allowDataCenters && (
+          <optgroup label="ЦОД / облачные мощности">
+            {dataCenters.length === 0 ? (
+              <option disabled value="">ЦОД не заведены (справочник «ЦОД»)</option>
+            ) : (
+              dataCenters.map((d) => <option key={`dc-${d.id}`} value={`dc:${d.id}`}>{d.name}</option>)
+            )}
+          </optgroup>
+        )}
+      </select>
+    </div>
+  );
+}
+
 interface Props {
   /** Существующий кластер (Equipment c serverRole === 'cluster') или null — создание */
   cluster: Equipment | null;
   branches: Branch[];
+  dataCenters: DataCenter[];
   allEquipment: Equipment[];
   onClose: () => void;
   /** Сохранение кластера; вернёт false, чтобы не закрывать форму при ошибке */
@@ -84,7 +140,7 @@ function MemberPicker({
   );
 }
 
-export function ClusterForm({ cluster, branches, allEquipment, onClose, onSave }: Props) {
+export function ClusterForm({ cluster, branches, dataCenters, allEquipment, onClose, onSave }: Props) {
   const isEdit = !!cluster;
   // Участники кластера берём из уже сохранённых связей parentClusterId
   const initialMembers = useMemo(
@@ -101,6 +157,7 @@ export function ClusterForm({ cluster, branches, allEquipment, onClose, onSave }
     hypervisorName: cluster?.hypervisorName || '',
     hypervisorVersion: cluster?.hypervisorVersion || '',
     branchId: cluster?.branchId || '',
+    dataCenterId: cluster?.dataCenterId || '',
     floor: cluster?.floor || '',
     room: cluster?.room || '',
     assignedToEmployeeId: cluster?.assignedToEmployeeId || null,
@@ -151,10 +208,6 @@ export function ClusterForm({ cluster, branches, allEquipment, onClose, onSave }
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <datalist id="cluster-hypervisor-suggestions">
-            {hypervisorSuggestions.map((h) => <option key={h} value={h} />)}
-          </datalist>
-
           {/* Основное: кластер — логическая сущность, без инвентарной карточки */}
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
@@ -167,19 +220,23 @@ export function ClusterForm({ cluster, branches, allEquipment, onClose, onSave }
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Гипервизор / платформа</label>
-              <input list="cluster-hypervisor-suggestions" type="text" value={formData.hypervisorName} onChange={(e) => setFormData((p) => ({ ...p, hypervisorName: e.target.value }))} className={inputCls} placeholder="VMware vSphere / ESXi, Proxmox VE…" />
+              {/* Ввод только руками: подсказки популярных платформ выводятся placeholder'ом,
+                  выпадающего списка нет — платформы бывают произвольными (в т.ч. облачные) */}
+              <input type="text" value={formData.hypervisorName} onChange={(e) => setFormData((p) => ({ ...p, hypervisorName: e.target.value }))} className={inputCls} placeholder="Например: VMware vSphere / ESXi, Proxmox VE, Яндекс Облако…" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Версия гипервизора</label>
               <input type="text" value={formData.hypervisorVersion} onChange={(e) => setFormData((p) => ({ ...p, hypervisorVersion: e.target.value }))} className={inputCls} placeholder="vSphere 8.0 U2, PVE 8.2…" />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Филиал *</label>
-              <select value={formData.branchId} onChange={(e) => setFormData((p) => ({ ...p, branchId: e.target.value }))} className={inputCls} required>
-                <option value="">Выберите филиал</option>
-                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-            </div>
+            <LocationSelect
+              branches={branches}
+              dataCenters={dataCenters}
+              allowDataCenters
+              branchId={formData.branchId}
+              dataCenterId={formData.dataCenterId}
+              onChange={({ branchId, dataCenterId }) => setFormData((p) => ({ ...p, branchId, dataCenterId }))}
+              label="Филиал / ЦОД *"
+            />
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Кабинет/помещение</label>
               <input type="text" value={formData.room} onChange={(e) => setFormData((p) => ({ ...p, room: e.target.value }))} className={inputCls} placeholder="Серверная (необязательно)" />

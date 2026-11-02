@@ -1009,6 +1009,7 @@ function publicEquipmentBrief(eq: any): any {
   out.updatedAt = isoDate(out.updatedAt);
   if ('assignedToEmployee' in out) out.assignedToEmployee = briefEmp(out.assignedToEmployee);
   if ('branch' in out && out.branch) out.branch = { id: out.branch.id, name: out.branch.name };
+  if ('dataCenter' in out && out.dataCenter) out.dataCenter = { id: out.dataCenter.id, name: out.dataCenter.name };
   delete out.assignedToEmployeeIdRaw;
   return out;
 }
@@ -1250,7 +1251,7 @@ const equipmentSchema = z.object({
   notes: strOrEmpty(z.string()),
 });
 
-const equipmentInclude = { assignedToEmployee: true, branch: true } as const;
+const equipmentInclude = { assignedToEmployee: true, branch: true, dataCenter: true } as const;
 
 // ============================================================
 // Серверы виртуализации: роли, кластеры и проверки целостности
@@ -1475,7 +1476,28 @@ app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'materially_
   if (!old) return c.json({ error: 'Not found' }, 404);
 
   const newData: any = { ...parsed.data };
-  if ('branchId' in newData) newData.branchId = await resolveRef('branch', newData.branchId) ?? old.branchId;
+  // Место размещения (филиал/ЦОД): нормализуем пустые строки в null и синхронизируем locationType.
+  // Значения undefined означают «поле не передавалось» — старое размещение сохраняется.
+  if ('branchId' in newData || 'dataCenterId' in newData) {
+    let nextBranchId: string | null | undefined;
+    let nextDataCenterId: string | null | undefined;
+    if ('branchId' in newData) {
+      const rawBranch = typeof newData.branchId === 'string' && newData.branchId.trim() ? newData.branchId : null;
+      nextBranchId = rawBranch === null ? null : await resolveRef('branch', rawBranch) ?? old.branchId;
+    }
+    if ('dataCenterId' in newData) {
+      const rawDc = typeof newData.dataCenterId === 'string' && newData.dataCenterId.trim() ? newData.dataCenterId : null;
+      nextDataCenterId = rawDc === null ? null : await resolveRef('dataCenter', rawDc, undefined) ?? old.dataCenterId;
+    }
+    if (nextBranchId && nextDataCenterId) return c.json({ error: 'Выберите что-то одно: филиал или ЦОД' }, 400);
+    const isClusterAfter = newData.serverRole === CLUSTER_ROLE || (newData.serverRole === undefined && old.serverRole === CLUSTER_ROLE);
+    if (nextDataCenterId && !isClusterAfter) {
+      return c.json({ error: 'Размещение в ЦОД доступно только для кластеров виртуализации' }, 400);
+    }
+    if ('branchId' in newData) newData.branchId = nextBranchId ?? null;
+    if ('dataCenterId' in newData) newData.dataCenterId = nextDataCenterId ?? null;
+    newData.locationType = newData.dataCenterId ? 'data_center' : newData.branchId ? 'branch' : null;
+  }
   if ('assignedToEmployeeId' in newData) newData.assignedToEmployeeId = await resolveRef('employee', newData.assignedToEmployeeId);
   if ('purchaseDate' in newData) newData.purchaseDate = normalizeDateField(newData.purchaseDate);
   if ('writeOffDate' in newData) newData.writeOffDate = normalizeDateField(newData.writeOffDate);
