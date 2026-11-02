@@ -7,11 +7,10 @@
 // инфраструктуры нет, можно отметить «Нет хостов» / «Нет СХД» и внести
 // количество ядер, ОЗУ и объём хранилища вручную.
 // ============================================================
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { X, Server, HardDrive, TerminalSquare, Layers } from 'lucide-react';
 import type { Branch, DataCenter, Equipment } from '../types';
 import {
-  hypervisorSuggestions,
   normalizeClusterPayload,
   storageTypeLabels,
   formatGB,
@@ -83,7 +82,11 @@ interface Props {
   dataCenters: DataCenter[];
   allEquipment: Equipment[];
   onClose: () => void;
-  /** Сохранение кластера; вернёт false, чтобы не закрывать форму при ошибке */
+  /**
+   * Сохранение кластера. `members` — полный список id участников после применения
+   * формы; сервер атомарно привязывает новых («добавить железо») и отвязывает
+   * снятых («удалить старое железо»). Вернёт false, чтобы не закрывать форму при ошибке.
+   */
   onSave: (payload: Record<string, any>, members: string[]) => Promise<boolean | void> | boolean | void;
 }
 
@@ -103,37 +106,49 @@ function MemberPicker({
   onToggle: (id: string, checked: boolean) => void;
   emptyHint: string;
 }) {
+  // Отдельно показываем «новое» железо (ещё не в кластере) и текущих участников —
+  // так при редактировании сразу видно, что добавляется и что можно снять.
+  const newCount = items.filter((it) => !selected.has(it.id)).length;
   return (
     <div className="border border-gray-200 dark:border-gray-600 rounded-xl p-3 space-y-2">
       <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
         {icon}
         {title}
+        <span className="ml-auto text-[11px] font-normal text-gray-400 dark:text-gray-500">
+          выбрано {selected.size}{newCount > 0 ? `, доступно ${newCount}` : ''}
+        </span>
       </p>
       {items.length === 0 ? (
         <p className="text-xs text-gray-400 dark:text-gray-500">{emptyHint}</p>
       ) : (
         <div className="max-h-40 overflow-y-auto space-y-1">
-          {items.map((it) => (
-            <label key={it.id} className="flex items-center gap-2 text-sm cursor-pointer select-none text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-md px-1 py-0.5">
-              <input
-                type="checkbox"
-                className="w-4 h-4 accent-indigo-600"
-                checked={selected.has(it.id)}
-                onChange={(e) => onToggle(it.id, e.target.checked)}
-              />
-              <span className="min-w-0 flex-1 truncate">{it.name}</span>
-              {it.serverRole === 'storage' && (
-                <span className="text-[11px] text-gray-400 dark:text-gray-500 shrink-0">
-                  {it.storageType ? storageTypeLabels[it.storageType] : ''} • {formatGB(it.storageCapacityGB || it.diskGB || 0)}
-                </span>
-              )}
-              {it.serverRole === 'hypervisor_host' && (
-                <span className="text-[11px] text-gray-400 dark:text-gray-500 shrink-0">
-                  {it.cpuCores || '?'} CPU / {it.ramGB || '?'} ГБ
-                </span>
-              )}
-            </label>
-          ))}
+          {items.map((it) => {
+            const isSelected = selected.has(it.id);
+            return (
+              <label key={it.id} className={`flex items-center gap-2 text-sm cursor-pointer select-none rounded-md px-1 py-0.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 ${isSelected ? 'bg-purple-50/60 dark:bg-purple-900/20 text-gray-800 dark:text-gray-200' : 'text-gray-700 dark:text-gray-300'}`}>
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 accent-indigo-600"
+                  checked={isSelected}
+                  onChange={(e) => onToggle(it.id, e.target.checked)}
+                />
+                <span className="min-w-0 flex-1 truncate">{it.name}</span>
+                {!isSelected && (
+                  <span className="text-[10px] uppercase tracking-wide text-emerald-600 dark:text-emerald-400 shrink-0">новое</span>
+                )}
+                {it.serverRole === 'storage' && (
+                  <span className="text-[11px] text-gray-400 dark:text-gray-500 shrink-0">
+                    {it.storageType ? storageTypeLabels[it.storageType] : ''} • {formatGB(it.storageCapacityGB || it.diskGB || 0)}
+                  </span>
+                )}
+                {it.serverRole === 'hypervisor_host' && (
+                  <span className="text-[11px] text-gray-400 dark:text-gray-500 shrink-0">
+                    {it.cpuCores || '?'} CPU / {it.ramGB || '?'} ГБ
+                  </span>
+                )}
+              </label>
+            );
+          })}
         </div>
       )}
     </div>
@@ -172,10 +187,18 @@ export function ClusterForm({ cluster, branches, dataCenters, allEquipment, onCl
   });
   const [members, setMembers] = useState<Set<string>>(initialMembers);
 
-  // Кандидаты в состав: только единицы с соответствующей ролью, сам кластер исключён
-  const hosts = allEquipment.filter((eq) => eq.serverRole === 'hypervisor_host' && eq.id !== cluster?.id);
-  const storages = allEquipment.filter((eq) => eq.serverRole === 'storage' && eq.id !== cluster?.id);
-  const consoles = allEquipment.filter((eq) => eq.serverRole === 'management_console' && eq.id !== cluster?.id);
+  // Если страница пересобрала список оборудования (например, после сохранения),
+  // подтягиваем актуальный состав кластера, чтобы форма не работала по устаревшим связям.
+  useEffect(() => {
+    setMembers(initialMembers);
+  }, [initialMembers]);
+
+  // Кандидаты в состав: только единицы с соответствующей ролью, сам кластер исключён.
+  // Чужие участники (состоят в другом кластере) не предлагаются — бэкенд их всё
+  // равно не привяжет, а перенос делается через карточку самого железа.
+  const hosts = allEquipment.filter((eq) => eq.serverRole === 'hypervisor_host' && eq.id !== cluster?.id && (!eq.parentClusterId || eq.parentClusterId === cluster?.id));
+  const storages = allEquipment.filter((eq) => eq.serverRole === 'storage' && eq.id !== cluster?.id && (!eq.parentClusterId || eq.parentClusterId === cluster?.id));
+  const consoles = allEquipment.filter((eq) => eq.serverRole === 'management_console' && eq.id !== cluster?.id && (!eq.parentClusterId || eq.parentClusterId === cluster?.id));
 
   const toggleMember = (id: string, checked: boolean) => {
     setMembers((prev) => {
@@ -298,8 +321,9 @@ export function ClusterForm({ cluster, branches, dataCenters, allEquipment, onCl
               emptyHint="Консоли управления не зарегистрированы (поле необязательное)."
             />
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Выбранные единицы будут привязаны к этому кластеру. Снять участника — убрать галочку
-              {isEdit ? ' и сохранить.' : ' (после создания кластера состав можно изменить в его карточке).'}
+              {isEdit
+                ? 'Редактирование состава: поставьте галочку, чтобы добавить новое железо в кластер, снимите — чтобы убрать его из кластера (саму единицу оборудования это не удалит). Изменения применятся после сохранения.'
+                : 'Выбранные единицы будут привязаны к этому кластеру. После создания состав можно изменить — для этого откройте карточку кластера повторно.'}
             </p>
           </div>
 

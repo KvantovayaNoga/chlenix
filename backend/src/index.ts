@@ -1295,19 +1295,24 @@ function normalizeDateField(v: any) {
  *  управления получают parentClusterId, снятые участники — отвязываются.
  *  Применяется после создания/обновления кластера в одной транзакции. */
 async function applyClusterMembers(clusterId: string, orgId: string | null, membersRaw: unknown) {
-  const memberIds = Array.isArray(membersRaw)
-    ? Array.from(new Set(membersRaw.filter((x): x is string => typeof x === 'string' && !!x)))
-    : [];
+  const memberIds = Array.from(new Set(Array.isArray(membersRaw) ? membersRaw.filter((x): x is string => typeof x === 'string' && !!x) : []));
   // В выборку попадают только единицы оборудования той же организации с «кластерной» ролью
   await prisma.$transaction(async (tx) => {
     if (memberIds.length > 0) {
       const valid = await tx.equipment.findMany({
         where: { id: { in: memberIds }, organizationId: orgId, serverRole: { in: ['hypervisor_host', 'storage', 'management_console'] } },
-        select: { id: true },
+        select: { id: true, parentClusterId: true },
       });
-      const validIds = valid.map((v) => v.id);
-      if (validIds.length > 0) {
-        await tx.equipment.updateMany({ where: { id: { in: validIds } }, data: { parentClusterId: clusterId } });
+      // Привязываем только свободные железо и текущих участников этого кластера.
+      // Единицы из ДРУГОГО кластера не перетягиваем молча — иначе состав чужого
+      // кластера изменился бы без ведома его владельца («перехват» железа).
+      const transferableIds = valid.filter((v) => !v.parentClusterId || v.parentClusterId === clusterId).map((v) => v.id);
+      const skipped = valid.length - transferableIds.length;
+      if (transferableIds.length > 0) {
+        await tx.equipment.updateMany({ where: { id: { in: transferableIds } }, data: { parentClusterId: clusterId } });
+      }
+      if (skipped > 0) {
+        throw new VmHostError(`Некоторые выбранные единицы уже состоят в другом кластере — освободите их в карточке того кластера (или через форму другого кластера), затем повторите сохранение.`);
       }
     }
     // Бывшие участники, которые были сняты галочкой в форме, отвязываются от кластера
@@ -1447,6 +1452,7 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
     try {
       await applyClusterMembers(item.id, item.organizationId, requestedMembers);
     } catch (e) {
+      if (e instanceof VmHostError) return c.json({ error: e.message }, 400);
       console.error('applyClusterMembers(create) failed:', e);
       return c.json({ error: 'Не удалось применить состав кластера' }, 400);
     }
@@ -1535,6 +1541,7 @@ app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'materially_
     try {
       await applyClusterMembers(item.id, item.organizationId, requestedMembers);
     } catch (e) {
+      if (e instanceof VmHostError) return c.json({ error: e.message }, 400);
       console.error('applyClusterMembers(update) failed:', e);
       return c.json({ error: 'Не удалось применить состав кластера' }, 400);
     }

@@ -14,7 +14,7 @@ import { ServerRoleIcon } from '../components/ServerRoleIcon';
 import type { StorageSystemType, StorageProtocol } from '../types';
 
 export function PhysicalServersPage() {
-  const { equipment, branches, addEquipment, updateEquipment, deleteEquipment, getVMsByHost } = useDataStore();
+  const { equipment, branches, dataCenters, addEquipment, updateEquipment, deleteEquipment, getVMsByHost } = useDataStore();
   const { canEdit, users } = useAuthStore();
   const navigate = useNavigate();
   const [editingServer, setEditingServer] = useState<Equipment | null>(null);
@@ -30,9 +30,17 @@ export function PhysicalServersPage() {
   // Косяк 6/11: кластер-серверы аккумулируют внутри себя хосты и СХД (children по parentClusterId)
   const clusterChildren = (clusterId: string) =>
     equipment.filter(eq => eq.parentClusterId === clusterId);
-  const getBranchName = (id: string) => {
+  const getBranchName = (id: string | null) => {
     const branch = branches.find(b => b.id === id);
     return branch?.name || '—';
+  };
+  // Место размещения: филиал или ЦОД (кластеры могут жить на арендованных/облачных мощностях)
+  const getLocationName = (eq: Equipment) => {
+    if (eq.dataCenterId) {
+      const dc = dataCenters.find(d => d.id === eq.dataCenterId);
+      return dc ? `ЦОД: ${dc.name}` : 'ЦОД: —';
+    }
+    return getBranchName(eq.branchId);
   };
   const getUserName = (userId: string | null) => {
     if (!userId) return '—';
@@ -146,7 +154,7 @@ export function PhysicalServersPage() {
                     </>
                   );
                 })()}
-                <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Расположение:</span><span className="text-gray-800 dark:text-gray-200">{getBranchName(server.branchId)} {server.room && `, ${server.room}`}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Расположение:</span><span className="text-gray-800 dark:text-gray-200">{getLocationName(server)} {server.room && `, ${server.room}`}</span></div>
                 {!isCluster && (
                   <div className="flex justify-between items-center">
                     <span className="text-gray-500 dark:text-gray-400">ВМ на сервере:</span>
@@ -201,11 +209,14 @@ export function PhysicalServersPage() {
         />
       )}
 
-      {/* Кластер — отдельная форма создания/редактирования */}
+      {/* Кластер — отдельная форма создания/редактирования.
+          При редактировании в ней можно менять состав: добавлять новое железо
+          (галочка) и убирать старое (снять галочку) — сервер применяет это атомарно. */}
       {(showClusterForm || editingCluster) && (
         <ClusterForm
           cluster={editingCluster}
           branches={branches}
+          dataCenters={dataCenters}
           allEquipment={equipment}
           onClose={() => { setShowClusterForm(false); setEditingCluster(null); }}
           onSave={async (payload, members) => {
