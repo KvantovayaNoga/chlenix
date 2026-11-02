@@ -6,8 +6,13 @@ import type { Department, Position, Branch, DataCenter } from '../types';
 
 export function DirectoriesPage() {
   const { departments, positions, branches, dataCenters, addDepartment, updateDepartment, deleteDepartment, addPosition, updatePosition, deletePosition, addBranch, updateBranch, deleteBranch, addDataCenter, updateDataCenter, deleteDataCenter } = useDataStore();
-  const { isAdmin } = useAuthStore();
+  // Права на справочники по ролям — зеркало canEditDirectory() с бэкенда:
+  // admin — всё; hr_specialist — отделы/должности/филиалы (ЦОД только просмотр);
+  // sysadmin — только ЦОД; остальные — только просмотр.
+  const { canEditDirectory } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'departments' | 'positions' | 'branches' | 'data-centers'>('departments');
+  const activeTabModel = activeTab === 'data-centers' ? 'dataCenter' : activeTab === 'branches' ? 'branch' : activeTab === 'departments' ? 'department' : 'position';
+  const canEditActive = canEditDirectory(activeTabModel);
   const [editingItem, setEditingItem] = useState<any>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   // Сообщение об ошибке/успехе прямо на странице (общий error из store может быть
@@ -74,7 +79,7 @@ export function DirectoriesPage() {
           <h1 className="text-3xl font-bold text-gray-700 dark:text-gray-200">Справочники</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">Управление отделами, должностями, филиалами и ЦОДами</p>
         </div>
-        {isAdmin() && (
+        {canEditActive && (
           <button onClick={() => setShowAddModal(true)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20">
             <Plus className="w-5 h-5" />Добавить
           </button>
@@ -115,7 +120,7 @@ export function DirectoriesPage() {
                       {dept.description && <p className="text-sm text-gray-600 dark:text-gray-400">{dept.description}</p>}
                     </div>
                   </div>
-                  {isAdmin() && (
+                  {canEditActive && (
                     <div className="flex items-center gap-2">
                       <button onClick={() => setEditingItem(dept)} className="text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 p-1"><Edit className="w-4 h-4" /></button>
                       <button onClick={() => { if (confirm('Удалить?')) handleDelete(dept.id); }} className="text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 p-1"><Trash2 className="w-4 h-4" /></button>
@@ -137,7 +142,7 @@ export function DirectoriesPage() {
                       {pos.description && <p className="text-sm text-gray-600 dark:text-gray-400">{pos.description}</p>}
                     </div>
                   </div>
-                  {isAdmin() && (
+                  {canEditActive && (
                     <div className="flex items-center gap-2">
                       <button onClick={() => setEditingItem(pos)} className="text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 p-1"><Edit className="w-4 h-4" /></button>
                       <button onClick={() => { if (confirm('Удалить?')) handleDelete(pos.id); }} className="text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 p-1"><Trash2 className="w-4 h-4" /></button>
@@ -161,7 +166,7 @@ export function DirectoriesPage() {
                       {dc.description && <p className="text-sm text-gray-500 dark:text-gray-500">{dc.description}</p>}
                     </div>
                   </div>
-                  {isAdmin() && (
+                  {canEditActive && (
                     <div className="flex items-center gap-2">
                       <button onClick={() => setEditingItem(dc)} className="text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 p-1"><Edit className="w-4 h-4" /></button>
                       <button onClick={() => { if (confirm('Удалить?')) handleDelete(dc.id); }} className="text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 p-1"><Trash2 className="w-4 h-4" /></button>
@@ -183,7 +188,7 @@ export function DirectoriesPage() {
                       <p className="text-sm text-gray-600 dark:text-gray-400">{branch.address}</p>
                     </div>
                   </div>
-                  {isAdmin() && (
+                  {canEditActive && (
                     <div className="flex items-center gap-2">
                       <button onClick={() => setEditingItem(branch)} className="text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 p-1"><Edit className="w-4 h-4" /></button>
                       <button onClick={() => { if (confirm('Удалить?')) handleDelete(branch.id); }} className="text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 p-1"><Trash2 className="w-4 h-4" /></button>

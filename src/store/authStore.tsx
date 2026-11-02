@@ -41,6 +41,23 @@ interface AuthState {
   isAdmin: () => boolean;
   canManageUsers: () => boolean;
   hasOrganization: () => boolean;
+  // --- Ролевые права (синхронизировано с матрицей прав backend/src/index.ts,
+  //     функции canEditDirectory / константы ORG_CREATE_ROLES, EMPLOYEE_MANAGE_ROLES,
+  //     ASSIGN_ROLES, SERVER_ROLES) ---
+  /** Создание организаций: admin + hr_specialist (ORG_CREATE_ROLES). */
+  canCreateOrg: () => boolean;
+  /** CRUD сотрудников: admin + hr_specialist (EMPLOYEE_MANAGE_ROLES). */
+  canManageEmployees: () => boolean;
+  /** Связка «сотрудник ↔ оборудование»: admin + HR + МОЛ (ASSIGN_ROLES). */
+  canAssignEquipment: () => boolean;
+  /** Серверные разделы (физические серверы / ВМ / платформы виртуализации): admin + sysadmin (SERVER_ROLES). */
+  canManageServers: () => boolean;
+  /**
+   * Право на редактирование конкретного справочника (model: 'department' |
+   * 'position' | 'branch' | 'dataCenter') — зеркало canEditDirectory() с бэкенда:
+   * HR — всё кроме ЦОД, sysadmin — только ЦОД, admin — всё.
+   */
+  canEditDirectory: (model: string) => boolean;
 }
 
 async function call(fn: () => Promise<unknown>): Promise<{ success: boolean; error?: string }> {
@@ -149,14 +166,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const register = useCallback(async (email: string, password: string, fullName: string) => {
+  // joinOrganizationId — чекбокс «Присоединиться к существующей организации»:
+  // бэкенд создаёт заявку (JoinRequest), доступ к организации появится только
+  // после одобрения администратором системы (pendingJoin === true).
+  const register = useCallback(async (email: string, password: string, fullName: string, joinOrganizationId?: string | null) => {
     try {
-      const res = await api.post<{ token: string; user: User }>('/auth/register', { email, password, fullName });
+      const res = await api.post<{ token: string; user: User; joinRequest: { status: string; organization: string } | null }>(
+        '/auth/register',
+        { email, password, fullName, joinOrganizationId: joinOrganizationId ?? null },
+      );
+      // Заявка на вступление: пользователя НЕ авторизуем (токен не сохраняем) —
+      // до одобрения администратором системы показываем экран ожидания и выход.
+      if (res.joinRequest) {
+        setInitialized(true);
+        return { success: true, pendingJoin: true };
+      }
       setToken(res.token);
       syncThemeFromProfile(res.user.theme);
       setCurrentUser(res.user);
       setInitialized(true);
-      return { success: true };
+      return { success: true, pendingJoin: false };
     } catch (e) {
       return { success: false, error: e instanceof ApiError ? e.message : 'Сервер недоступен' };
     }
@@ -257,6 +286,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin: () => currentUser?.role === 'admin',
       canManageUsers: () => currentUser?.role === 'admin',
       hasOrganization: () => !!currentUser?.organizationId,
+      canCreateOrg: () => currentUser?.role === 'admin' || currentUser?.role === 'hr_specialist',
+      canManageEmployees: () => currentUser?.role === 'admin' || currentUser?.role === 'hr_specialist',
+      canAssignEquipment: () => currentUser?.role === 'admin' || currentUser?.role === 'hr_specialist' || currentUser?.role === 'materially_responsible',
+      canManageServers: () => currentUser?.role === 'admin' || currentUser?.role === 'sysadmin',
+      // Зеркало canEditDirectory() из backend/src/index.ts
+      canEditDirectory: (model: string) => {
+        const role = currentUser?.role ?? '';
+        if (role === 'admin') return true;
+        if (role === 'hr_specialist') return model !== 'dataCenter';
+        if (role === 'sysadmin') return model === 'dataCenter';
+        return false;
+      },
     }),
     [currentUser, users, isAuthenticated, initialized, bootstrapping, bootstrap, login, register, logout, refreshUsers, addUser, updateUser, deleteUser, setTheme, switchOrganization],
   );
@@ -290,6 +331,11 @@ const authFallback: AuthState = {
   isAdmin: () => false,
   canManageUsers: () => false,
   hasOrganization: () => false,
+  canCreateOrg: () => false,
+  canManageEmployees: () => false,
+  canAssignEquipment: () => false,
+  canManageServers: () => false,
+  canEditDirectory: () => false,
 };
 
 // Совместимое имя хука. Вызов без аргумента возвращает всё состояние;

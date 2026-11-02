@@ -19,23 +19,23 @@ import {
   Plus,
   ArrowLeftRight,
   Layers,
+  ShieldCheck,
 } from 'lucide-react';
 import { hasVirtualizationFeature } from '../utils/virtualization';
+import { ROLE_LABELS } from '../types';
 
-const roleLabels = {
-  admin: 'Администратор',
-  materially_responsible: 'Мат. ответственное лицо',
-  viewer: 'Пользователь',
-};
+const roleLabels = ROLE_LABELS;
 
-const roleColors = {
+const roleColors: Record<string, string> = {
   admin: 'bg-red-100 text-red-700',
+  hr_specialist: 'bg-pink-100 text-pink-700',
+  sysadmin: 'bg-emerald-100 text-emerald-700',
   materially_responsible: 'bg-blue-100 text-blue-700',
   viewer: 'bg-gray-100 text-gray-700',
 };
 
 export function Sidebar() {
-  const { currentUser, logout, canManageUsers, canEdit, myOrganizations } = useAuthStore();
+  const { currentUser, logout, canManageUsers, canManageServers, myOrganizations } = useAuthStore();
   const { organizations, equipment, virtualMachines } = useDataStore();
   // «Платформа виртуализации» изначально скрыта: пункт появляется в сайдбаре,
   // когда хотя бы у одного сервера/ВМ выставлена роль в системе виртуализации.
@@ -87,13 +87,15 @@ export function Sidebar() {
     },
     ...(hasOrganization
       ? [
-          // МОЛ (решение от 2026-11): работа — только связка «сотрудник ↔ оборудование».
-          // Поэтому МОЛ видит «Сотрудников» (карточки read-only + закрепление на детальной
-          // странице) и «Оборудование»; остальные разделы скрыты до окончания тестирования.
-          // «Организация» и «Пользователи» для МОЛ уже недоступны (canManageUsers/isAdmin).
-          ...(canEdit()
+          // Матрица доступа к разделам (синхронизировано с бэкендом):
+          // - «Штатное расписание»: просмотр — всем, редактирование по canEditDirectory()
+          //   (HR: всё кроме ЦОД; sysadmin: только ЦОД);
+          // - серверные разделы: admin + sysadmin (SERVER_ROLES) — МОЛ и HR не видят;
+          // - «Сотрудники»: всем (CRUD-кнопки на странице — admin+HR);
+          // - «Оборудование»: всем (viewer/МОЛ — просмотр и связки).
+          { to: '/staff', label: 'Штатное расписание', icon: BookMarked, activeIconBg: 'bg-sky-500' },
+          ...(canManageServers()
             ? [
-                { to: '/staff', label: 'Штатное расписание', icon: BookMarked, activeIconBg: 'bg-sky-500' },
                 { to: '/servers/physical', label: 'Физические серверы', icon: Server, activeIconBg: 'bg-red-500' },
                 { to: '/servers', label: 'Виртуальные машины', icon: Cpu, activeIconBg: 'bg-violet-500' },
                 ...(showVirtualization
@@ -109,6 +111,8 @@ export function Sidebar() {
 
   if (canManageUsers()) {
     if (hasOrganization) navItems.push({ to: '/users', label: 'Пользователи', icon: UserCog, activeIconBg: 'bg-amber-500' });
+    // Раздел «Администрирование» (заявки на вступление) — только администратор системы
+    navItems.push({ to: '/admin', label: 'Администрирование', icon: ShieldCheck, activeIconBg: 'bg-indigo-600' });
     navItems.push({ to: '/about', label: 'О системе', icon: Info, activeIconBg: 'bg-slate-600' });
   }
 

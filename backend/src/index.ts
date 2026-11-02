@@ -2250,9 +2250,15 @@ for (const cfg of directoryConfigs) {
 // «Администрирование» скрыт для остальных ролей.
 const JOIN_ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
+  hr_specialist: 'Специалист по кадрам',
+  sysadmin: 'Системный администратор',
   materially_responsible: 'Мат. ответственное лицо',
   viewer: 'Пользователь',
 };
+
+// Роли, которые администратор системы может выдать при одобрении заявки
+// (администратор уже есть в системе — выдавать его через заявку не требуется).
+const ASSIGNABLE_JOIN_ROLES = ['viewer', 'materially_responsible', 'hr_specialist', 'sysadmin'] as const;
 
 function publicJoinRequest(r: any) {
   return {
@@ -2289,7 +2295,7 @@ app.get('/api/join-requests', authMiddleware, requireRole(['admin']), async (c) 
 app.post('/api/join-requests/:id/approve', authMiddleware, requireRole(['admin']), async (c) => {
   const me = c.get('user');
   const parsed = z
-    .object({ role: z.enum(ALL_ROLES).optional() })
+    .object({ role: z.enum(ASSIGNABLE_JOIN_ROLES).optional() })
     .safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
   const newRole = parsed.data.role ?? 'viewer';

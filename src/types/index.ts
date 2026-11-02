@@ -1,5 +1,15 @@
-// Роли пользователей
-export type UserRole = 'admin' | 'materially_responsible' | 'viewer';
+// Роли пользователей (синхронизировано с enum Role в backend/prisma/schema.prisma)
+export type UserRole = 'admin' | 'hr_specialist' | 'sysadmin' | 'materially_responsible' | 'viewer';
+
+// Человекочитаемые названия ролей (единый источник для сайдбара, «Пользователей»,
+// профиля и «О системе»)
+export const ROLE_LABELS: Record<UserRole, string> = {
+  admin: 'Администратор',
+  hr_specialist: 'Специалист по кадрам',
+  sysadmin: 'Системный администратор',
+  materially_responsible: 'Мат. ответственное лицо',
+  viewer: 'Пользователь',
+};
 
 // Запись истории изменений
 export interface HistoryEntry {

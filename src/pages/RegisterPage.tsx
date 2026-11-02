@@ -1,7 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
-import { Building2, UserPlus, Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react';
+import { api } from '../api/client';
+import { Building2, UserPlus, Eye, EyeOff, ArrowRight, ShieldCheck, Clock, Users2 } from 'lucide-react';
+
+interface PublicOrg {
+  id: string;
+  shortName: string;
+}
 
 export function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -11,11 +17,32 @@ export function RegisterPage() {
     confirmPassword: '',
     createOrganization: true,
   });
+  // Чекбоксы «Присоединиться…» (слева) и «Создать организацию…» (справа) —
+  // взаимоисключающие: выбор одного снимает другой.
+  const [joinMode, setJoinMode] = useState(false);
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+  const [publicOrgs, setPublicOrgs] = useState<PublicOrg[]>([]);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [pendingJoin, setPendingJoin] = useState<{ organization: string } | null>(null);
   const { register, users } = useAuthStore();
   const isFirstUser = users.length === 0;
   const navigate = useNavigate();
+
+  // Список организаций для выбора по краткому наименованию (публичный эндпоинт
+  // GET /api/public/organizations отдаёт только id + shortName).
+  useEffect(() => {
+    if (!joinMode || publicOrgs.length > 0) return;
+    void (async () => {
+      try {
+        const list = await api.get<PublicOrg[]>('/public/organizations');
+        setPublicOrgs(list);
+      } catch {
+        setError('Не удалось загрузить список организаций. Попробуйте позже.');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joinMode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,8 +58,20 @@ export function RegisterPage() {
       return;
     }
 
-    const result = await register(formData.email, formData.password, formData.fullName);
+    if (joinMode && !selectedOrgId) {
+      setError('Выберите организацию, к которой хотите присоединиться');
+      return;
+    }
+
+    const result = await register(formData.email, formData.password, formData.fullName, joinMode ? selectedOrgId : null);
     if (result.success) {
+      if (result.pendingJoin) {
+        // Аккаунт создан, заявка на вступление отправлена администратору системы.
+        // Пользователь НЕ авторизован до одобрения заявки.
+        const org = publicOrgs.find((o) => o.id === selectedOrgId);
+        setPendingJoin({ organization: org?.shortName ?? 'выбранной организации' });
+        return;
+      }
       // После регистрации сразу предлагаем создать организацию
       navigate(formData.createOrganization ? '/organization/create' : '/dashboard');
     } else {
@@ -43,6 +82,36 @@ export function RegisterPage() {
   const handleChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
+
+  // Экран ожидания одобрения заявки
+  if (pendingJoin) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-100 via-indigo-50 to-slate-100 dark:from-slate-900 dark:via-indigo-950 dark:to-slate-900 flex items-center justify-center p-4">
+        <div className="w-full max-w-md text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-amber-500 rounded-2xl mb-4 shadow-xl shadow-amber-500/30">
+            <Clock className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Заявка отправлена</h1>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 border border-gray-200 dark:border-gray-700 text-left">
+            <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+              Аккаунт создан. Доступ к организации{' '}
+              <span className="font-medium text-gray-800 dark:text-gray-200">«{pendingJoin.organization}»</span>{' '}
+              будет предоставлен после одобрения заявки администратором системы. Он же назначит вашу роль и права доступа.
+            </p>
+            <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed mt-3">
+              После одобрения войдите в систему под своим email и паролем.
+            </p>
+            <button
+              onClick={() => navigate('/login')}
+              className="mt-6 w-full bg-indigo-600 text-white py-3 rounded-xl font-medium hover:bg-indigo-700 transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30"
+            >
+              Перейти на страницу входа
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 via-indigo-50 to-slate-100 dark:from-slate-900 dark:via-indigo-950 dark:to-slate-900 flex items-center justify-center p-4">
@@ -150,23 +219,92 @@ export function RegisterPage() {
               Зарегистрироваться
             </button>
 
-            <label className="flex items-start gap-3 mt-4 p-3 bg-gray-700/50 border border-gray-600 rounded-xl cursor-pointer hover:bg-gray-700 transition-colors">
-              <input
-                type="checkbox"
-                checked={formData.createOrganization}
-                onChange={(e) => setFormData((prev) => ({ ...prev, createOrganization: e.target.checked }))}
-                className="mt-0.5 w-4 h-4 accent-indigo-500"
-              />
-              <span className="text-sm text-gray-300">
-                <span className="flex items-center gap-1.5 font-medium text-gray-200">
-                  <Building2 className="w-4 h-4 text-indigo-400" />
-                  Создать организацию после регистрации
+            {/* Чекбоксы режима: слева — присоединиться к существующей,
+                справа — создать организацию после регистрации (взаимоисключающие) */}
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <label
+                className={`flex flex-col gap-1.5 p-3 border rounded-xl cursor-pointer transition-colors ${
+                  joinMode
+                    ? 'bg-indigo-900/30 border-indigo-600'
+                    : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={joinMode}
+                    onChange={(e) => {
+                      setJoinMode(e.target.checked);
+                      if (!e.target.checked) setSelectedOrgId(null);
+                      // Взаимоисключение: «присоединиться» отменяет «создать организацию»
+                      setFormData((prev) => ({ ...prev, createOrganization: e.target.checked ? false : true }));
+                    }}
+                    className="w-4 h-4 accent-indigo-500"
+                  />
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-gray-200">
+                    <Users2 className="w-4 h-4 text-indigo-400" />
+                    Присоединиться к существующей организации
+                  </span>
                 </span>
-                <span className="block text-gray-400 mt-1">
+                <span className="text-xs text-gray-400">
+                  Заявка на вступление будет отправлена администратору системы.
+                </span>
+              </label>
+
+              <label
+                className={`flex flex-col gap-1.5 p-3 border rounded-xl transition-colors ${formData.createOrganization && !isFirstUser ? 'cursor-pointer' : 'cursor-default opacity-60'} ${
+                  formData.createOrganization && !joinMode
+                    ? 'bg-indigo-900/30 border-indigo-600'
+                    : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.createOrganization && !joinMode}
+                    disabled={joinMode || isFirstUser}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, createOrganization: e.target.checked }))}
+                    className="w-4 h-4 accent-indigo-500"
+                  />
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-gray-200">
+                    <Building2 className="w-4 h-4 text-indigo-400" />
+                    Создать организацию после регистрации
+                  </span>
+                </span>
+                <span className="text-xs text-gray-400">
                   Карточку организации можно будет создать и позже — в разделе «Организация».
                 </span>
-              </span>
-            </label>
+              </label>
+            </div>
+
+            {/* Список организаций для выбора (только краткие наименования) */}
+            {joinMode && (
+              <div className="mt-3 p-3 bg-gray-700/50 border border-gray-600 rounded-xl">
+                <p className="text-xs font-medium text-gray-300 mb-2">Выберите организацию:</p>
+                {publicOrgs.length === 0 ? (
+                  <p className="text-sm text-gray-400 py-2">Организаций в системе пока нет.</p>
+                ) : (
+                  <div className="max-h-40 overflow-y-auto space-y-1">
+                    {publicOrgs.map((org) => (
+                      <label
+                        key={org.id}
+                        className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${
+                          selectedOrgId === org.id ? 'bg-indigo-600/30 text-indigo-200' : 'hover:bg-gray-600/50 text-gray-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedOrgId === org.id}
+                          onChange={(e) => setSelectedOrgId(e.target.checked ? org.id : null)}
+                          className="w-4 h-4 accent-indigo-500"
+                        />
+                        <span className="text-sm">{org.shortName}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </form>
 
           <div className="mt-6 text-center">

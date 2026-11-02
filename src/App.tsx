@@ -19,6 +19,7 @@ import { VirtualizationPlatformPage } from './pages/VirtualizationPlatformPage';
 import { UsersPage } from './pages/UsersPage';
 import { UserProfilePage } from './pages/UserProfilePage';
 import { DirectoriesPage } from './pages/DirectoriesPage';
+import { AdminPanelPage } from './pages/AdminPanelPage';
 import { OrganizationPage } from './pages/OrganizationPage';
 import { CreateOrganizationPage } from './pages/CreateOrganizationPage';
 import { SwitchOrganizationPage } from './pages/SwitchOrganizationPage';
@@ -39,12 +40,18 @@ function DefaultAuthenticatedRedirect() {
   return <Navigate to="/dashboard" replace />;
 }
 
-// Гuard для разделов, закрытых от МОЛ: редирект на Обзор при прямом заходе по URL.
-// (Названия страниц и кнопок при этом тоже скрываются через canEdit()/isAdmin().)
-function AdminOnly({ children }: { children: ReactNode }) {
-  const isAdmin = useAuthStore((s) => s.currentUser?.role === 'admin');
-  if (!isAdmin) return <Navigate to="/dashboard" replace />;
+// Гuard разделов по ролям: редирект на Обзор при прямом заходе по URL.
+// (Названия страниц и кнопки при этом тоже скрываются через соответствующие
+// can*()-хелперы authStore, синхронизированные с матрицей прав бэкенда.)
+function RoleGuard({ roles, children }: { roles: string[]; children: ReactNode }) {
+  const role = useAuthStore((s) => s.currentUser?.role);
+  if (!role || !roles.includes(role)) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
+}
+
+// Раздел «Администрирование» — только администратор системы (бэкенд: requireRole(['admin'])).
+function AdminOnly({ children }: { children: ReactNode }) {
+  return <RoleGuard roles={['admin']}>{children}</RoleGuard>;
 }
 
 function App() {
@@ -67,20 +74,22 @@ function App() {
 
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route path="/dashboard" element={<DashboardPage />} />
-          {/* МОЛ (решение от 2026-11): работа — только связка «сотрудник ↔ оборудование».
-              Серверные разделы и справочники доступны admin'у (и viewer'у на просмотр,
-              как раньше); прямые URL для МОЛ закрываются редиректом на Обзор. */}
-          <Route path="/servers" element={<AdminOnly><ServersPage /></AdminOnly>} />
-          <Route path="/servers/physical" element={<AdminOnly><PhysicalServersPage /></AdminOnly>} />
-          <Route path="/servers/virtualization" element={<AdminOnly><VirtualizationPlatformPage /></AdminOnly>} />
+          {/* Матрица доступа к разделам (синхронизировано с backend/src/index.ts):
+              - серверные разделы: admin + sysadmin (SERVER_ROLES); МОЛ/HR закрыты;
+              - сотрудники: просмотр для всех, CRUD — admin + HR (EMPLOYEE_MANAGE_ROLES);
+              - оборудование: просмотр для всех, CRUD — admin + HR, связки — +МОЛ;
+              - справочники («Штатное расписание»): просмотр для всех,
+                редактирование по canEditDirectory() (HR — всё кроме ЦОД, sysadmin — только ЦОД). */}
+          <Route path="/servers" element={<RoleGuard roles={['admin', 'sysadmin']}><ServersPage /></RoleGuard>} />
+          <Route path="/servers/physical" element={<RoleGuard roles={['admin', 'sysadmin']}><PhysicalServersPage /></RoleGuard>} />
+          <Route path="/servers/virtualization" element={<RoleGuard roles={['admin', 'sysadmin']}><VirtualizationPlatformPage /></RoleGuard>} />
           <Route path="/employees" element={<EmployeesPage />} />
           <Route path="/employees/:id" element={<EmployeeDetailPage />} />
           <Route path="/equipment" element={<EquipmentPage />} />
-          {/* Справочники («Штатное расписание») — только admin: бэкенд требует admin
-              на все CRUD, а МОЛ по новой бизнес-логике работает лишь со связками. */}
-          <Route path="/directories" element={<AdminOnly><DirectoriesPage /></AdminOnly>} />
+          <Route path="/directories" element={<DirectoriesPage />} />
           {/* Совместимость: Sidebar ведёт на /staff (Штатное расписание) — тот же раздел */}
-          <Route path="/staff" element={<AdminOnly><DirectoriesPage /></AdminOnly>} />
+          <Route path="/staff" element={<DirectoriesPage />} />
+          <Route path="/admin" element={<AdminOnly><AdminPanelPage /></AdminOnly>} />
           <Route path="/organization" element={<OrganizationPage />} />
           <Route path="/organization/create" element={<CreateOrganizationPage />} />
           <Route path="/organization/switch" element={<SwitchOrganizationPage />} />
