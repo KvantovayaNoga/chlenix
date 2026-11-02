@@ -29,7 +29,9 @@ const serviceStatusLabels = {
 
 export function ServersPage() {
   const { virtualMachines, equipment, employees, services, addVM, updateVM, deleteVM, addNetworkInterface, removeNetworkInterface, addService, updateService, deleteService, getVMsByHost, reloadVMs: refreshVMs, error } = useDataStore();
-  const { canEdit, isAdmin, users } = useAuthStore();
+  // Права синхронизированы с бэкендом: все серверные эндпоинты (ВМ, интерфейсы,
+  // сервисы) требуют SERVER_ROLES = admin | sysadmin; удаление ВМ — тоже SERVER_ROLES.
+  const { canManageServers, isAdmin, users } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -178,7 +180,7 @@ export function ServersPage() {
           <h1 className="text-3xl font-bold text-gray-700 dark:text-gray-200">Виртуальные машины</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">Централизованное управление виртуальной инфраструктурой</p>
         </div>
-        {canEdit() && (
+        {canManageServers() && (
           <button onClick={() => setEditingVM({ id: '', name: '', hostname: '', type: 'virtual', hostServerId: null, os: '', cpuCores: 2, ramGB: 4, diskGB: 50, responsibleEmployeeId: null, serviceResponsibleEmployeeId: null, networkInterfaces: [], status: 'running', notes: '', createdAt: '', updatedAt: '', updatedBy: null } as any)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20">
             <Plus className="w-5 h-5" />Создать ВМ
           </button>
@@ -291,13 +293,13 @@ export function ServersPage() {
                     )}
                   </p>
                 </div>
-                {(canEdit() || isAdmin()) && (
+                {(canManageServers() || isAdmin()) && (
                   <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                    {canEdit() && (
+                    {canManageServers() && (
                       <button onClick={() => setEditingVM(vm)} className="text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30"><Edit className="w-4 h-4" /></button>
                     )}
-                    {/* Удаление ВМ на бэкенде разрешено только admin */}
-                    {isAdmin() && (
+                    {/* Удаление ВМ на бэкенде разрешено admin и sysadmin (SERVER_ROLES) */}
+                    {canManageServers() && (
                       <button onClick={() => { if (confirm('Удалить ВМ?')) deleteVM(vm.id); }} className="text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30"><Trash2 className="w-4 h-4" /></button>
                     )}
                   </div>
@@ -355,7 +357,7 @@ export function ServersPage() {
         <VMDetailModal 
           vm={selectedVM} 
           onClose={() => setSelectedVM(null)} 
-          canEdit={canEdit()}
+          canEdit={canManageServers()}
           isAdmin={isAdmin()} 
           employees={employees} 
           services={services.filter(s => s.virtualMachineId === selectedVM.id)} 

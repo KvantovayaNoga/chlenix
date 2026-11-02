@@ -32,7 +32,7 @@ const conditionLabels = {
 
 export function EquipmentPage() {
   const { equipment, employees, branches, addEquipment, updateEquipment, deleteEquipment } = useDataStore();
-  const { canManageEmployees, isAdmin, users } = useAuthStore();
+  const { canManageEmployees, canManageServers, users } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterCondition, setFilterCondition] = useState('');
@@ -262,8 +262,8 @@ export function EquipmentPage() {
                         {canManageEmployees() && (
                           <button onClick={(e) => { e.stopPropagation(); setEditingEquipment(eq); }} className="text-gray-400 hover:text-indigo-600 p-1" title="Редактировать"><Edit className="w-4 h-4" /></button>
                         )}
-                        {/* Удаление оборудования на бэкенде разрешено только admin */}
-                        {isAdmin() && (
+                        {/* Удаление оборудования на бэкенде: SERVER_ROLES (admin|sysadmin) */}
+                        {canManageServers() && (
                           <button onClick={(e) => { e.stopPropagation(); if (confirm('Удалить запись?')) deleteEquipment(eq.id); }} className="text-gray-400 hover:text-red-600 p-1" title="Удалить"><Trash2 className="w-4 h-4" /></button>
                         )}
                       </div>

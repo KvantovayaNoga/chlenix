@@ -80,7 +80,7 @@ function InfoRow({ label, value }: { label: string; value?: string | number | nu
 
 export function OrganizationPage() {
   const navigate = useNavigate();
-  const { currentUser, canEdit, isAdmin } = useAuthStore();
+  const { currentUser, canEdit, isAdmin, canCreateOrganization } = useAuthStore();
   const { users } = useAuthStore();
   const { organizations, updateOrganization, deleteOrganization, employees, equipment, error: storeError } = useDataStore();
 
@@ -94,7 +94,20 @@ export function OrganizationPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   if (!organization) {
-    return <EmptyOrganizationState onCreate={() => navigate('/organization/create')} />;
+    return canCreateOrganization()
+      ? <EmptyOrganizationState onCreate={() => navigate('/organization/create')} />
+      : (
+        // Просмотр пустого состояния для ролей без права создания организации
+        // (синхронно с бэкендом: POST /api/organizations — ORG_CREATE_ROLES = admin|HR)
+        <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
+          <Building2 className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
+          <h2 className="text-xl font-bold text-gray-700 dark:text-gray-200 mb-2">У вас ещё нет организации</h2>
+          <p className="text-gray-500 dark:text-gray-400 max-w-md">
+            Создание организаций доступно администратору системы и специалисту по кадрам.
+            Обратитесь к ним, чтобы присоединиться к существующей организации.
+          </p>
+        </div>
+      );
   }
 
   const memberCount = users.filter((u) => u.organizationId === organization.id).length || 1;

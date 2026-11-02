@@ -35,7 +35,7 @@ const roleColors: Record<string, string> = {
 };
 
 export function Sidebar() {
-  const { currentUser, logout, canManageUsers, canManageServers, myOrganizations } = useAuthStore();
+  const { currentUser, logout, canManageUsers, canManageServers, canCreateOrganization, myOrganizations } = useAuthStore();
   const { organizations, equipment, virtualMachines } = useDataStore();
   // «Платформа виртуализации» изначально скрыта: пункт появляется в сайдбаре,
   // когда хотя бы у одного сервера/ВМ выставлена роль в системе виртуализации.
@@ -212,7 +212,8 @@ export function Sidebar() {
                 Сменить организацию
               </button>
             )}
-            {!isMinimized && item.icon === Building2 && organization && (
+            {/* «Создать организацию» — синхронно с бэкендом: ORG_CREATE_ROLES (admin|hr_specialist) */}
+            {!isMinimized && item.icon === Building2 && organization && canCreateOrganization() && (
               <div className="mt-1 ml-3 border-l border-slate-700 pl-2 space-y-1">
                 <button
                   onClick={() => navigate('/organization/create')}

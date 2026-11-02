@@ -34,7 +34,7 @@ function DefaultAuthenticatedRedirect() {
   const currentUser = useAuthStore((s) => s.currentUser);
   const initialized = useAuthStore((s) => s.initialized);
   if (!initialized || !currentUser) return null; // ждём восстановления сессии
-  if (!currentUser.organizationId) {
+  if (!currentUser.organizationId && (currentUser.role === "admin" || currentUser.role === "hr_specialist")) {
     return <Navigate to="/organization/create" replace />;
   }
   return <Navigate to="/dashboard" replace />;
@@ -91,7 +91,7 @@ function App() {
           <Route path="/staff" element={<DirectoriesPage />} />
           <Route path="/admin" element={<AdminOnly><AdminPanelPage /></AdminOnly>} />
           <Route path="/organization" element={<OrganizationPage />} />
-          <Route path="/organization/create" element={<CreateOrganizationPage />} />
+          <Route path="/organization/create" element={<RoleGuard roles={['admin', 'hr_specialist']}><CreateOrganizationPage /></RoleGuard>} />
           <Route path="/organization/switch" element={<SwitchOrganizationPage />} />
           <Route path="/users" element={<ProtectedRoute requiredRole="admin"><UsersPage /></ProtectedRoute>} />
           <Route path="/users/:id" element={<ProtectedRoute><UserProfilePage /></ProtectedRoute>} />
