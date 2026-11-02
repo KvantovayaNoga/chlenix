@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from '../router';
 import { useDataStore } from '../store/dataStore';
-import { Layers, Server, HardDrive, TerminalSquare, Cpu, ChevronDown } from 'lucide-react';
+import { Layers, Server, HardDrive, TerminalSquare, Cpu, ChevronDown, Pencil } from 'lucide-react';
 import { VmCountBadge } from '../components/VmCountBadge';
+import { ClusterEditModal } from './PhysicalServersPage';
 import {
   buildVirtualizationPlatforms,
   serverRoleLabels,
@@ -43,28 +44,34 @@ function CollapsibleSection({
   title,
   icon,
   defaultOpen = false,
+  action,
   children,
 }: {
   title: React.ReactNode;
   icon: React.ReactNode;
   defaultOpen?: boolean;
+  /** Кнопка/элемент справа от заголовка (не сворачивает кат при клике) */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section className="rounded-xl border border-gray-100 dark:border-gray-700 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="w-full flex items-center justify-between gap-2 px-4 py-3 bg-gray-50/70 dark:bg-gray-900/30 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left"
-      >
-        <span className="text-sm font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300 flex items-center gap-2 min-w-0 truncate">
-          {icon}
-          {title}
-        </span>
-        <ChevronDown className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
+      <div className="flex items-center gap-2 pr-4 bg-gray-50/70 dark:bg-gray-900/30">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="flex-1 min-w-0 flex items-center justify-between gap-2 px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left"
+        >
+          <span className="text-sm font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300 flex items-center gap-2 min-w-0 truncate">
+            {icon}
+            {title}
+          </span>
+          <ChevronDown className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+        {action}
+      </div>
       {open && <div className="p-4 space-y-3">{children}</div>}
     </section>
   );
@@ -188,12 +195,20 @@ export function VirtualizationPlatformPage() {
   const { equipment, virtualMachines, branches } = useDataStore();
   const navigate = useNavigate();
 
+  // Редактирование кластера из шапки платформы — ровно та же форма ClusterForm,
+  // что открывается кликом по «Кластер виртуализации» в «Физические серверы».
+  const [editingCluster, setEditingCluster] = useState<Equipment | null>(null);
+
   const platforms = useMemo(
     () => buildVirtualizationPlatforms(equipment, virtualMachines),
     [equipment, virtualMachines],
   );
 
   const getBranchName = (id: string) => branches.find((b) => b.id === id)?.name || '—';
+
+  /** Найти Equipment-сущность кластера по clusterId (для кнопки «Редактировать») */
+  const getClusterEntity = (clusterId?: string) =>
+    clusterId ? equipment.find((eq) => eq.id === clusterId && eq.serverRole === 'cluster') || null : null;
 
   if (platforms.length === 0) {
     return (
@@ -229,17 +244,19 @@ export function VirtualizationPlatformPage() {
       <div className="space-y-8">
         {platforms.map((p) => (
           <div key={p.hypervisor} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-            <div className="px-6 py-4 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/30 dark:to-indigo-900/30 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">{p.hypervisor}</h2>
+            <div className="px-6 py-4 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/30 dark:to-indigo-900/30 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between gap-4">
+              {/* Левая часть шапки: название и сводка платформы */}
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100 truncate">{p.hypervisor}</h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   {p.versions.length > 0 && <>Версии: {p.versions.join(', ')} • </>}
                   Хостов: {p.hosts.length} • Кластеров: {p.clusters.filter((c) => c.name).length} • ВМ: {p.vms.length} • СХД: {p.storage.length} • Консолей: {p.physicalConsoles.length + p.managementConsoles.length}
                 </p>
               </div>
               {/* Сводные метрики платформы: CPU/RAM хостов против суммы ВМ, диски СХД против дисков ВМ.
-                  Начинаются с середины ширины шапки (w-1/2), без переноса на другую строку. */}
-              <div className="hidden md:flex w-1/2 min-w-0 items-start gap-4">
+                  Начинаются с середины ширины шапки (w-1/2), без переноса на другую строку;
+                  при нехватке места — горизонтальный скролл без видимой полосы прокрутки. */}
+              <div className="hidden md:flex w-1/2 min-w-0 items-start gap-4 overflow-x-auto no-scrollbar shrink-0 justify-end">
                 <UsageBar label="vCPU" used={p.cpuUsed} total={p.cpuTotal} unit="" />
                 <UsageBar label="RAM" used={p.ramUsed} total={p.ramTotal} unit=" ГБ" />
                 <UsageBar label="Диски" used={p.vmDiskTotalGB} total={p.diskTotalGB} fmt={formatGB} />
@@ -252,6 +269,50 @@ export function VirtualizationPlatformPage() {
               <CollapsibleSection
                 title={<>Кластеры ({p.clusters.filter((c) => c.name).length})</>}
                 icon={<Layers className="w-4 h-4 text-purple-500" />}
+                action={
+                  // Редактирование кластера из шапки платформы: ровно та же ClusterForm,
+                  // что при клике по карточке «Кластер виртуализации» в «Физические серверы».
+                  p.clusters.some((c) => c.name && c.clusterId) ? (
+                    <div className="relative shrink-0 group">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const named = p.clusters.filter((c) => c.name && c.clusterId);
+                          if (named.length === 1) setEditingCluster(getClusterEntity(named[0].clusterId));
+                        }}
+                        className="text-xs font-semibold text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-800 rounded-lg px-3 py-1.5 transition-colors inline-flex items-center gap-1.5"
+                        title="Открыть форму редактирования кластера (состав, характеристики)"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        Редактировать кластер
+                      </button>
+                      {/* Несколько кластеров — выпадающий список выбора под кнопкой */}
+                      {p.clusters.filter((c) => c.name && c.clusterId).length > 1 && (
+                        <div className="hidden group-hover:block absolute right-0 top-full pt-1 z-20">
+                          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-lg py-1 min-w-[220px] max-h-64 overflow-y-auto">
+                            {p.clusters
+                              .filter((c) => c.name && c.clusterId)
+                              .map((c) => (
+                                <button
+                                  key={c.clusterId}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingCluster(getClusterEntity(c.clusterId));
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-purple-50 dark:hover:bg-purple-900/30 flex items-center gap-2"
+                                >
+                                  <Layers className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                                  {c.name}
+                                </button>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : undefined
+                }
               >
                 {p.clusters.filter((c) => c.name).length === 0 ? (
                   <p className="text-sm text-gray-400 dark:text-gray-500">Кластеры не созданы</p>
@@ -386,6 +447,11 @@ export function VirtualizationPlatformPage() {
           </div>
         ))}
       </div>
+
+      {/* Форма редактирования кластера — та же ClusterForm/ClusterEditModal, что и на странице физических серверов */}
+      {editingCluster && (
+        <ClusterEditModal cluster={editingCluster} onClose={() => setEditingCluster(null)} />
+      )}
     </div>
   );
 }

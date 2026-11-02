@@ -70,3 +70,7 @@
     }
   }
 }
+
+/* Утилита: скрывать полосу прокрутки (горизонтальные ряды метрик) */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
