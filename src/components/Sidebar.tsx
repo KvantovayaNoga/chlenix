@@ -35,7 +35,7 @@ const roleColors = {
 };
 
 export function Sidebar() {
-  const { currentUser, logout, canManageUsers, myOrganizations } = useAuthStore();
+  const { currentUser, logout, canManageUsers, canEdit, myOrganizations } = useAuthStore();
   const { organizations, equipment, virtualMachines } = useDataStore();
   // «Платформа виртуализации» изначально скрыта: пункт появляется в сайдбаре,
   // когда хотя бы у одного сервера/ВМ выставлена роль в системе виртуализации.
@@ -87,14 +87,22 @@ export function Sidebar() {
     },
     ...(hasOrganization
       ? [
-          { to: '/staff', label: 'Штатное расписание', icon: BookMarked, activeIconBg: 'bg-sky-500' },
+          // МОЛ (решение от 2026-11): работа — только связка «сотрудник ↔ оборудование».
+          // Поэтому МОЛ видит «Сотрудников» (карточки read-only + закрепление на детальной
+          // странице) и «Оборудование»; остальные разделы скрыты до окончания тестирования.
+          // «Организация» и «Пользователи» для МОЛ уже недоступны (canManageUsers/isAdmin).
+          ...(canEdit()
+            ? [
+                { to: '/staff', label: 'Штатное расписание', icon: BookMarked, activeIconBg: 'bg-sky-500' },
+                { to: '/servers/physical', label: 'Физические серверы', icon: Server, activeIconBg: 'bg-red-500' },
+                { to: '/servers', label: 'Виртуальные машины', icon: Cpu, activeIconBg: 'bg-violet-500' },
+                ...(showVirtualization
+                  ? [{ to: '/servers/virtualization', label: 'Платформа виртуализации', icon: Layers, activeIconBg: 'bg-purple-500' }]
+                  : []),
+              ]
+            : []),
           { to: '/employees', label: 'Сотрудники', icon: Users, activeIconBg: 'bg-blue-500' },
           { to: '/equipment', label: 'Оборудование', icon: Monitor, activeIconBg: 'bg-teal-500' },
-          { to: '/servers/physical', label: 'Физические серверы', icon: Server, activeIconBg: 'bg-red-500' },
-          { to: '/servers', label: 'Виртуальные машины', icon: Cpu, activeIconBg: 'bg-violet-500' },
-          ...(showVirtualization
-            ? [{ to: '/servers/virtualization', label: 'Платформа виртуализации', icon: Layers, activeIconBg: 'bg-purple-500' }]
-            : []),
         ]
       : []),
   ];

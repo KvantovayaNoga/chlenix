@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 // Бандл react-router в production-сборке может содержать устаревшую копию
 // React-контекста (несколько копий "react" в дереве node_modules на сервере) —
 // из-за этого все роутер-хуки падали с «Uncaught Error» и страница оставалась
@@ -39,6 +39,14 @@ function DefaultAuthenticatedRedirect() {
   return <Navigate to="/dashboard" replace />;
 }
 
+// Гuard для разделов, закрытых от МОЛ: редирект на Обзор при прямом заходе по URL.
+// (Названия страниц и кнопок при этом тоже скрываются через canEdit()/isAdmin().)
+function AdminOnly({ children }: { children: ReactNode }) {
+  const isAdmin = useAuthStore((s) => s.currentUser?.role === 'admin');
+  if (!isAdmin) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
 function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const navigate = useNavigate();
@@ -59,15 +67,20 @@ function App() {
 
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/servers" element={<ServersPage />} />
-          <Route path="/servers/physical" element={<PhysicalServersPage />} />
-          <Route path="/servers/virtualization" element={<VirtualizationPlatformPage />} />
+          {/* МОЛ (решение от 2026-11): работа — только связка «сотрудник ↔ оборудование».
+              Серверные разделы и справочники доступны admin'у (и viewer'у на просмотр,
+              как раньше); прямые URL для МОЛ закрываются редиректом на Обзор. */}
+          <Route path="/servers" element={<AdminOnly><ServersPage /></AdminOnly>} />
+          <Route path="/servers/physical" element={<AdminOnly><PhysicalServersPage /></AdminOnly>} />
+          <Route path="/servers/virtualization" element={<AdminOnly><VirtualizationPlatformPage /></AdminOnly>} />
           <Route path="/employees" element={<EmployeesPage />} />
           <Route path="/employees/:id" element={<EmployeeDetailPage />} />
           <Route path="/equipment" element={<EquipmentPage />} />
-          <Route path="/directories" element={<DirectoriesPage />} />
+          {/* Справочники («Штатное расписание») — только admin: бэкенд требует admin
+              на все CRUD, а МОЛ по новой бизнес-логике работает лишь со связками. */}
+          <Route path="/directories" element={<AdminOnly><DirectoriesPage /></AdminOnly>} />
           {/* Совместимость: Sidebar ведёт на /staff (Штатное расписание) — тот же раздел */}
-          <Route path="/staff" element={<DirectoriesPage />} />
+          <Route path="/staff" element={<AdminOnly><DirectoriesPage /></AdminOnly>} />
           <Route path="/organization" element={<OrganizationPage />} />
           <Route path="/organization/create" element={<CreateOrganizationPage />} />
           <Route path="/organization/switch" element={<SwitchOrganizationPage />} />

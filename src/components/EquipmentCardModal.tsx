@@ -45,7 +45,10 @@ function Row({ icon: Icon, label, value }: { icon?: React.ElementType; label: st
 
 export function EquipmentCardModal({ equipmentId, onClose }: { equipmentId: string; onClose: () => void }) {
   const { getEquipmentById, branches, dataCenters, unassignEquipment, employees } = useDataStore();
-  const { canEdit } = useAuthStore();
+  // МОЛ: в карточке оборудования доступна только связка — кнопка «Открепить».
+  // Редактирование карточки (canEdit) — строго admin.
+  const { canEdit, isAdmin, currentUser } = useAuthStore();
+  const canAssign = isAdmin() || currentUser?.role === 'materially_responsible';
   const [editing, setEditing] = useState(false);
 
   // Держим актуальную версию объекта: после сохранения формы store обновится.
@@ -154,7 +157,7 @@ export function EquipmentCardModal({ equipmentId, onClose }: { equipmentId: stri
             <Row icon={Building} label="Учёт" value={`Создано: ${new Date(eq.createdAt).toLocaleDateString('ru-RU')} • Обновлено: ${new Date(eq.updatedAt).toLocaleDateString('ru-RU')}`} />
           </div>
 
-          {canEdit() && eq.assignedToEmployeeId && !editing && (
+          {canAssign && eq.assignedToEmployeeId && !editing && (
             <div className="mt-4 flex justify-end">
               <button
                 onClick={() => { unassignEquipment(eq.id); }}

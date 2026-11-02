@@ -33,7 +33,11 @@ export function EmployeeDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { getEmployeeById, getEquipmentByEmployee, getVMsByResponsible, unassignEquipment, assignEquipment, getUnassignedEquipment, departments, positions, branches, updateEmployee } = useDataStore();
-  const { canEdit, users } = useAuthStore();
+  // МОЛ: разрешена только связка «сотрудник ↔ оборудование» (assign/unassign —
+  // бэкенд допускает materially_responsible на /equipment/:id/assign|unassign).
+  // Редактирование карточки сотрудника (canEdit) — строго admin.
+  const { canEdit, isAdmin, currentUser, users } = useAuthStore();
+  const canAssign = isAdmin() || currentUser?.role === 'materially_responsible';
   const [showAssignEquipmentModal, setShowAssignEquipmentModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   // Карточка оборудования: просмотр из «Закреплённое имущество» без перехода на вкладку оборудования
@@ -95,7 +99,7 @@ export function EmployeeDetailPage() {
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200">Закреплённое имущество ({employeeEquipment.length})</h3>
-              {canEdit() && (
+              {canAssign && (
                 <button 
                   onClick={() => setShowAssignEquipmentModal(true)}
                   className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
@@ -137,7 +141,7 @@ export function EmployeeDetailPage() {
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${condition?.color ?? 'bg-gray-100 text-gray-600'}`}>{condition?.label ?? eq.condition}</span>
-                        {canEdit() && (
+                        {canAssign && (
                           <button
                             onClick={(e) => { e.stopPropagation(); unassignEquipment(eq.id); }}
                             className="text-red-400 dark:text-red-500 hover:text-red-600 dark:hover:text-red-400 p-1"

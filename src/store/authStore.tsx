@@ -247,7 +247,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       myOrganizations: () => currentUser?.accessibleOrganizations ?? [],
       canCreateOrganization: () => currentUser?.role === 'admin',
       getUserRole: () => currentUser?.role || null,
-      canEdit: () => currentUser?.role === 'admin' || currentUser?.role === 'materially_responsible',
+      // Бизнес-логика (решение от 2026-11): работа МОЛ — только связка
+      // «сотрудник ↔ оборудование» (assign/unassign). Создание/редактирование
+      // сотрудников, серверов, ВМ, справочников и т.п. для МОЛ запрещено на UI.
+      // NOTE: бэкенд пока допускает materially_responsible на POST/PUT по
+      // employees/equipment/VM — это расхождение оставлено сознательно
+      // (отладка в процессе тестирования сервиса).
+      canEdit: () => currentUser?.role === 'admin',
       isAdmin: () => currentUser?.role === 'admin',
       canManageUsers: () => currentUser?.role === 'admin',
       hasOrganization: () => !!currentUser?.organizationId,
