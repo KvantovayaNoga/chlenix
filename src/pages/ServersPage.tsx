@@ -352,13 +352,11 @@ export function ServersPage() {
         <VMEditModal
           vm={editingVM.id ? editingVM : null}
           onClose={() => setEditingVM(null)}
-          onSave={(data) => {
-            if (editingVM.id) {
-              updateVM(editingVM.id, data);
-            } else {
-              addVM(data as any);
-            }
-            setEditingVM(null);
+          onSave={async (data) => {
+            // п.5: если сохранение не удалось — модалка остаётся открытой,
+            // текст ошибки показывает глобальный баннер dataStore
+            const ok = editingVM.id ? await updateVM(editingVM.id, data) : await addVM(data as any);
+            if (ok !== false) setEditingVM(null);
           }}
           servers={hypervisorHosts}
           clusters={clusterEntities}

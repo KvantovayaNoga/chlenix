@@ -153,12 +153,10 @@ export function PhysicalServersPage() {
           server={editingServer}
           initialCluster={addingCluster}
           onClose={() => { setShowAddModal(false); setEditingServer(null); setAddingCluster(false); }}
-          onSave={(data) => {
-            if (editingServer) { updateEquipment(editingServer.id, normalizeServerPayload(data, false)); }
-            else {
-              addEquipment(normalizeServerPayload(data, true) as any);
-            }
-            setShowAddModal(false); setEditingServer(null); setAddingCluster(false);
+          onSave={async (data) => {
+            // п.5: не закрываем форму при ошибке сохранения/валидации
+            const ok = editingServer ? await updateEquipment(editingServer.id, normalizeServerPayload(data, false)) : await addEquipment(normalizeServerPayload(data, true) as any);
+            if (ok !== false) { setShowAddModal(false); setEditingServer(null); setAddingCluster(false); }
           }}
           branches={branches}
           allEquipment={equipment}

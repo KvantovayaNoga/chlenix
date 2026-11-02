@@ -123,6 +123,10 @@ export interface Employee {
   internalPhone: string;
   personalPhone: string;
   hireDate: string;
+  birthDate?: string | null;   // день рождения (в UI — формат д.мм.гггг)
+  avatar?: string | null;      // автосинхронизируется с аватаром привязанного пользователя
+  userId?: string | null;      // привязка учётной записи пользователя (авто — по e-mail)
+  linkedUser?: { id: string; fullName: string; email: string } | null;
   isEmployed: boolean;
   // Рабочее место
   branchId: string | null;      // филиал необязателен

@@ -697,6 +697,13 @@ app.put('/api/users/:id', authMiddleware, async (c) => {
     newData: safeNew,
   });
 
+  // п.2: аватар пользователя — источник истины; при изменении/смене e-mail
+  // пересинхронизируем привязанного сотрудника (включая автопривязку по новому e-mail)
+  if ('avatar' in updateData || 'email' in updateData) {
+    const linked = await prisma.employee.findFirst({ where: { OR: [{ userId: id }, (updateData.email ? { email: updateData.email as string } : { id: '__none__' })] } });
+    if (linked) await syncEmployeeUserLink(linked.id);
+  }
+
   return c.json(publicUser(user));
 });
 
@@ -962,6 +969,11 @@ const employeeSchema = z.object({
     (v) => (v === '' || v === undefined || v === null ? new Date() : v),
     z.coerce.date(),
   ),
+  birthDate: z.preprocess(
+    (v) => (v === '' || v === undefined || v === null ? null : v),
+    z.coerce.date().nullable().optional(),
+  ),
+  userId: z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), z.string().uuid().nullable().optional()),
   isEmployed: z.boolean().optional(),
   floor: z.string().optional().nullable(),
   room: z.string().optional().nullable(),
@@ -977,6 +989,9 @@ function publicEmployee(e: any): any {
   return {
     ...e,
     hireDate: isoDate(e.hireDate),
+    birthDate: e.birthDate ? isoDate(e.birthDate) : null,
+    avatar: e.avatar ?? null,
+    userId: e.userId ?? null,
     createdAt: isoDate(e.createdAt),
     updatedAt: isoDate(e.updatedAt),
     position: e.position ? { id: e.position.id, name: e.position.name } : undefined,
@@ -1010,7 +1025,7 @@ function publicVM(vm: any): any {
   };
 }
 
-const employeeInclude = { position: true, department: true, branch: true, equipment: true } as const;
+const employeeInclude = { position: true, department: true, branch: true, equipment: true, linkedUser: { select: { id: true, fullName: true, email: true } } } as const;
 
 app.get('/api/employees', authMiddleware, async (c) => {
   const scope = await getUserOrgScope(c.get('user').userId);
@@ -1038,6 +1053,33 @@ app.get('/api/employees/:id/history', authMiddleware, async (c) => {
   });
   return c.json(history.map(publicHistory));
 });
+
+async function syncEmployeeUserLink(employeeId: string): Promise<void> {
+  const emp = await prisma.employee.findUnique({ where: { id: employeeId } });
+  if (!emp) return;
+  let userId: string | null = emp.userId ?? null;
+  // привязка сохранена, но пользователь исчез — чистим висячую ссылку
+  if (userId && !(await prisma.user.findUnique({ where: { id: userId }, select: { id: true } }))) {
+    userId = null;
+    await prisma.employee.update({ where: { id: emp.id }, data: { userId: null } }).catch(() => {});
+  }
+  if (!userId && emp.email) {
+    const user = await prisma.user.findFirst({ where: { email: emp.email } });
+    if (user) {
+      const taken = await prisma.employee.findFirst({ where: { userId: user.id, id: { not: emp.id } } });
+      if (!taken) {
+        userId = user.id;
+        await prisma.employee.update({ where: { id: emp.id }, data: { userId: user.id } });
+      }
+    }
+  }
+  if (userId) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { avatar: true } });
+    if (user && (emp.avatar ?? null) !== (user.avatar ?? null)) {
+      await prisma.employee.update({ where: { id: emp.id }, data: { avatar: user.avatar ?? null } });
+    }
+  }
+}
 
 app.post('/api/employees', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
   const parsed = employeeSchema.safeParse(await c.req.json().catch(() => null));
@@ -1068,6 +1110,8 @@ app.post('/api/employees', authMiddleware, requireRole(['admin', 'materially_res
       internalPhone: data.internalPhone ?? null,
       personalPhone: data.personalPhone ?? null,
       hireDate: data.hireDate,
+      birthDate: data.birthDate ?? null,
+      userId: data.userId ?? null,
       isEmployed: data.isEmployed ?? true,
       floor: data.floor ?? null,
       room: data.room ?? null,
@@ -1084,7 +1128,10 @@ app.post('/api/employees', authMiddleware, requireRole(['admin', 'materially_res
   await createHistoryEntry('employee', employee.id, currentUser.fullName);
   await writeAudit(currentUser, 'create', 'employee', employee.id, name, `Создан сотрудник "${name}"`, c.req.header('x-forwarded-for'));
 
-  return c.json(publicEmployee(employee), 201);
+  // п.1: автопривязка к пользователю по e-mail + автосинхронизация аватара (п.2)
+  await syncEmployeeUserLink(employee.id);
+
+  return c.json(publicEmployee(await prisma.employee.findUnique({ where: { id: employee.id }, include: employeeInclude })), 201);
 });
 
 app.put('/api/employees/:id', authMiddleware, requireRole(['admin', 'materially_responsible']), async (c) => {
@@ -1105,12 +1152,23 @@ app.put('/api/employees/:id', authMiddleware, requireRole(['admin', 'materially_
 
   const newData: any = { ...parsed.data };
   if (newData.hireDate && !(newData.hireDate instanceof Date)) newData.hireDate = new Date(newData.hireDate);
+  if ('birthDate' in newData && newData.birthDate && !(newData.birthDate instanceof Date)) newData.birthDate = new Date(newData.birthDate);
+  // п.1: проверка привязки пользователя (нельзя занять чужую; несуществующий => null)
+  if ('userId' in newData && newData.userId) {
+    const targetUser = await prisma.user.findUnique({ where: { id: newData.userId }, select: { id: true } });
+    if (!targetUser) return c.json({ error: 'Выбранный пользователь не найден' }, 400);
+    const takenBy = await prisma.employee.findFirst({ where: { userId: newData.userId, id: { not: id } }, select: { id: true, lastName: true, firstName: true } });
+    if (takenBy) return c.json({ error: `Этот пользователь уже привязан к сотруднику ${takenBy.lastName} ${takenBy.firstName}` }, 400);
+  }
   if ('positionId' in newData) newData.positionId = await resolveRef('position', newData.positionId, scope.orgId) ?? old.positionId;
   if ('departmentId' in newData) newData.departmentId = await resolveRef('department', newData.departmentId, scope.orgId) ?? old.departmentId;
   if ('branchId' in newData) newData.branchId = await resolveRefOrNull('branch', newData.branchId ?? undefined, scope.orgId) ?? null;
   newData.updatedById = currentUser.userId;
 
   const employee = await prisma.employee.update({ where: { id }, data: newData, include: employeeInclude });
+
+  // п.1/п.2: автопривязка по e-mail и синхронизация аватара сотрудника с пользователем
+  await syncEmployeeUserLink(id);
 
   await applyUpdate({
     ctx: currentUser,

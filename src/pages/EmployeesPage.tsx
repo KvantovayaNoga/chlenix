@@ -2,12 +2,20 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from '../router';
 import { useDataStore } from '../store/dataStore';
 import { useAuthStore } from '../store/authStore';
-import { Search, Plus, UserCheck, UserX, Mail, Building, MapPin, X, Users, Phone, Filter, Save, Pencil } from 'lucide-react';
-import type { Employee } from '../types';
+import { Search, Plus, UserCheck, UserX, Mail, Building, MapPin, X, Users, Phone, Filter, Save, Pencil, Cake, Link2 } from 'lucide-react';
+import type { Employee, User } from '../types';
+import { api } from '../api/client';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
 
+// п.3: единый формат даты для сотрудников — дд.мм.гггг
+export function fmtRuDate(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('ru-RU');
+}
+
 export function EmployeesPage() {
-  const { employees, addEmployee, updateEmployee, departments, positions, branches } = useDataStore();
+  const { employees, addEmployee, updateEmployee, departments, positions, branches, error } = useDataStore();
   const { canEdit } = useAuthStore();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
@@ -145,9 +153,14 @@ export function EmployeesPage() {
           <div key={employee.id} onClick={() => navigate(`/employees/${employee.id}`)} className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md hover:border-indigo-200 dark:hover:border-indigo-600 transition-all cursor-pointer">
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-3">
-                <div className={`w-11 h-11 rounded-full flex items-center justify-center text-white font-bold ${employee.isEmployed ? 'bg-indigo-500' : 'bg-gray-400'}`}>{employee.lastName.charAt(0)}{employee.firstName.charAt(0)}</div>
+                <div className={`w-11 h-11 rounded-full overflow-hidden flex items-center justify-center text-white font-bold ${employee.avatar ? '' : (employee.isEmployed ? 'bg-indigo-500' : 'bg-gray-400')}`}>
+                  {employee.avatar
+                    ? <img src={employee.avatar} alt="" className="w-full h-full object-cover" />
+                    : <>{employee.lastName.charAt(0)}{employee.firstName.charAt(0)}</>}
+                </div>
                 <div>
-                  <h3 className="font-semibold text-gray-700 dark:text-gray-200">{employee.lastName} {employee.firstName}</h3>
+                  {/* п.4: полное ФИО (Фамилия Имя Отчество) */}
+                  <h3 className="font-semibold text-gray-700 dark:text-gray-200">{[employee.lastName, employee.firstName, employee.middleName].filter(Boolean).join(' ')}</h3>
                   <p className="text-sm text-gray-600 dark:text-gray-400">{getPosName(employee.positionId)}</p>
                 </div>
               </div>
@@ -188,21 +201,48 @@ export function EmployeesPage() {
   );
 }
 
-export function AddEmployeeModal({ onClose, onAdd, initial }: { onClose: () => void; onAdd: (data: any) => void; initial?: Employee | null }) {
+export function AddEmployeeModal({ onClose, onAdd, initial }: { onClose: () => void; onAdd: (data: any) => Promise<boolean> | boolean; initial?: Employee | null }) {
   const { departments, positions, branches } = useDataStore();
+  // п.1: список пользователей для привязки сотрудника к учётной записи
+  const [users, setUsers] = useState<User[]>([]);
+  useEffect(() => { api.get<User[]>('/users').then(setUsers).catch(() => setUsers([])); }, []);
   const [formData, setFormData] = useState(() => initial ? ({
     firstName: initial.firstName ?? '', lastName: initial.lastName ?? '', middleName: initial.middleName ?? '',
     positionId: initial.positionId ?? '', departmentId: initial.departmentId ?? '', email: initial.email ?? '',
     workPhone: initial.workPhone ?? '', internalPhone: initial.internalPhone ?? '', personalPhone: initial.personalPhone ?? '',
     hireDate: initial.hireDate ? initial.hireDate.slice(0, 10) : new Date().toISOString().split('T')[0],
+    birthDate: initial.birthDate ? initial.birthDate.slice(0, 10) : '',
+    userId: initial.userId ?? '',
     isEmployed: initial.isEmployed ?? true, branchId: initial.branchId ?? '', floor: initial.floor ?? '', room: initial.room ?? '', notes: initial.notes ?? '',
   }) : {
     firstName: '', lastName: '', middleName: '', positionId: '', departmentId: '', email: '',
     workPhone: '', internalPhone: '', personalPhone: '', hireDate: new Date().toISOString().split('T')[0],
+    birthDate: '', userId: '',
     isEmployed: true, branchId: '', floor: '', room: '', notes: '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onAdd(formData); onClose(); };
+  // п.5: локальная валидация — не закрываем форму, если что-то заполнено неверно
+  const errors: Record<string, string> = {};
+  if (!formData.lastName.trim()) errors.lastName = 'Укажите фамилию';
+  if (!formData.firstName.trim()) errors.firstName = 'Укажите имя';
+  if (!formData.positionId) errors.positionId = 'Выберите должность';
+  if (!formData.departmentId) errors.departmentId = 'Выберите отдел';
+  if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(formData.email.trim())) errors.email = 'Некорректный e-mail (пример: ivan@example.ru)';
+  if (formData.birthDate) {
+    const bd = new Date(formData.birthDate);
+    if (Number.isNaN(bd.getTime()) || bd > new Date()) errors.birthDate = 'Дата в будущем или некорректна';
+  }
+  if (formData.hireDate && new Date(formData.hireDate) > new Date()) errors.hireDate = 'Дата приёма не может быть в будущем';
+  const hasErrors = Object.keys(errors).length > 0;
+  const errCls = (f: string) => ` w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 ${errors[f] ? 'border-red-400 focus:ring-red-400' : 'border-gray-200 dark:border-gray-600 focus:ring-indigo-500'}`;
+  const errHint = (f: string) => errors[f] ? <p className="text-xs text-red-500 mt-1">{errors[f]}</p> : null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (hasErrors) return; // форма остаётся открытой — показываем подсказки внутри полей
+    const res = await onAdd({ ...formData, birthDate: formData.birthDate || null, userId: formData.userId || null });
+    if (res !== false) onClose();
+  };
   const handleChange = (field: string, value: string | boolean) => { setFormData(prev => ({ ...prev, [field]: value })); };
 
   return (
@@ -214,22 +254,40 @@ export function AddEmployeeModal({ onClose, onAdd, initial }: { onClose: () => v
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="grid grid-cols-3 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Фамилия<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="text" value={formData.lastName} onChange={(e) => handleChange('lastName', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required /></div>
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Имя<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="text" value={formData.firstName} onChange={(e) => handleChange('firstName', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required /></div>
+            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Фамилия<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="text" value={formData.lastName} onChange={(e) => handleChange('lastName', e.target.value)} className={errCls('lastName')} />{errHint('lastName')}</div>
+            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Имя<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="text" value={formData.firstName} onChange={(e) => handleChange('firstName', e.target.value)} className={errCls('firstName')} />{errHint('firstName')}</div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Отчество</label><input type="text" value={formData.middleName} onChange={(e) => handleChange('middleName', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" /></div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Должность<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><select value={formData.positionId} onChange={(e) => handleChange('positionId', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required><option value="">Выберите должность</option>{positions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Отдел<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><select value={formData.departmentId} onChange={(e) => handleChange('departmentId', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required><option value="">Выберите отдел</option>{departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
+            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Должность<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><select value={formData.positionId} onChange={(e) => handleChange('positionId', e.target.value)} className={errCls('positionId')}><option value="">Выберите должность</option>{positions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>{errHint('positionId')}</div>
+            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Отдел<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><select value={formData.departmentId} onChange={(e) => handleChange('departmentId', e.target.value)} className={errCls('departmentId')}><option value="">Выберите отдел</option>{departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select>{errHint('departmentId')}</div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="email" value={formData.email} onChange={(e) => handleChange('email', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required /></div>
+            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label><input type="email" value={formData.email} onChange={(e) => handleChange('email', e.target.value)} placeholder="ivan@example.ru" className={errCls('email')} />{errHint('email')}{!errors.email && formData.email && users.some(u => u.email.toLowerCase() === formData.email.trim().toLowerCase()) ? <p className="text-xs text-emerald-600 mt-1">Найдена учётная запись с таким e-mail — привяжется автоматически</p> : null}</div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"><Link2 className="w-3.5 h-3.5 inline mr-1 text-gray-400" />Пользователь (привязка)</label>
+              <select value={formData.userId} onChange={(e) => handleChange('userId', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                <option value="">Не привязан (или авто по e-mail)</option>
+                {users.filter(u => !u.isActive).map(u => <option key={u.id} value={u.id}>{u.fullName} — неактивен</option>)}
+                {users.filter(u => u.isActive).map(u => <option key={u.id} value={u.id}>{u.fullName} ({u.email})</option>)}
+              </select>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Если не выбран — привяжем автоматически по совпадению e-mail; аватар пользователя будет синхронизироваться сюда.</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Рабочий телефон</label><input type="text" value={formData.workPhone} onChange={(e) => handleChange('workPhone', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Внутренний номер</label><input type="text" value={formData.internalPhone} onChange={(e) => handleChange('internalPhone', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="1001" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Личный телефон</label><input type="text" value={formData.personalPhone} onChange={(e) => handleChange('personalPhone', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" /></div>
+            {/* п.3: день рождения, отображается в формате дд.мм.гггг */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"><Cake className="w-3.5 h-3.5 inline mr-1 text-gray-400" />День рождения</label>
+              <input type="date" value={formData.birthDate} onChange={(e) => handleChange('birthDate', e.target.value)} className={errCls('birthDate')} />
+              {errHint('birthDate')}
+              {formData.birthDate && !errors.birthDate ? <p className="text-xs text-gray-400 mt-1">{fmtRuDate(formData.birthDate)}</p> : null}
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Дата приёма</label><input type="date" value={formData.hireDate} onChange={(e) => handleChange('hireDate', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" /></div>
+            <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Дата приёма</label><input type="date" value={formData.hireDate} onChange={(e) => handleChange('hireDate', e.target.value)} className={errCls('hireDate')} />{errHint('hireDate')}</div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Филиал</label><select value={formData.branchId} onChange={(e) => handleChange('branchId', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"><option value="">Выберите филиал</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Этаж</label><input type="text" value={formData.floor} onChange={(e) => handleChange('floor', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Кабинет</label><input type="text" value={formData.room} onChange={(e) => handleChange('room', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" /></div>
