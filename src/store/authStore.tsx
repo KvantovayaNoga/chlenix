@@ -48,6 +48,8 @@ interface AuthState {
   canCreateOrg: () => boolean;
   /** CRUD сотрудников: admin + hr_specialist (EMPLOYEE_MANAGE_ROLES). */
   canManageEmployees: () => boolean;
+  /** Создание/редактирование карточек серверов/кластеров: admin + HR + sysadmin (см. isInfraEquipment на бэкенде). */
+  canManageServerCards: () => boolean;
   /** Связка «сотрудник ↔ оборудование»: admin + HR + МОЛ (ASSIGN_ROLES). */
   canAssignEquipment: () => boolean;
   /** Серверные разделы (физические серверы / ВМ / платформы виртуализации): admin + sysadmin (SERVER_ROLES). */
@@ -288,6 +290,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       hasOrganization: () => !!currentUser?.organizationId,
       canCreateOrg: () => currentUser?.role === 'admin' || currentUser?.role === 'hr_specialist',
       canManageEmployees: () => currentUser?.role === 'admin' || currentUser?.role === 'hr_specialist',
+      /**
+       * Создание/редактирование карточек серверов и кластеров.
+       * Зеркало бэкенда: POST/PUT /api/equipment доступны admin+HR для любой техники,
+       * а sysadmin — только для инфраструктурной (serverRole задан, см. isInfraEquipment).
+       * В разделе «Физические серверы» вся создаваемая техника инфраструктурная,
+       * поэтому здесь достаточно admin+sysadmin+HR.
+       */
+      canManageServerCards: () => currentUser?.role === 'admin' || currentUser?.role === 'sysadmin' || currentUser?.role === 'hr_specialist',
       canAssignEquipment: () => currentUser?.role === 'admin' || currentUser?.role === 'hr_specialist' || currentUser?.role === 'materially_responsible',
       canManageServers: () => currentUser?.role === 'admin' || currentUser?.role === 'sysadmin',
       // Зеркало canEditDirectory() из backend/src/index.ts
@@ -333,6 +343,7 @@ const authFallback: AuthState = {
   hasOrganization: () => false,
   canCreateOrg: () => false,
   canManageEmployees: () => false,
+  canManageServerCards: () => false,
   canAssignEquipment: () => false,
   canManageServers: () => false,
   canEditDirectory: () => false,

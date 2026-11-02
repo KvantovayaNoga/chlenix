@@ -123,6 +123,13 @@ const ORG_CREATE_ROLES: string[] = ['admin', 'hr_specialist'];
 const EMPLOYEE_MANAGE_ROLES: string[] = ['admin', 'hr_specialist'];
 /** Создание/редактирование карточек оборудования: admin + HR (МОЛ — только связка assign/unassign). */
 const EQUIPMENT_MANAGE_ROLES: string[] = ['admin', 'hr_specialist'];
+/**
+ * Инфраструктурная техника (роль в виртуализации задана): её заводит системный
+ * администратор (уточняя данные у МОЛ), поэтому sysadmin допущен к create/update
+ * таких карточек. Обычное офисное оборудование (роль не задана) sysadmin
+ * не создаёт и не правит — проверка isInfraEquipment в обработчиках /api/equipment.
+ */
+const isInfraEquipment = (serverRole?: string | null) => Boolean(serverRole);
 /** Связка «сотрудник ↔ оборудование»: admin, HR, МОЛ. */
 const ASSIGN_ROLES: string[] = ['admin', 'hr_specialist', 'materially_responsible'];
 /** Серверные разделы (физические серверы / ВМ / платформы виртуализации): admin + системный администратор. */
@@ -1442,7 +1449,8 @@ app.get('/api/equipment/:id/history', authMiddleware, async (c) => {
   return c.json(history.map(publicHistory));
 });
 
-app.post('/api/equipment', authMiddleware, requireRole(EQUIPMENT_MANAGE_ROLES), async (c) => {
+// sysadmin допускается (см. проверку isInfraEquipment ниже): может заводить карточки серверов
+app.post('/api/equipment', authMiddleware, requireRole([...EQUIPMENT_MANAGE_ROLES, 'sysadmin']), async (c) => {
   const body = await c.req.json().catch(() => null);
   // ClusterForm передаёт состав кластера служебным полем __members — извлекаем его
   // до валидации схемы (в equipmentSchema его нет).
@@ -1456,6 +1464,12 @@ app.post('/api/equipment', authMiddleware, requireRole(EQUIPMENT_MANAGE_ROLES), 
   const currentUser = c.get('user');
   const data = parsed.data;
   const scope = await getUserOrgScope(currentUser.userId);
+
+  // sysadmin может заводить карточки инфраструктурной техники (серверы/кластеры/СХД),
+  // уточняя данные у МОЛ; офисное оборудование (serverRole не задан) ему недоступно.
+  if (!EQUIPMENT_MANAGE_ROLES.includes(roleOf(c)) && !isInfraEquipment(data.serverRole)) {
+    return c.json({ error: 'Недостаточно прав: системному администратору доступно только создание серверов и кластеров' }, 403);
+  }
 
   // Серийный/инвентарный номера обязательны для физической техники;
   // кластер виртуализации — логическая сущность, у него их может не быть.
@@ -1558,7 +1572,8 @@ app.post('/api/equipment', authMiddleware, requireRole(EQUIPMENT_MANAGE_ROLES), 
   return c.json(publicEquipmentBrief(item), 201);
 });
 
-app.put('/api/equipment/:id', authMiddleware, requireRole(EQUIPMENT_MANAGE_ROLES), async (c) => {
+// sysadmin допускается (см. проверку isInfraEquipment ниже): может править карточки серверов/кластеров
+app.put('/api/equipment/:id', authMiddleware, requireRole([...EQUIPMENT_MANAGE_ROLES, 'sysadmin']), async (c) => {
   const { id } = c.req.param();
   const body = await c.req.json().catch(() => null);
   // ClusterForm передаёт состав кластера служебным полем __members — извлекаем до валидации
@@ -1573,6 +1588,14 @@ app.put('/api/equipment/:id', authMiddleware, requireRole(EQUIPMENT_MANAGE_ROLES
 
   const old = await prisma.equipment.findUnique({ where: { id } });
   if (!old) return c.json({ error: 'Not found' }, 404);
+
+  // sysadmin может править только инфраструктурную технику (серверы/кластеры/СХД —
+  // роль в виртуализации задана у текущего ИЛИ запрашиваемого значения);
+  // офисное оборудование остаётся за admin+HR.
+  const resultingServerRole = 'serverRole' in parsed.data ? parsed.data.serverRole : old.serverRole;
+  if (!EQUIPMENT_MANAGE_ROLES.includes(roleOf(c)) && !isInfraEquipment(old.serverRole) && !isInfraEquipment(resultingServerRole)) {
+    return c.json({ error: 'Недостаточно прав: системному администратору доступно только редактирование серверов и кластеров' }, 403);
+  }
 
   const newData: any = { ...parsed.data };
   // Место размещения (филиал/ЦОД): нормализуем пустые строки в null и синхронизируем locationType.

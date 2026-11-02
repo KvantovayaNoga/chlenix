@@ -17,9 +17,9 @@ import type { StorageSystemType, StorageProtocol } from '../types';
 export function PhysicalServersPage() {
   const { equipment, branches, dataCenters, addEquipment, updateEquipment, deleteEquipment, getVMsByHost } = useDataStore();
   // Права синхронизированы с бэкендом: физический сервер/кластер — это Equipment,
-  // создание/редактирование — EQUIPMENT_MANAGE_ROLES (admin|hr_specialist),
-  // удаление — SERVER_ROLES (admin|sysadmin).
-  const { canManageEmployees, canManageServers, users } = useAuthStore();
+  // создание/редактирование — admin|hr_specialist (любая техника) + sysadmin
+  // (только инфраструктурная, см. isInfraEquipment), удаление — SERVER_ROLES (admin|sysadmin).
+  const { canManageServerCards, canManageServers, users } = useAuthStore();
   const navigate = useNavigate();
   const [editingServer, setEditingServer] = useState<Equipment | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -59,7 +59,7 @@ export function PhysicalServersPage() {
           <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Физические серверы</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">Серверное оборудование организации</p>
         </div>
-        {canManageEmployees() && (
+        {canManageServerCards() && (
           <div className="flex items-center gap-3">
             {/* Кластер — отдельная форма (логическая сущность без инвентарной карточки) */}
             <button onClick={() => setShowClusterForm(true)} className="bg-white dark:bg-gray-800 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 px-5 py-2.5 rounded-xl font-medium hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-all flex items-center gap-2">
@@ -78,7 +78,7 @@ export function PhysicalServersPage() {
           const isCluster = server.serverRole === 'cluster';
           // Кластер — логическая сущность: открывается отдельной формой ClusterForm,
           // у обычного сервера — общий модал ServerModal.
-          const openEdit = () => { if (canManageServers() || canManageEmployees()) { isCluster ? setEditingCluster(server) : setEditingServer(server); } };
+          const openEdit = () => { if (canManageServerCards()) { isCluster ? setEditingCluster(server) : setEditingServer(server); } };
           return (
             <div key={server.id} onClick={openEdit} className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600 hover:shadow-md transition-all cursor-pointer">
               <div className="flex items-start justify-between mb-4">
