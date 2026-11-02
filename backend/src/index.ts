@@ -162,6 +162,12 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
   hostServerId: 'хост-сервер',
   serverRole: 'роль в виртуализации',
   hypervisorName: 'гипервизор',
+  clusterName: 'кластер',
+  hypervisorVersion: 'версия гипервизора',
+  storageType: 'тип СХД',
+  storageProtocol: 'протокол СХД',
+  storageCapacityGB: 'объём СХД, ГБ',
+  provisionedOn: 'назначенный хост',
   responsibleEmployeeId: 'ответственный (инфраструктура)',
   serviceResponsibleEmployeeId: 'ответственный (сервисы)',
   description: 'описание',
@@ -1151,6 +1157,11 @@ const equipmentSchema = z.object({
   room: z.string().optional().nullable(),
   serverRole: z.enum(['hypervisor_host', 'storage', 'management_console', 'standalone']).optional().nullable(),
   hypervisorName: z.string().optional().nullable(),
+  clusterName: z.string().optional().nullable(),
+  hypervisorVersion: z.string().optional().nullable(),
+  storageType: z.enum(['san', 'nas', 'hci']).optional().nullable(),
+  storageProtocol: z.enum(['iscsi', 'fc', 'fcoe', 'nfs', 'smb', 'sas', 'nvmeof', 'vsan', 'ceph']).optional().nullable(),
+  storageCapacityGB: z.number().int().min(0).optional().nullable(),
   cpuCores: z.number().int().min(0).optional().nullable(),
   ramGB: z.number().int().min(0).optional().nullable(),
   diskGB: z.number().int().min(0).optional().nullable(),
@@ -1223,6 +1234,11 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
       room: data.room ?? null,
       serverRole: data.serverRole ?? null,
       hypervisorName: data.hypervisorName ?? null,
+      clusterName: data.clusterName ?? null,
+      hypervisorVersion: data.hypervisorVersion ?? null,
+      storageType: data.storageType ?? null,
+      storageProtocol: data.storageProtocol ?? null,
+      storageCapacityGB: data.storageCapacityGB ?? null,
       cpuCores: data.cpuCores ?? null,
       ramGB: data.ramGB ?? null,
       diskGB: data.diskGB ?? null,
@@ -1260,6 +1276,10 @@ app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'materially_
   if ('writeOffDate' in newData) newData.writeOffDate = normalizeDateField(newData.writeOffDate);
   if ('serverRole' in newData) newData.serverRole = newData.serverRole || null;
   if ('hypervisorName' in newData) newData.hypervisorName = newData.hypervisorName || null;
+  if ('clusterName' in newData) newData.clusterName = newData.clusterName || null;
+  if ('hypervisorVersion' in newData) newData.hypervisorVersion = newData.hypervisorVersion || null;
+  if ('storageType' in newData) newData.storageType = newData.storageType || null;
+  if ('storageProtocol' in newData) newData.storageProtocol = newData.storageProtocol || null;
   if ('inventoryNumber' in newData && newData.inventoryNumber !== old.inventoryNumber) {
     const dup = await prisma.equipment.findUnique({ where: { inventoryNumber: newData.inventoryNumber } });
     if (dup) return c.json({ error: 'Инвентарный номер уже используется' }, 409);
@@ -1396,6 +1416,7 @@ const vmSchema = z.object({
   serviceResponsibleEmployeeId: z.string().optional().nullable(),
   status: z.enum(['running', 'stopped', 'maintenance', 'decommissioned']).optional(),
   serverRole: z.enum(['hypervisor_host', 'storage', 'management_console', 'standalone']).optional().nullable(),
+  provisionedOn: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
 });
 
@@ -1451,6 +1472,7 @@ app.post('/api/virtual-machines', authMiddleware, requireRole(['admin', 'materia
       os: data.os ?? null,
       status: data.status ?? 'running',
       serverRole: data.serverRole ?? null,
+      provisionedOn: data.provisionedOn ?? null,
       notes: data.notes ?? null,
       cpuCores: data.cpuCores ?? 2,
       ramGB: data.ramGB ?? 4,
@@ -1485,6 +1507,7 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(['admin', 'mate
   if ('responsibleEmployeeId' in newData) newData.responsibleEmployeeId = await resolveRef('employee', newData.responsibleEmployeeId);
   if ('serviceResponsibleEmployeeId' in newData) newData.serviceResponsibleEmployeeId = await resolveRef('employee', newData.serviceResponsibleEmployeeId);
   if ('serverRole' in newData) newData.serverRole = newData.serverRole || null;
+  if ('provisionedOn' in newData) newData.provisionedOn = newData.provisionedOn || null;
   newData.updatedById = currentUser.userId;
 
   const vm = await prisma.virtualMachine.update({ where: { id }, data: newData, include: vmInclude });

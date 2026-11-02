@@ -139,6 +139,13 @@ export interface Employee {
 // Позволяет описать инфраструктуру: хосты гипервизора, СХД, консоли управления.
 export type ServerRole = 'hypervisor_host' | 'storage' | 'management_console' | 'standalone';
 
+// Тип системы хранения (для роли «СХД»): SAN — выделенная СХД по FC/iSCSI,
+// NAS — сетевое хранилище (NFS/SMB), HCI — гиперконвергентная (Ceph, vSAN, StarWind).
+export type StorageSystemType = 'san' | 'nas' | 'hci';
+
+// Протокол доступа к хранилищу, на котором работает платформа виртуализации.
+export type StorageProtocol = 'iscsi' | 'fc' | 'fcoe' | 'nfs' | 'smb' | 'sas' | 'nvmeof' | 'vsan' | 'ceph';
+
 // Признаки участия оборудования в платформе виртуализации (для сайдбара и страницы платформы)
 export interface VirtualizationMeta {
   serverRole?: ServerRole | null;
@@ -197,6 +204,16 @@ export interface Equipment {
   serverRole?: ServerRole | null;
   /** Название гипервизора, если это хост (VMware ESXi, Proxmox VE, Hyper-V…) */
   hypervisorName?: string | null;
+  /** Имя кластера ВМ (vSphere HA Cluster, Proxmox Ceph-cluster…) — группировка хостов внутри гипервизора */
+  clusterName?: string | null;
+  /** Версия гипервизора на хосте (ESXi 8.0 U2, PVE 8.2…) */
+  hypervisorVersion?: string | null;
+  /** Тип СХД: SAN / NAS / HCI */
+  storageType?: StorageSystemType | null;
+  /** Протокол доступа к СХД: iSCSI / FC / NFS / SMB / SAS / NVMe-oF */
+  storageProtocol?: StorageProtocol | null;
+  /** Полезный объём СХД, ГБ */
+  storageCapacityGB?: number | null;
   notes: string;
   createdAt: string;
   updatedAt: string;
@@ -250,6 +267,8 @@ export interface VirtualMachine {
   status: 'running' | 'stopped' | 'maintenance' | 'decommissioned';
   /** Роль ВМ в системе виртуализации (например, консоль управления — vCenter как ВМ) */
   serverRole?: ServerRole | null;
+  /** Назначенный хост гипервизора (thin provisioning) */
+  provisionedOn?: string | null;
   notes: string;
   createdAt: string;
   updatedAt: string;
