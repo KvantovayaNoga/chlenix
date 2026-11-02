@@ -240,8 +240,8 @@ model Equipment {
   updatedBy          User?         @relation("EquipmentUpdater", fields: [updatedById], references: [id])
 
   hostForVMs   VirtualMachine[]      @relation("HostServer")
-  // ВМ, приписанные к этому кластеру (только для serverRole === 'cluster')
-  vmsInCluster VirtualMachine[]      @relation("VmCluster")
+  // ВМ кластера вычисляются через состав кластера (members.parentClusterId),
+  // отдельная связь VmCluster удалена как дублирующая и противоречащая логике
   assignments  EquipmentAssignment[]
 
   // Кластерные связи: кластер-сервер аккумулирует внутри себя хосты и СХД.
@@ -289,9 +289,9 @@ model VirtualMachine {
   hostname                     String
   type                         VMType   @default(virtual)
   hostServerId                 String?  @map("host_server_id")
-  // Кластер, которому принадлежит ВМ (виртуальные машины НЕ размещаются на кластере
-  // напрямую — хостом может быть только физический сервер-хост гипервизора)
-  clusterId                    String?  @map("cluster_id")
+  // clusterId удалён: принадлежность ВМ к кластеру определяется автоматически
+  // по хост-серверу (hostServer.parentClusterId). ВМ размещается на хосте,
+  // а кластер — логическая группа хостов/СХД (см. Equipment.parentClusterId).
   os                           String?
   cpuCores                     Int      @default(2) @map("cpu_cores")
   // RAM/диск во Float — поддержка дробных значений (ввод через запятую: 4,5 ГБ)

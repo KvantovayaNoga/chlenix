@@ -168,7 +168,6 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
   storageProtocol: 'протокол СХД',
   storageCapacityGB: 'объём СХД, ГБ',
   parentClusterId: 'кластер (родитель)',
-  clusterId: 'кластер ВМ',
   provisionedOn: 'назначенный хост',
   responsibleEmployeeId: 'ответственный (инфраструктура)',
   serviceResponsibleEmployeeId: 'ответственный (сервисы)',
@@ -1668,8 +1667,6 @@ const vmSchema = z.object({
   hostname: z.string().trim().min(1, 'Укажите hostname'),
   type: z.enum(['virtual', 'container', 'cloud']).optional(),
   hostServerId: z.string().optional().nullable(),
-  /** Кластер, которому принадлежит ВМ (косяк 11: кластер не является хостом) */
-  clusterId: z.string().optional().nullable(),
   os: z.string().optional().nullable(),
   cpuCores: z.number().int().min(0).optional(),
   // RAM/диск допускают дробные значения (ввод через запятую, косяк 10)
@@ -1685,24 +1682,40 @@ const vmSchema = z.object({
 
 const vmInclude = {
   hostServer: true,
-  cluster: true,
   responsibleEmployee: true,
   serviceResponsibleEmployee: true,
   networkInterfaces: true,
   services: true,
 } as const;
 
+// Кластер ВМ определяется автоматически по хост-серверу: ВМ размещается на
+// хосте, а хост (если входит в кластер) имеет parentClusterId -> кластер.
+async function resolveVmClusterIds(vmList: any[]): Promise<void> {
+  const hostIds = Array.from(new Set(vmList.map((v) => v.hostServerId).filter(Boolean)));
+  if (hostIds.length === 0) return;
+  const hosts = await prisma.equipment.findMany({
+    where: { id: { in: hostIds } },
+    select: { id: true, parentClusterId: true },
+  });
+  const byHost = new Map(hosts.map((h) => [h.id, h.parentClusterId ?? null]));
+  for (const v of vmList) {
+    v.vmClusterId = v.hostServerId ? byHost.get(v.hostServerId) ?? null : null;
+  }
+}
+
 app.get('/api/virtual-machines', authMiddleware, async (c) => {
   const scope = await getUserOrgScope(c.get('user').userId);
   const where: any = {};
   if (scope.orgId) where.organizationId = scope.orgId; else where.organizationId = null;
   const vms = await prisma.virtualMachine.findMany({ where, include: vmInclude, orderBy: { createdAt: 'desc' } });
+  await resolveVmClusterIds(vms);
   return c.json(vms.map(publicVM));
 });
 
 app.get('/api/virtual-machines/:id', authMiddleware, async (c) => {
   const vm = await prisma.virtualMachine.findUnique({ where: { id: c.req.param('id') }, include: vmInclude });
   if (!vm) return c.json({ error: 'Not found' }, 404);
+  await resolveVmClusterIds([vm]);
   return c.json(publicVM(vm));
 });
 
@@ -1727,17 +1740,17 @@ app.post('/api/virtual-machines', authMiddleware, requireRole(['admin', 'materia
   const hostServerId = await resolveRef('equipment', data.hostServerId);
   const responsibleEmployeeId = await resolveRef('employee', data.responsibleEmployeeId);
   const serviceResponsibleEmployeeId = await resolveRef('employee', data.serviceResponsibleEmployeeId);
-  // Косяк 11: хостом ВМ может быть только сервер-хост гипервизора, не кластер/СХД/консоль
+  // Хост обязателен: без него ВМ «нигде не живёт» и её нельзя ни разместить,
+  // ни отнести к кластеру (кластер определяется автоматически по хосту).
+  if (!hostServerId) {
+    return c.json({ error: 'Не выбран хост-сервер. Укажите физический сервер-хост гипервизора, на котором размещена ВМ — без хоста создать ВМ нельзя.' }, 400);
+  }
+  const hostExists = await prisma.equipment.findUnique({ where: { id: hostServerId }, select: { id: true, name: true } });
+  if (!hostExists) {
+    return c.json({ error: 'Выбранный хост-сервер не найден (возможно, удалён). Обновите страницу и выберите существующий хост.' }, 400);
+  }
   try {
     await assertVmHostIsHypervisor(hostServerId);
-  } catch (e) {
-    if (e instanceof VmHostError) return c.json({ error: e.message }, 400);
-    throw e;
-  }
-  // Косяк 11: ВМ может быть приписана к кластеру (агрегация), но не размещена на нём
-  let clusterId: string | null = null;
-  try {
-    clusterId = await validateParentCluster(await resolveRef('equipment', data.clusterId));
   } catch (e) {
     if (e instanceof VmHostError) return c.json({ error: e.message }, 400);
     throw e;
@@ -1758,13 +1771,13 @@ app.post('/api/virtual-machines', authMiddleware, requireRole(['admin', 'materia
       ramGB: data.ramGB ?? 4,
       diskGB: data.diskGB ?? 50,
       hostServerId,
-      clusterId,
       responsibleEmployeeId,
       serviceResponsibleEmployeeId,
       updatedById: currentUser.userId,
     },
     include: vmInclude,
   });
+  await resolveVmClusterIds([vm]);
 
   await createHistoryEntry('virtualmachine', vm.id, currentUser.fullName);
   await writeAudit(currentUser, 'create', 'virtualmachine', vm.id, vm.name, `Добавлена ВМ "${vm.name}" (${vm.hostname})`, c.req.header('x-forwarded-for'));
@@ -1787,20 +1800,18 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(['admin', 'mate
   const newData: any = { ...parsed.data };
   if ('hostServerId' in newData) {
     newData.hostServerId = await resolveRef('equipment', newData.hostServerId);
+    // Снять хост с существующей ВМ нельзя — она «повиснет» без размещения
+    if (!newData.hostServerId) {
+      return c.json({ error: 'Нельзя убрать хост-сервер у ВМ. Выберите хост, на котором размещена ВМ.' }, 400);
+    }
     try {
       await assertVmHostIsHypervisor(newData.hostServerId);
     } catch (e) {
       if (e instanceof VmHostError) return c.json({ error: e.message }, 400);
       throw e;
     }
-  }
-  if ('clusterId' in newData) {
-    try {
-      newData.clusterId = await validateParentCluster(await resolveRef('equipment', newData.clusterId));
-    } catch (e) {
-      if (e instanceof VmHostError) return c.json({ error: e.message }, 400);
-      throw e;
-    }
+  } else if (!old.hostServerId) {
+    return c.json({ error: 'У ВМ не задан хост-сервер. Выберите хост для сохранения.' }, 400);
   }
   if ('responsibleEmployeeId' in newData) newData.responsibleEmployeeId = await resolveRef('employee', newData.responsibleEmployeeId);
   if ('serviceResponsibleEmployeeId' in newData) newData.serviceResponsibleEmployeeId = await resolveRef('employee', newData.serviceResponsibleEmployeeId);
@@ -1809,6 +1820,7 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(['admin', 'mate
   newData.updatedById = currentUser.userId;
 
   const vm = await prisma.virtualMachine.update({ where: { id }, data: newData, include: vmInclude });
+  await resolveVmClusterIds([vm]);
 
   await applyUpdate({
     ctx: currentUser,
