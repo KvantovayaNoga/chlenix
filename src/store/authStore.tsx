@@ -34,6 +34,11 @@ interface AuthState {
   canCreateOrganization: () => boolean;
   getUserRole: () => UserRole | null;
   canEdit: () => boolean;
+  /**
+   * Полное право на удаление и управление справочниками/организациями — только admin.
+   * Синхронизировано с бэкендом (requireRole(['admin'])).
+   */
+  isAdmin: () => boolean;
   canManageUsers: () => boolean;
   hasOrganization: () => boolean;
 }
@@ -243,6 +248,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canCreateOrganization: () => currentUser?.role === 'admin',
       getUserRole: () => currentUser?.role || null,
       canEdit: () => currentUser?.role === 'admin' || currentUser?.role === 'materially_responsible',
+      isAdmin: () => currentUser?.role === 'admin',
       canManageUsers: () => currentUser?.role === 'admin',
       hasOrganization: () => !!currentUser?.organizationId,
     }),
@@ -275,6 +281,7 @@ const authFallback: AuthState = {
   canCreateOrganization: () => false,
   getUserRole: () => null,
   canEdit: () => false,
+  isAdmin: () => false,
   canManageUsers: () => false,
   hasOrganization: () => false,
 };

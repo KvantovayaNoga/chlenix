@@ -32,7 +32,7 @@ const conditionLabels = {
 
 export function EquipmentPage() {
   const { equipment, employees, branches, addEquipment, updateEquipment, deleteEquipment } = useDataStore();
-  const { canEdit, users } = useAuthStore();
+  const { canEdit, isAdmin, users } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterCondition, setFilterCondition] = useState('');
@@ -260,10 +260,11 @@ export function EquipmentPage() {
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={(e) => { e.stopPropagation(); setViewingHistory(eq); }} className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 p-1" title="История изменений"><History className="w-4 h-4" /></button>
                         {canEdit() && (
-                          <>
-                            <button onClick={(e) => { e.stopPropagation(); setEditingEquipment(eq); }} className="text-gray-400 hover:text-indigo-600 p-1" title="Редактировать"><Edit className="w-4 h-4" /></button>
-                            <button onClick={(e) => { e.stopPropagation(); if (confirm('Удалить запись?')) deleteEquipment(eq.id); }} className="text-gray-400 hover:text-red-600 p-1" title="Удалить"><Trash2 className="w-4 h-4" /></button>
-                          </>
+                          <button onClick={(e) => { e.stopPropagation(); setEditingEquipment(eq); }} className="text-gray-400 hover:text-indigo-600 p-1" title="Редактировать"><Edit className="w-4 h-4" /></button>
+                        )}
+                        {/* Удаление оборудования на бэкенде разрешено только admin */}
+                        {isAdmin() && (
+                          <button onClick={(e) => { e.stopPropagation(); if (confirm('Удалить запись?')) deleteEquipment(eq.id); }} className="text-gray-400 hover:text-red-600 p-1" title="Удалить"><Trash2 className="w-4 h-4" /></button>
                         )}
                       </div>
                     </td>

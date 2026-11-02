@@ -16,7 +16,7 @@ import type { StorageSystemType, StorageProtocol } from '../types';
 
 export function PhysicalServersPage() {
   const { equipment, branches, dataCenters, addEquipment, updateEquipment, deleteEquipment, getVMsByHost } = useDataStore();
-  const { canEdit, users } = useAuthStore();
+  const { canEdit, isAdmin, users } = useAuthStore();
   const navigate = useNavigate();
   const [editingServer, setEditingServer] = useState<Equipment | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -99,7 +99,8 @@ export function PhysicalServersPage() {
                     )}
                   </div>
                 </div>
-                {canEdit() && (
+                {/* Удаление оборудования на бэкенде разрешено только admin */}
+                {isAdmin() && (
                   <button onClick={(e) => { e.stopPropagation(); if (confirm('Удалить?')) deleteEquipment(server.id); }} className="text-gray-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4" /></button>
                 )}
               </div>

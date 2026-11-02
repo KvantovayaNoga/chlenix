@@ -29,7 +29,7 @@ const serviceStatusLabels = {
 
 export function ServersPage() {
   const { virtualMachines, equipment, employees, services, addVM, updateVM, deleteVM, addNetworkInterface, removeNetworkInterface, addService, updateService, deleteService, getVMsByHost, reloadVMs: refreshVMs, error } = useDataStore();
-  const { canEdit, users } = useAuthStore();
+  const { canEdit, isAdmin, users } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -291,10 +291,15 @@ export function ServersPage() {
                     )}
                   </p>
                 </div>
-                {canEdit() && (
+                {(canEdit() || isAdmin()) && (
                   <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                    <button onClick={() => setEditingVM(vm)} className="text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30"><Edit className="w-4 h-4" /></button>
-                    <button onClick={() => { if (confirm('Удалить ВМ?')) deleteVM(vm.id); }} className="text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30"><Trash2 className="w-4 h-4" /></button>
+                    {canEdit() && (
+                      <button onClick={() => setEditingVM(vm)} className="text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30"><Edit className="w-4 h-4" /></button>
+                    )}
+                    {/* Удаление ВМ на бэкенде разрешено только admin */}
+                    {isAdmin() && (
+                      <button onClick={() => { if (confirm('Удалить ВМ?')) deleteVM(vm.id); }} className="text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30"><Trash2 className="w-4 h-4" /></button>
+                    )}
                   </div>
                 )}
               </div>
@@ -350,7 +355,8 @@ export function ServersPage() {
         <VMDetailModal 
           vm={selectedVM} 
           onClose={() => setSelectedVM(null)} 
-          canEdit={canEdit()} 
+          canEdit={canEdit()}
+          isAdmin={isAdmin()} 
           employees={employees} 
           services={services.filter(s => s.virtualMachineId === selectedVM.id)} 
           onAddInterface={() => setShowAddInterfaceModal(true)} 
@@ -426,7 +432,9 @@ export function ServersPage() {
   );
 }
 
-function VMDetailModal({ vm, onClose, canEdit, employees, services, onAddInterface, onEditInterface, onRemoveInterface, onAddService, onEditService, onDeleteService, getEmployeeName, getServerName, getClusterName, getVmClusterName, getUserName }: any) {
+// Примечание: права синхронизированы с бэкендом — интерфейсы/сервисы доступны
+// admin и materially_responsible (canEdit), удаление самой ВМ — только admin.
+function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, services, onAddInterface, onEditInterface, onRemoveInterface, onAddService, onEditService, onDeleteService, getEmployeeName, getServerName, getClusterName, getVmClusterName, getUserName }: any) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-800 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>

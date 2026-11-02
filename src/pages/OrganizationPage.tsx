@@ -80,7 +80,7 @@ function InfoRow({ label, value }: { label: string; value?: string | number | nu
 
 export function OrganizationPage() {
   const navigate = useNavigate();
-  const { currentUser, canEdit } = useAuthStore();
+  const { currentUser, canEdit, isAdmin } = useAuthStore();
   const { users } = useAuthStore();
   const { organizations, updateOrganization, deleteOrganization, employees, equipment, error: storeError } = useDataStore();
 
@@ -151,20 +151,26 @@ export function OrganizationPage() {
                 )}
               </div>
             </div>
-            {canEdit() && !isEditing && (
+            {!isEditing && (
               <div className="flex gap-2 flex-shrink-0">
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/30"
-                >
-                  <Pencil className="w-4 h-4" /> Редактировать
-                </button>
-                <button
-                  onClick={() => setConfirmDelete(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-transparent text-red-600 dark:text-red-400 border border-red-300 dark:border-red-900/50 rounded-xl text-sm font-medium hover:bg-red-50 dark:hover:bg-red-900/30 transition-all"
-                >
-                  <Trash2 className="w-4 h-4" /> Удалить
-                </button>
+                {/* Права синхронизированы с бэкендом: редактирование организации — admin (PUT /api/organizations/:id) */}
+                {canEdit() && isAdmin() && (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/30"
+                  >
+                    <Pencil className="w-4 h-4" /> Редактировать
+                  </button>
+                )}
+                {/* Удаление организации — только admin */}
+                {isAdmin() && (
+                  <button
+                    onClick={() => setConfirmDelete(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-transparent text-red-600 dark:text-red-400 border border-red-300 dark:border-red-900/50 rounded-xl text-sm font-medium hover:bg-red-50 dark:hover:bg-red-900/30 transition-all"
+                  >
+                    <Trash2 className="w-4 h-4" /> Удалить
+                  </button>
+                )}
               </div>
             )}
           </div>
