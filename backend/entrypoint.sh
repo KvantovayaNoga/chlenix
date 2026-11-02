@@ -169,10 +169,32 @@ push_variants() {
 }
 
 apply_schema() {
-  if ls prisma/migrations/*/migration.sql >/dev/null 2>&1; then
-    echo "🔧 Применяем миграции Prisma (migrate deploy)..."
-    npx prisma migrate deploy
-    return $?
+  # ВАЖНО (исправление P3005 на проде): Dockerfile создаёт ПУСТУЮ папку
+  # /app/prisma/migrations, и на некоторых образах в ней остаётся заглушка
+  # migration.sql из прошлых сборок. Раньше наличие любого migration.sql
+  # отправляло нас в `migrate deploy`, который на БД без _prisma_migrations
+  # падает с P3005 («database schema is not empty») — при том что история
+  # миграций у проекта отсутствует в принципе. Теперь миграционный путь
+  # выбирается только при НАЛИЧИИ журнала миграций (_journal.json), который
+  # создаётся исключительно командой `migrate dev`. Без журнала — всегда db push.
+  if find prisma/migrations -maxdepth 2 -name '_journal.json' 2>/dev/null | grep -q .; then
+    echo "🔧 Найден журнал миграций — применяем их (migrate deploy)..."
+    MIG_OUT=$(npx prisma migrate deploy 2>&1); MIG_RC=$?
+    echo "$MIG_OUT" | tail -8
+    if [ "$MIG_RC" -eq 0 ]; then
+      echo "✓ Миграции применены"
+      return 0
+    fi
+    if printf '%s' "$MIG_OUT" | grep -q 'P3005'; then
+      echo "⚠️ P3005: в БД нет таблицы _prisma_migrations (история велась через db push)."
+      echo "   Переходим на db push — штатный режим синхронизации схемы этого проекта."
+    else
+      echo "⚠️ migrate deploy упал (rc=$MIG_RC) — пробуем db push как резервный путь..."
+    fi
+  elif find prisma/migrations -maxdepth 2 -name 'migration.sql' 2>/dev/null | grep -q .; then
+    echo "ℹ️ В prisma/migrations есть migration.sql, но НЕТ _journal.json."
+    echo "   Это пустая заглушка из Dockerfile либо неполная история — migrate deploy"
+    echo "   на такой папке дал бы ошибку/P3005. Используем db push (штатный режим)."
   fi
 
   # Регенерируем Prisma Client из ТЕКУЩЕЙ schema.prisma перед применением
