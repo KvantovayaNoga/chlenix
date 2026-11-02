@@ -253,7 +253,7 @@ export function VirtualizationPlatformPage() {
                 <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100 truncate">{p.hypervisor}</h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   {p.versions.length > 0 && <>Версии: {p.versions.join(', ')} • </>}
-                  Хостов: {p.hosts.length} • Кластеров: {p.clusters.filter((c) => c.name).length} • ВМ: {p.vms.length} • СХД: {p.storage.length} • Консолей: {p.physicalConsoles.length + p.managementConsoles.length}
+                  Хостов: {p.hosts.length} • Кластеров: {p.clusters.length} • ВМ: {p.vms.length} • СХД: {p.storage.length} • Консолей: {p.physicalConsoles.length + p.managementConsoles.length}
                 </p>
               </div>
               {/* Сводные метрики платформы: CPU/RAM хостов против суммы ВМ, диски СХД против дисков ВМ.
@@ -268,20 +268,21 @@ export function VirtualizationPlatformPage() {
 
             {/* Наполнение гипервизора спрятано под кат: пользователь раскрывает сам */}
             <div className="p-6 space-y-4">
-              {/* Кластеры — отдельные блоки (по аналогии с хостами), хосты вложены внутрь */}
+              {/* Кластеры — отдельные блоки (по аналогии с хостами), хосты вложены внутрь.
+                  Названия подразделов — в единственном числе (кластер, система хранения данных, консоль управления). */}
               <CollapsibleSection
-                title={<>Кластеры ({p.clusters.filter((c) => c.name).length})</>}
+                title={<>Кластер ({p.clusters.length})</>}
                 icon={<Layers className="w-4 h-4 text-purple-500" />}
                 action={
                   // Редактирование кластера из шапки платформы: ровно та же ClusterForm,
                   // что при клике по карточке «Кластер виртуализации» в «Физические серверы».
-                  p.clusters.some((c) => c.name && c.clusterId) ? (
+                  p.clusters.some((c) => c.clusterId) ? (
                     <div className="relative shrink-0 group">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          const named = p.clusters.filter((c) => c.name && c.clusterId);
+                          const named = p.clusters.filter((c) => c.clusterId);
                           if (named.length === 1) setEditingCluster(getClusterEntity(named[0].clusterId));
                         }}
                         className="text-xs font-semibold text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-800 rounded-lg px-3 py-1.5 transition-colors inline-flex items-center gap-1.5"
@@ -291,11 +292,11 @@ export function VirtualizationPlatformPage() {
                         Редактировать кластер
                       </button>
                       {/* Несколько кластеров — выпадающий список выбора под кнопкой */}
-                      {p.clusters.filter((c) => c.name && c.clusterId).length > 1 && (
+                      {p.clusters.filter((c) => c.clusterId).length > 1 && (
                         <div className="hidden group-hover:block absolute right-0 top-full pt-1 z-20">
                           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-lg py-1 min-w-[220px] max-h-64 overflow-y-auto">
                             {p.clusters
-                              .filter((c) => c.name && c.clusterId)
+                              .filter((c) => c.clusterId)
                               .map((c) => (
                                 <button
                                   key={c.clusterId}
@@ -317,12 +318,11 @@ export function VirtualizationPlatformPage() {
                   ) : undefined
                 }
               >
-                {p.clusters.filter((c) => c.name).length === 0 ? (
-                  <p className="text-sm text-gray-400 dark:text-gray-500">Кластеры не созданы</p>
+                {p.clusters.length === 0 ? (
+                  <p className="text-sm text-gray-400 dark:text-gray-500">Кластер не создан</p>
                 ) : (
                   <div className="space-y-3">
                     {p.clusters
-                      .filter((c) => c.name)
                       .map((c) => (
                         <ClusterBlock
                           key={c.clusterId || c.name}
@@ -336,18 +336,19 @@ export function VirtualizationPlatformPage() {
                 )}
               </CollapsibleSection>
 
-              {/* Хосты без кластера — выделенная группа: они НЕ являются частью кластеров */}
+              {/* Хосты без кластера — выделенная группа НА ОДНОМ УРОВНЕ вложенности с кластерами:
+                  они НЕ являются частью ни одного кластера (отдельная секция платформы) */}
               <CollapsibleSection
-                title={<>Хосты без кластера ({(p.clusters.find((c) => !c.name)?.hosts || []).length})</>}
+                title={<>Хосты без кластера ({p.hostsWithoutCluster.hosts.length})</>}
                 icon={<Server className="w-4 h-4 text-red-500" />}
                 highlight
               >
-                {(p.clusters.find((c) => !c.name)?.hosts || []).length === 0 ? (
+                {p.hostsWithoutCluster.hosts.length === 0 ? (
                   <p className="text-sm text-gray-400 dark:text-gray-500">Хосты вне кластеров не назначены</p>
                 ) : (
                   <div className="space-y-2">
-                    {(p.clusters.find((c) => !c.name)?.hosts || []).map((h) => {
-                      const vmCount = (p.clusters.find((c) => !c.name)?.vms || []).filter((v) => v.hostServerId === h.id).length;
+                    {p.hostsWithoutCluster.hosts.map((h) => {
+                      const vmCount = p.hostsWithoutCluster.vms.filter((v) => v.hostServerId === h.id).length;
                       return (
                         <HostRow
                           key={h.id}
@@ -364,11 +365,11 @@ export function VirtualizationPlatformPage() {
 
               {/* СХД вне кластеров */}
               <CollapsibleSection
-                title={<>Системы хранения данных ({p.storage.length})</>}
+                title={<>Система хранения данных ({p.storage.length})</>}
                 icon={<HardDrive className="w-4 h-4 text-cyan-600" />}
               >
                 {p.storage.length === 0 ? (
-                  <p className="text-sm text-gray-400 dark:text-gray-500">СХД не назначены</p>
+                  <p className="text-sm text-gray-400 dark:text-gray-500">Системы хранения не назначены</p>
                 ) : (
                   <div className="space-y-2">
                     {p.storage.map((st) => (
@@ -394,11 +395,11 @@ export function VirtualizationPlatformPage() {
 
               {/* Консоли управления */}
               <CollapsibleSection
-                title={<>Консоли управления ({p.physicalConsoles.length + p.managementConsoles.length})</>}
+                title={<>Консоль управления ({p.physicalConsoles.length + p.managementConsoles.length})</>}
                 icon={<TerminalSquare className="w-4 h-4 text-amber-600" />}
               >
                 {p.physicalConsoles.length === 0 && p.managementConsoles.length === 0 ? (
-                  <p className="text-sm text-gray-400 dark:text-gray-500">Консоли не назначены (поле необязательное при создании кластера)</p>
+                  <p className="text-sm text-gray-400 dark:text-gray-500">Консоль не назначена (поле необязательное при создании кластера)</p>
                 ) : (
                   <div className="space-y-2">
                     {p.physicalConsoles.map((c) => (
@@ -425,7 +426,8 @@ export function VirtualizationPlatformPage() {
                 )}
               </CollapsibleSection>
 
-              {/* ВМ платформы */}
+              {/* ВМ платформы: под названием — IP-адрес; если у ВМ есть белый (публичный) IP,
+                  показываем первоочерёдно именно он. */}
               <CollapsibleSection
                 title={<>Виртуальные машины ({p.vms.length})</>}
                 icon={<Cpu className="w-4 h-4 text-indigo-600" />}
@@ -434,16 +436,27 @@ export function VirtualizationPlatformPage() {
                   <p className="text-sm text-gray-400 dark:text-gray-500">На этих хостах пока нет ВМ</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {p.vms.map((v) => (
-                      <button
-                        key={v.id}
-                        onClick={() => navigate('/servers')}
-                        title={`${v.os || ''} • ${v.cpuCores} CPU / ${v.ramGB} ГБ RAM${v.provisionedOn ? ` • thin: ${v.provisionedOn}` : ''}`}
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"
-                      >
-                        {v.name}
-                      </button>
-                    ))}
+                    {p.vms.map((v) => {
+                      const publicIps = v.networkInterfaces.filter((ni) => ni.isPublic && ni.ipAddress);
+                      const allIps = v.networkInterfaces.filter((ni) => ni.ipAddress);
+                      // Первоочередно — белый IP; иначе первый доступный IP
+                      const shownIp = publicIps[0]?.ipAddress || allIps[0]?.ipAddress || '';
+                      return (
+                        <button
+                          key={v.id}
+                          onClick={() => navigate('/servers')}
+                          title={`${v.os || ''} • ${v.cpuCores} CPU / ${v.ramGB} ГБ RAM${v.provisionedOn ? ` • thin: ${v.provisionedOn}` : ''}`}
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors text-left"
+                        >
+                          <span className="block">{v.name}</span>
+                          {shownIp && (
+                            <span className={`block font-mono text-[10px] leading-tight ${publicIps.length ? 'text-orange-600 dark:text-orange-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                              {shownIp}{publicIps.length ? ' • белый' : ''}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </CollapsibleSection>

@@ -182,6 +182,9 @@ export interface PlatformInfo {
   /** Версии гипервизора, встречающиеся на хостах (для заголовка платформы) */
   versions: string[];
   clusters: PlatformCluster[];
+  /** Хосты без кластера — отдельная группа того же уровня вложенности, что и кластеры
+   *  (раньше скрывались внутри clusters как безымянная запись с name === ''). */
+  hostsWithoutCluster: { hosts: Equipment[]; vms: VirtualMachine[] };
   hosts: Equipment[];
   storage: Equipment[];
   physicalConsoles: Equipment[];
@@ -277,6 +280,15 @@ export function buildVirtualizationPlatforms(
     }
     clusters.sort((a, b) => (a.name || '\uffff').localeCompare(b.name || '\uffff'));
 
+    // Хосты без кластера — на одном уровне вложенности с кластерами: выделяем их
+    // из clusters в отдельную группу и исключаем безымянную запись из clusters.
+    const noClusterEntry = clusters.find((c) => !c.name);
+    const namedClusters = clusters.filter((c) => c.name);
+    const hostsWithoutCluster = {
+      hosts: noClusterEntry?.hosts ?? [],
+      vms: noClusterEntry?.vms ?? [],
+    };
+
     const versions = Array.from(
       new Set(
         [...hostList, ...clusterEntities]
@@ -288,7 +300,8 @@ export function buildVirtualizationPlatforms(
     platforms.push({
       hypervisor,
       versions,
-      clusters,
+      clusters: namedClusters,
+      hostsWithoutCluster,
       hosts: hostList,
       storage,
       physicalConsoles,
