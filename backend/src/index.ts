@@ -1408,6 +1408,11 @@ app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'materially_
   }
   // Кластер не может сам находиться внутри кластера — снимаем привязку при смене роли
   if (newData.serverRole === 'cluster') newData.parentClusterId = null;
+  // Смена роли: если сервер перестал быть кластером, его члены нельзя «вешать в никуда» —
+  // отвязываем их, иначе на странице платформы хосты останутся «в несуществующем кластере»
+  if ('serverRole' in newData && old.serverRole === 'cluster' && newData.serverRole !== 'cluster') {
+    await prisma.equipment.updateMany({ where: { parentClusterId: id }, data: { parentClusterId: null } });
+  }
   if ('inventoryNumber' in newData && newData.inventoryNumber !== old.inventoryNumber) {
     const dup = await prisma.equipment.findUnique({ where: { inventoryNumber: newData.inventoryNumber } });
     if (dup) return c.json({ error: 'Инвентарный номер уже используется' }, 409);

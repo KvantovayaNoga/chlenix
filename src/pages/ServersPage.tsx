@@ -104,7 +104,13 @@ export function ServersPage() {
   const physicalServers = equipment.filter(eq => eq.category === 'server' || eq.category === ('storage' as any) || !!eq.serverRole);
   // Косяк 5/11: хостом для ВМ может быть только гипервизор-хост (или сервер без роли —
   // автономный, legacy). Кластеры и СХД хостами быть не могут.
-  const hypervisorHosts = physicalServers.filter(eq => eq.serverRole !== 'cluster' && eq.serverRole !== 'storage' && eq.serverRole !== 'management_console');
+  // Дополнительно исключаем объекты категории storage/serverRole без явной роли —
+  // раньше они могли «проскакивать» в список хостов из-за приведения категорий.
+  const rolelessStorageIds = new Set(equipment.filter(eq => !eq.serverRole && eq.category === ('storage' as any)).map(eq => eq.id));
+  const hypervisorHosts = physicalServers.filter(eq =>
+    eq.serverRole !== 'cluster' && eq.serverRole !== 'storage' && eq.serverRole !== 'management_console'
+    && !rolelessStorageIds.has(eq.id)
+  );
   // Отдельные сущности-кластеры (для опционального поля «Кластер» у ВМ)
   const clusterEntities = physicalServers.filter(eq => eq.serverRole === 'cluster');
   const activeEmployees = employees.filter(e => e.isEmployed);

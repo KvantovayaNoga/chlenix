@@ -154,9 +154,26 @@ export function PhysicalServersPage() {
           server={editingServer}
           initialCluster={addingCluster}
           onClose={() => { setShowAddModal(false); setEditingServer(null); setAddingCluster(false); }}
-          onSave={async (data) => {
+          onSave={async (payload) => {
             // п.5: не закрываем форму при ошибке сохранения/валидации
-            const ok = editingServer ? await updateEquipment(editingServer.id, normalizeServerPayload(data, false)) : await addEquipment(normalizeServerPayload(data, true) as any);
+            let base: Record<string, any>;
+            if (payload.__roleOnly) {
+              // Смена роли у существующего сервера — отправляем только роль и связанные поля,
+              // чтобы не затирать характеристики, которые форма не показывает (например CPU/RAM автономного сервера).
+              // Правила обнуления по ролям применяем к этому «ролевому» набору точечно.
+              const r: Record<string, any> = { ...payload };
+              delete r.__roleOnly;
+              if (r.serverRole === '') r.serverRole = null;
+              if (r.serverRole !== 'hypervisor_host') r.clusterName = null;
+              if (r.serverRole !== 'storage') { r.storageType = null; r.storageProtocol = null; r.storageCapacityGB = null; }
+              if (r.serverRole === 'storage' || r.serverRole === 'management_console') { r.cpuCores = null; r.ramGB = null; r.diskGB = null; }
+              if (r.serverRole === 'cluster') { r.cpuCores = null; r.ramGB = null; r.diskGB = null; r.parentClusterId = null; }
+              if (r.serverRole !== 'hypervisor_host' && r.serverRole !== 'storage') r.parentClusterId = null;
+              base = r;
+            } else {
+              base = normalizeServerPayload(payload, !editingServer);
+            }
+            const ok = editingServer ? await updateEquipment(editingServer.id, base as any) : await addEquipment(base as any);
             if (ok !== false) { setShowAddModal(false); setEditingServer(null); setAddingCluster(false); }
           }}
           branches={branches}
@@ -216,7 +233,29 @@ function ServerModal({ server, initialCluster, onClose, onSave, branches, allEqu
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // Косяк 6: без чекбокса сервер — обычный физический (role = null)
-    onSave(isPlatform ? formData : { ...formData, serverRole: '', hypervisorName: '', clusterName: '', hypervisorVersion: '', storageType: '', storageProtocol: '', storageCapacityGB: null, parentClusterId: null });
+    if (!isPlatform) {
+      onSave({ ...formData, serverRole: '', hypervisorName: '', clusterName: '', hypervisorVersion: '', storageType: '', storageProtocol: '', storageCapacityGB: null, parentClusterId: null });
+      return;
+    }
+    // При редактировании существующего сервера меняем только роль и поля платформы:
+    // характеристики (CPU/RAM/Диск), которые форма не показывает для выбранной роли,
+    // не должны затираться пустыми значениями. Для новых серверов — полный payload.
+    if (server) {
+      onSave({
+        __roleOnly: true,
+        name: formData.name,
+        serverRole: formData.serverRole || null,
+        hypervisorName: formData.hypervisorName || null,
+        clusterName: formData.clusterName || null,
+        hypervisorVersion: formData.hypervisorVersion || null,
+        storageType: formData.storageType || null,
+        storageProtocol: formData.storageProtocol || null,
+        storageCapacityGB: formData.storageCapacityGB ?? null,
+        parentClusterId: formData.parentClusterId || null,
+      });
+    } else {
+      onSave(formData);
+    }
   };
 
   return (
