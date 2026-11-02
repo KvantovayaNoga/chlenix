@@ -225,17 +225,18 @@ export function PhysicalServersPage() {
   );
 }
 
-function ServerModal({ server, initialCluster, onClose, onSave, branches, allEquipment }: any) {
+function ServerModal({ server, onClose, onSave, branches, allEquipment }: any) {
   // Косяк 6: чекбокс «Является платформой виртуализации». Если снят — сервер
   // создаётся как обычный физический (роль не задаётся, поля платформы скрыты).
-  const [isPlatform, setIsPlatform] = useState<boolean>(() => !!server?.serverRole || !!initialCluster);
+  // Кластеры здесь не создаются и не редактируются — для них есть ClusterForm.
+  const [isPlatform, setIsPlatform] = useState<boolean>(() => !!server?.serverRole);
   const [formData, setFormData] = useState({
     name: server?.name || '', serialNumber: server?.serialNumber || '', inventoryNumber: server?.inventoryNumber || '',
     brand: server?.brand || '', model: server?.model || '', purchaseDate: server?.purchaseDate || new Date().toISOString().split('T')[0],
     condition: server?.condition || 'good', assignedToEmployeeId: server?.assignedToEmployeeId || null,
     branchId: server?.branchId || '', floor: server?.floor || '', room: server?.room || '',
     cpuCores: server?.cpuCores || null, ramGB: server?.ramGB || null, diskGB: server?.diskGB || null,
-    serverRole: (server?.serverRole || (initialCluster ? 'cluster' : '')) as ServerRole | '',
+    serverRole: (server?.serverRole || '') as ServerRole | '',
     hypervisorName: server?.hypervisorName || '',
     clusterName: server?.clusterName || '',
     hypervisorVersion: server?.hypervisorVersion || '',
