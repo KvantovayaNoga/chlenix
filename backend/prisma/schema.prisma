@@ -182,14 +182,16 @@ model Equipment {
   // Параметры СХД: тип (san/nas/hci), протокол (iSCSI/FC/NFS…), полезный объём ГБ
   storageType           String?         @map("storage_type")
   storageProtocol       String?         @map("storage_protocol")
-  storageCapacityGB     Int?            @map("storage_capacity_gb")
+  // Полезный объём СХД хранится в ГБ (число с плавающей точкой — поддержка
+  // дробных значений, введённых через запятую: 50,5 ТБ -> 51712 ГБ)
+  storageCapacityGB     Float?          @map("storage_capacity_gb")
   // кластер-сервер (serverRole === 'cluster'): аккумулирует хосты и СХД внутри себя;
   // обычные поля clusterName/hypervisorName/hypervisorVersion используются как атрибуты кластера
   parentClusterId       String?         @map("parent_cluster_id")
   // Характеристики серверов (CPU/RAM/Disk)
   cpuCores              Int?            @map("cpu_cores")
-  ramGB                 Int?            @map("ram_gb")
-  diskGB                Int?            @map("disk_gb")
+  ramGB                 Float?          @map("ram_gb")
+  diskGB                Float?          @map("disk_gb")
   notes                 String?
   createdAt             DateTime        @default(now()) @map("created_at")
   updatedAt             DateTime        @updatedAt @map("updated_at")
@@ -256,8 +258,9 @@ model VirtualMachine {
   clusterId                   String?   @map("cluster_id")
   os                          String?
   cpuCores                    Int       @default(2) @map("cpu_cores")
-  ramGB                       Int       @default(4) @map("ram_gb")
-  diskGB                      Int       @default(50) @map("disk_gb")
+  // RAM/диск во Float — поддержка дробных значений (ввод через запятую: 4,5 ГБ)
+  ramGB                       Float     @default(4) @map("ram_gb")
+  diskGB                      Float     @default(50) @map("disk_gb")
   responsibleEmployeeId       String?   @map("responsible_employee_id")
   serviceResponsibleEmployeeId String?  @map("service_responsible_employee_id")
   status                      VMStatus  @default(running)

@@ -167,6 +167,8 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
   storageType: 'тип СХД',
   storageProtocol: 'протокол СХД',
   storageCapacityGB: 'объём СХД, ГБ',
+  parentClusterId: 'кластер (родитель)',
+  clusterId: 'кластер ВМ',
   provisionedOn: 'назначенный хост',
   responsibleEmployeeId: 'ответственный (инфраструктура)',
   serviceResponsibleEmployeeId: 'ответственный (сервисы)',
@@ -1155,20 +1157,55 @@ const equipmentSchema = z.object({
   branchId: z.string().min(1),
   floor: z.string().optional().nullable(),
   room: z.string().optional().nullable(),
-  serverRole: z.enum(['hypervisor_host', 'storage', 'management_console', 'standalone']).optional().nullable(),
+  serverRole: z.enum(['hypervisor_host', 'storage', 'management_console', 'standalone', 'cluster']).optional().nullable(),
   hypervisorName: z.string().optional().nullable(),
   clusterName: z.string().optional().nullable(),
   hypervisorVersion: z.string().optional().nullable(),
   storageType: z.enum(['san', 'nas', 'hci']).optional().nullable(),
   storageProtocol: z.enum(['iscsi', 'fc', 'fcoe', 'nfs', 'smb', 'sas', 'nvmeof', 'vsan', 'ceph']).optional().nullable(),
-  storageCapacityGB: z.number().int().min(0).optional().nullable(),
+  // Объёмы хранятся в ГБ; дробные значения (ввод через запятую) допускаются
+  storageCapacityGB: z.number().min(0).optional().nullable(),
   cpuCores: z.number().int().min(0).optional().nullable(),
-  ramGB: z.number().int().min(0).optional().nullable(),
-  diskGB: z.number().int().min(0).optional().nullable(),
+  ramGB: z.number().min(0).optional().nullable(),
+  diskGB: z.number().min(0).optional().nullable(),
+  /** Кластер-сервер, внутрь которого помещается этот сервер/СХД (косяк 11) */
+  parentClusterId: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
 });
 
 const equipmentInclude = { assignedToEmployee: true, branch: true } as const;
+
+// ============================================================
+// Серверы виртуализации: роли, кластеры и проверки целостности
+// ============================================================
+const VIRT_ROLES = ['hypervisor_host', 'storage', 'management_console', 'cluster'];
+
+/** Виртуальные машины не размещаются на кластере напрямую (косяк 11):
+ *  хостом может быть только физический сервер-хост гипервизора. */
+async function assertVmHostIsHypervisor(hostServerId: string | null | undefined): Promise<string | null> {
+  if (!hostServerId) return hostServerId ?? null;
+  const host = await prisma.equipment.findUnique({ where: { id: hostServerId }, select: { serverRole: true } });
+  if (host && VIRT_ROLES.includes(host.serverRole || '') && host.serverRole !== 'hypervisor_host') {
+    throw new VmHostError('Хостом для ВМ может быть только сервер-хост гипервизора. Кластер лишь аккумулирует хосты и СХД — выберите конкретный хост.');
+  }
+  return hostServerId;
+}
+class VmHostError extends Error {}
+
+/** Кластер (serverRole === 'cluster') не может быть сам помещён внутрь другого кластера. */
+async function validateParentCluster(id: string | null | undefined, selfId?: string): Promise<string | null> {
+  if (!id || id.trim() === '') return null;
+  if (selfId && id === selfId) throw new VmHostError('Кластер не может включать сам себя.');
+  const pc = await prisma.equipment.findUnique({ where: { id }, select: { serverRole: true, parentClusterId: true } });
+  if (!pc) return null;
+  if (pc.serverRole !== 'cluster') throw new VmHostError('Родительский кластер должен иметь роль «Кластер виртуализации».');
+  if (pc.parentClusterId) throw new VmHostError('Вложенность кластеров не поддерживается: выбранный кластер сам входит в другой кластер.');
+  if (selfId) {
+    const child = await prisma.equipment.findUnique({ where: { id }, select: { parentClusterId: true } });
+    if (child && child.parentClusterId === selfId) throw new VmHostError('Нельзя поместить кластер внутрь его же члена — циклическая вложенность.');
+  }
+  return id;
+}
 
 function normalizeDateField(v: any) {
   if (v === undefined) return undefined;
@@ -1220,6 +1257,15 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
     return c.json({ error: 'Инвентарный номер уже используется' }, 409);
   }
 
+  // Кластерные связи (косяк 11): родительский кластер должен существовать и быть кластером
+  let parentClusterId: string | null = null;
+  try {
+    parentClusterId = await validateParentCluster(await resolveRef('equipment', data.parentClusterId));
+  } catch (e) {
+    if (e instanceof VmHostError) return c.json({ error: e.message }, 400);
+    throw e;
+  }
+
   const item = await prisma.equipment.create({
     data: {
       organizationId: scope.orgId,
@@ -1239,6 +1285,7 @@ app.post('/api/equipment', authMiddleware, requireRole(['admin', 'materially_res
       storageType: data.storageType ?? null,
       storageProtocol: data.storageProtocol ?? null,
       storageCapacityGB: data.storageCapacityGB ?? null,
+      parentClusterId,
       cpuCores: data.cpuCores ?? null,
       ramGB: data.ramGB ?? null,
       diskGB: data.diskGB ?? null,
@@ -1280,6 +1327,16 @@ app.put('/api/equipment/:id', authMiddleware, requireRole(['admin', 'materially_
   if ('hypervisorVersion' in newData) newData.hypervisorVersion = newData.hypervisorVersion || null;
   if ('storageType' in newData) newData.storageType = newData.storageType || null;
   if ('storageProtocol' in newData) newData.storageProtocol = newData.storageProtocol || null;
+  if ('parentClusterId' in newData) {
+    try {
+      newData.parentClusterId = await validateParentCluster(await resolveRef('equipment', newData.parentClusterId), id);
+    } catch (e) {
+      if (e instanceof VmHostError) return c.json({ error: e.message }, 400);
+      throw e;
+    }
+  }
+  // Кластер не может сам находиться внутри кластера — снимаем привязку при смене роли
+  if (newData.serverRole === 'cluster') newData.parentClusterId = null;
   if ('inventoryNumber' in newData && newData.inventoryNumber !== old.inventoryNumber) {
     const dup = await prisma.equipment.findUnique({ where: { inventoryNumber: newData.inventoryNumber } });
     if (dup) return c.json({ error: 'Инвентарный номер уже используется' }, 409);
@@ -1404,14 +1461,17 @@ app.post('/api/equipment/:id/unassign', authMiddleware, requireRole(['admin', 'm
 // Virtual Machines Routes
 // ============================================================
 const vmSchema = z.object({
-  name: z.string().min(1),
-  hostname: z.string().min(1),
+  name: z.string().min(1, 'Укажите имя ВМ'),
+  hostname: z.string().min(1, 'Укажите hostname'),
   type: z.enum(['virtual', 'container', 'cloud']).optional(),
   hostServerId: z.string().optional().nullable(),
+  /** Кластер, которому принадлежит ВМ (косяк 11: кластер не является хостом) */
+  clusterId: z.string().optional().nullable(),
   os: z.string().optional().nullable(),
   cpuCores: z.number().int().min(0).optional(),
-  ramGB: z.number().int().min(0).optional(),
-  diskGB: z.number().int().min(0).optional(),
+  // RAM/диск допускают дробные значения (ввод через запятую, косяк 10)
+  ramGB: z.number().min(0).optional(),
+  diskGB: z.number().min(0).optional(),
   responsibleEmployeeId: z.string().optional().nullable(),
   serviceResponsibleEmployeeId: z.string().optional().nullable(),
   status: z.enum(['running', 'stopped', 'maintenance', 'decommissioned']).optional(),
@@ -1422,6 +1482,7 @@ const vmSchema = z.object({
 
 const vmInclude = {
   hostServer: true,
+  cluster: true,
   responsibleEmployee: true,
   serviceResponsibleEmployee: true,
   networkInterfaces: true,
