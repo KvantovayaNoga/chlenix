@@ -15,33 +15,33 @@ datasource db {
 // Пользователи системы (авторизация)
 // ============================================================
 model User {
-  id              String   @id @default(uuid())
-  email           String   @unique
-  password        String   @map("password_hash")
-  fullName        String   @map("full_name")
-  role            Role     @default(viewer)
-  isActive        Boolean  @default(true) @map("is_active")
-  avatar          String?  @db.Text
-  theme           String   @default("system")
-  organizationId  String?  @map("organization_id")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id             String   @id @default(uuid())
+  email          String   @unique
+  password       String   @map("password_hash")
+  fullName       String   @map("full_name")
+  role           Role     @default(viewer)
+  isActive       Boolean  @default(true) @map("is_active")
+  avatar         String?  @db.Text
+  theme          String   @default("system")
+  organizationId String?  @map("organization_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   // Связи
-  organization     Organization? @relation(fields: [organizationId], references: [id])
-  updatedByUser    User?      @relation("UserUpdater", fields: [updatedById], references: [id])
-  updatedById      String?    @map("updated_by")
-  updatedUsers     User[]     @relation("UserUpdater")
-  employees        Employee[] @relation("EmployeeUpdater")
-  employeeProfile  Employee?  @relation("EmployeeUser")
-  departments      Department[] @relation("DepartmentUpdater")
-  positions        Position[] @relation("PositionUpdater")
-  branches         Branch[]   @relation("BranchUpdater")
-  equipment        Equipment[] @relation("EquipmentUpdater")
-  virtualMachines  VirtualMachine[] @relation("VMUpdater")
+  organization      Organization?      @relation(fields: [organizationId], references: [id])
+  updatedByUser     User?              @relation("UserUpdater", fields: [updatedById], references: [id])
+  updatedById       String?            @map("updated_by")
+  updatedUsers      User[]             @relation("UserUpdater")
+  employees         Employee[]         @relation("EmployeeUpdater")
+  employeeProfile   Employee?          @relation("EmployeeUser")
+  departments       Department[]       @relation("DepartmentUpdater")
+  positions         Position[]         @relation("PositionUpdater")
+  branches          Branch[]           @relation("BranchUpdater")
+  equipment         Equipment[]        @relation("EquipmentUpdater")
+  virtualMachines   VirtualMachine[]   @relation("VMUpdater")
   networkInterfaces NetworkInterface[] @relation("NIUpdater")
-  services         Service[]  @relation("ServiceUpdater")
-  auditLogs        AuditLog[]
+  services          Service[]          @relation("ServiceUpdater")
+  auditLogs         AuditLog[]
 
   @@map("users")
 }
@@ -56,16 +56,16 @@ enum Role {
 // Справочники
 // ============================================================
 model Department {
-  id              String     @id @default(uuid())
-  name            String
-  description     String?
-  organizationId  String?    @map("organization_id")
-  createdAt       DateTime   @default(now()) @map("created_at")
-  updatedAt       DateTime   @updatedAt @map("updated_at")
-  updatedById     String?    @map("updated_by")
+  id             String   @id @default(uuid())
+  name           String
+  description    String?
+  organizationId String?  @map("organization_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  updatedById    String?  @map("updated_by")
 
-  updatedBy   User?      @relation("DepartmentUpdater", fields: [updatedById], references: [id])
-  employees   Employee[]
+  updatedBy User?      @relation("DepartmentUpdater", fields: [updatedById], references: [id])
+  employees Employee[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -73,16 +73,16 @@ model Department {
 }
 
 model Position {
-  id              String     @id @default(uuid())
-  name            String
-  description     String?
-  organizationId  String?    @map("organization_id")
-  createdAt       DateTime   @default(now()) @map("created_at")
-  updatedAt       DateTime   @updatedAt @map("updated_at")
-  updatedById     String?    @map("updated_by")
+  id             String   @id @default(uuid())
+  name           String
+  description    String?
+  organizationId String?  @map("organization_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  updatedById    String?  @map("updated_by")
 
-  updatedBy   User?      @relation("PositionUpdater", fields: [updatedById], references: [id])
-  employees   Employee[]
+  updatedBy User?      @relation("PositionUpdater", fields: [updatedById], references: [id])
+  employees Employee[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -90,18 +90,18 @@ model Position {
 }
 
 model Branch {
-  id              String     @id @default(uuid())
-  name            String
-  address         String
-  description     String?
-  organizationId  String?    @map("organization_id")
-  createdAt       DateTime   @default(now()) @map("created_at")
-  updatedAt       DateTime   @updatedAt @map("updated_at")
-  updatedById     String?    @map("updated_by")
+  id             String   @id @default(uuid())
+  name           String
+  address        String
+  description    String?
+  organizationId String?  @map("organization_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  updatedById    String?  @map("updated_by")
 
-  updatedBy   User?      @relation("BranchUpdater", fields: [updatedById], references: [id])
-  employees   Employee[]
-  equipment   Equipment[]
+  updatedBy User?       @relation("BranchUpdater", fields: [updatedById], references: [id])
+  employees Employee[]
+  equipment Equipment[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -112,42 +112,42 @@ model Branch {
 // Сотрудники
 // ============================================================
 model Employee {
-  id              String    @id @default(uuid())
-  organizationId  String?   @map("organization_id")
-  firstName       String    @map("first_name")
-  lastName        String    @map("last_name")
-  middleName      String?   @map("middle_name")
-  positionId      String    @map("position_id")
-  departmentId    String    @map("department_id")
-  branchId        String?   @map("branch_id")
-  email         String?
-  workPhone     String?   @map("work_phone")
-  internalPhone String?   @map("internal_phone")
-  personalPhone String?   @map("personal_phone")
-  hireDate      DateTime  @map("hire_date")
-  birthDate     DateTime? @map("birth_date")
-  avatar        String?   @db.Text
-  userId        String?   @unique @map("user_id")
-  isEmployed    Boolean   @default(true) @map("is_employed")
-  floor         String?
-  room          String?
-  notes         String?
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-  updatedById   String?   @map("updated_by")
+  id             String    @id @default(uuid())
+  organizationId String?   @map("organization_id")
+  firstName      String    @map("first_name")
+  lastName       String    @map("last_name")
+  middleName     String?   @map("middle_name")
+  positionId     String    @map("position_id")
+  departmentId   String    @map("department_id")
+  branchId       String?   @map("branch_id")
+  email          String?
+  workPhone      String?   @map("work_phone")
+  internalPhone  String?   @map("internal_phone")
+  personalPhone  String?   @map("personal_phone")
+  hireDate       DateTime  @map("hire_date")
+  birthDate      DateTime? @map("birth_date")
+  avatar         String?   @db.Text
+  userId         String?   @unique @map("user_id")
+  isEmployed     Boolean   @default(true) @map("is_employed")
+  floor          String?
+  room           String?
+  notes          String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  updatedById    String?   @map("updated_by")
 
   // Связи
   organization Organization? @relation(fields: [organizationId], references: [id])
-  position     Position   @relation(fields: [positionId], references: [id])
-  department   Department @relation(fields: [departmentId], references: [id])
-  branch       Branch?    @relation(fields: [branchId], references: [id])
-  updatedBy    User?      @relation("EmployeeUpdater", fields: [updatedById], references: [id])
-  linkedUser   User?      @relation("EmployeeUser", fields: [userId], references: [id])
+  position     Position      @relation(fields: [positionId], references: [id])
+  department   Department    @relation(fields: [departmentId], references: [id])
+  branch       Branch?       @relation(fields: [branchId], references: [id])
+  updatedBy    User?         @relation("EmployeeUpdater", fields: [updatedById], references: [id])
+  linkedUser   User?         @relation("EmployeeUser", fields: [userId], references: [id])
 
-  equipment    Equipment[] @relation("AssignedEquipment")
-  vmResponsible VirtualMachine[] @relation("VMInfraResponsible")
-  vmServiceResponsible VirtualMachine[] @relation("VMServiceResponsible")
-  assignments  EquipmentAssignment[]
+  equipment            Equipment[]           @relation("AssignedEquipment")
+  vmResponsible        VirtualMachine[]      @relation("VMInfraResponsible")
+  vmServiceResponsible VirtualMachine[]      @relation("VMServiceResponsible")
+  assignments          EquipmentAssignment[]
 
   @@index([departmentId])
   @@index([positionId])
@@ -161,64 +161,63 @@ model Employee {
 // Оборудование
 // ============================================================
 model Equipment {
-  id                    String          @id @default(uuid())
-  organizationId        String?         @map("organization_id")
-  name                  String
-  category              EquipmentCategory
-  serialNumber          String          @map("serial_number")
-  inventoryNumber       String          @unique @map("inventory_number")
-  brand                 String?
-  model                 String?
-  purchaseDate          DateTime?       @map("purchase_date")
-  writeOffDate          DateTime?       @map("write_off_date")
-  condition             Condition       @default(good)
-  assignedToEmployeeId  String?         @map("assigned_to_employee_id")
-  branchId              String          @map("branch_id")
-  floor                 String?
-  room                  String?
+  id                   String            @id @default(uuid())
+  organizationId       String?           @map("organization_id")
+  name                 String
+  category             EquipmentCategory
+  serialNumber         String            @map("serial_number")
+  inventoryNumber      String            @unique @map("inventory_number")
+  brand                String?
+  model                String?
+  purchaseDate         DateTime?         @map("purchase_date")
+  writeOffDate         DateTime?         @map("write_off_date")
+  condition            Condition         @default(good)
+  assignedToEmployeeId String?           @map("assigned_to_employee_id")
+  branchId             String            @map("branch_id")
+  floor                String?
+  room                 String?
   // Роль в системе виртуализации: хост гипервизора / СХД / консоль управления / автономный
-  serverRole            String?         @map("server_role")
+  serverRole           String?           @map("server_role")
   // Название гипервизора, если это хост (VMware ESXi, Proxmox VE, Hyper-V…)
-  hypervisorName        String?         @map("hypervisor_name")
+  hypervisorName       String?           @map("hypervisor_name")
   // Имя кластера ВМ внутри гипервизора (vSphere HA Cluster, Proxmox cluster…)
-  clusterName           String?         @map("cluster_name")
+  clusterName          String?           @map("cluster_name")
   // Версия гипервизора на хосте (ESXi 8.0 U2, PVE 8.2…)
-  hypervisorVersion     String?         @map("hypervisor_version")
+  hypervisorVersion    String?           @map("hypervisor_version")
   // Параметры СХД: тип (san/nas/hci), протокол (iSCSI/FC/NFS…), полезный объём ГБ
-  storageType           String?         @map("storage_type")
-  storageProtocol       String?         @map("storage_protocol")
+  storageType          String?           @map("storage_type")
+  storageProtocol      String?           @map("storage_protocol")
   // Полезный объём СХД хранится в ГБ (число с плавающей точкой — поддержка
   // дробных значений, введённых через запятую: 50,5 ТБ -> 51712 ГБ)
-  storageCapacityGB     Float?          @map("storage_capacity_gb")
+  storageCapacityGB    Float?            @map("storage_capacity_gb")
   // кластер-сервер (serverRole === 'cluster'): аккумулирует хосты и СХД внутри себя;
   // обычные поля clusterName/hypervisorName/hypervisorVersion используются как атрибуты кластера
-  parentClusterId       String?         @map("parent_cluster_id")
+  parentClusterId      String?           @map("parent_cluster_id")
   // Характеристики серверов (CPU/RAM/Disk)
-  cpuCores              Int?            @map("cpu_cores")
-  ramGB                 Float?          @map("ram_gb")
-  diskGB                Float?          @map("disk_gb")
-  notes                 String?
-  createdAt             DateTime        @default(now()) @map("created_at")
-  updatedAt             DateTime        @updatedAt @map("updated_at")
-  updatedById           String?         @map("updated_by")
+  cpuCores             Int?              @map("cpu_cores")
+  ramGB                Float?            @map("ram_gb")
+  diskGB               Float?            @map("disk_gb")
+  notes                String?
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+  updatedById          String?           @map("updated_by")
 
   // Связи
-  organization        Organization? @relation(fields: [organizationId], references: [id])
-  assignedToEmployee  Employee?   @relation("AssignedEquipment", fields: [assignedToEmployeeId], references: [id])
-  branch              Branch      @relation(fields: [branchId], references: [id])
-  updatedBy           User?       @relation("EquipmentUpdater", fields: [updatedById], references: [id])
+  organization       Organization? @relation(fields: [organizationId], references: [id])
+  assignedToEmployee Employee?     @relation("AssignedEquipment", fields: [assignedToEmployeeId], references: [id])
+  branch             Branch        @relation(fields: [branchId], references: [id])
+  updatedBy          User?         @relation("EquipmentUpdater", fields: [updatedById], references: [id])
 
-  hostForVMs          VirtualMachine[] @relation("HostServer")
+  hostForVMs   VirtualMachine[]      @relation("HostServer")
   // ВМ, приписанные к этому кластеру (только для serverRole === 'cluster')
-  vmsInCluster        VirtualMachine[] @relation("VmCluster")
-  assignments         EquipmentAssignment[]
+  vmsInCluster VirtualMachine[]      @relation("VmCluster")
+  assignments  EquipmentAssignment[]
 
   // Кластерные связи: кластер-сервер аккумулирует внутри себя хосты и СХД.
-  parentCluster       Equipment?  @relation("EquipmentCluster", fields: [parentClusterId], references: [id], onDelete: SetNull)
-  clusterMembers      Equipment[] @relation("EquipmentCluster")
+  parentCluster  Equipment?  @relation("EquipmentCluster", fields: [parentClusterId], references: [id], onDelete: SetNull)
+  clusterMembers Equipment[] @relation("EquipmentCluster")
 
   @@index([parentClusterId])
-
   @@index([category])
   @@index([assignedToEmployeeId])
   @@index([condition])
@@ -252,42 +251,42 @@ enum Condition {
 // Виртуальные машины
 // ============================================================
 model VirtualMachine {
-  id                          String    @id @default(uuid())
-  organizationId              String?   @map("organization_id")
-  name                        String
-  hostname                    String
-  type                        VMType    @default(virtual)
-  hostServerId                String?   @map("host_server_id")
+  id                           String   @id @default(uuid())
+  organizationId               String?  @map("organization_id")
+  name                         String
+  hostname                     String
+  type                         VMType   @default(virtual)
+  hostServerId                 String?  @map("host_server_id")
   // Кластер, которому принадлежит ВМ (виртуальные машины НЕ размещаются на кластере
   // напрямую — хостом может быть только физический сервер-хост гипервизора)
-  clusterId                   String?   @map("cluster_id")
-  os                          String?
-  cpuCores                    Int       @default(2) @map("cpu_cores")
+  clusterId                    String?  @map("cluster_id")
+  os                           String?
+  cpuCores                     Int      @default(2) @map("cpu_cores")
   // RAM/диск во Float — поддержка дробных значений (ввод через запятую: 4,5 ГБ)
-  ramGB                       Float     @default(4) @map("ram_gb")
-  diskGB                      Float     @default(50) @map("disk_gb")
-  responsibleEmployeeId       String?   @map("responsible_employee_id")
+  ramGB                        Float    @default(4) @map("ram_gb")
+  diskGB                       Float    @default(50) @map("disk_gb")
+  responsibleEmployeeId        String?  @map("responsible_employee_id")
   serviceResponsibleEmployeeId String?  @map("service_responsible_employee_id")
-  status                      VMStatus  @default(running)
+  status                       VMStatus @default(running)
   // Роль ВМ в системе виртуализации (например, консоль управления — vCenter как ВМ)
-  serverRole                  String?   @map("server_role")
+  serverRole                   String?  @map("server_role")
   // Назначенный хост гипервизора (thin provisioning)
-  provisionedOn               String?   @map("provisioned_on")
-  notes                       String?
-  createdAt                   DateTime  @default(now()) @map("created_at")
-  updatedAt                   DateTime  @updatedAt @map("updated_at")
-  updatedById                 String?   @map("updated_by")
+  provisionedOn                String?  @map("provisioned_on")
+  notes                        String?
+  createdAt                    DateTime @default(now()) @map("created_at")
+  updatedAt                    DateTime @updatedAt @map("updated_at")
+  updatedById                  String?  @map("updated_by")
 
   // Связи
-  organization              Organization? @relation(fields: [organizationId], references: [id])
-  hostServer              Equipment?  @relation("HostServer", fields: [hostServerId], references: [id])
-  cluster                 Equipment?  @relation("VmCluster", fields: [clusterId], references: [id], onDelete: SetNull)
-  responsibleEmployee     Employee?   @relation("VMInfraResponsible", fields: [responsibleEmployeeId], references: [id])
-  serviceResponsibleEmployee Employee? @relation("VMServiceResponsible", fields: [serviceResponsibleEmployeeId], references: [id])
-  updatedBy               User?       @relation("VMUpdater", fields: [updatedById], references: [id])
+  organization               Organization? @relation(fields: [organizationId], references: [id])
+  hostServer                 Equipment?    @relation("HostServer", fields: [hostServerId], references: [id])
+  cluster                    Equipment?    @relation("VmCluster", fields: [clusterId], references: [id], onDelete: SetNull)
+  responsibleEmployee        Employee?     @relation("VMInfraResponsible", fields: [responsibleEmployeeId], references: [id])
+  serviceResponsibleEmployee Employee?     @relation("VMServiceResponsible", fields: [serviceResponsibleEmployeeId], references: [id])
+  updatedBy                  User?         @relation("VMUpdater", fields: [updatedById], references: [id])
 
-  networkInterfaces       NetworkInterface[]
-  services                Service[]
+  networkInterfaces NetworkInterface[]
+  services          Service[]
 
   @@index([organizationId])
   @@index([hostServerId])
@@ -338,17 +337,17 @@ model NetworkInterface {
 // Сервисы на ВМ
 // ============================================================
 model Service {
-  id               String       @id @default(uuid())
-  virtualMachineId String       @map("virtual_machine_id")
+  id               String        @id @default(uuid())
+  virtualMachineId String        @map("virtual_machine_id")
   name             String
   version          String?
   // Порт(ы) сервиса: строка, чтобы поддерживать несколько портов через запятую (напр. "80, 443")
   port             String?
   description      String?
   status           ServiceStatus @default(active)
-  createdAt        DateTime     @default(now()) @map("created_at")
-  updatedAt        DateTime     @updatedAt @map("updated_at")
-  updatedById      String?      @map("updated_by")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+  updatedById      String?       @map("updated_by")
 
   virtualMachine VirtualMachine @relation(fields: [virtualMachineId], references: [id], onDelete: Cascade)
   updatedBy      User?          @relation("ServiceUpdater", fields: [updatedById], references: [id])
@@ -389,16 +388,16 @@ model EquipmentAssignment {
 // Аудит-лог
 // ============================================================
 model AuditLog {
-  id          String     @id @default(uuid())
-  userId      String?    @map("user_id")
-  userName    String     @map("user_name")
-  action      AuditAction
-  entityType  String     @map("entity_type")
-  entityId    String?    @map("entity_id")
-  entityName  String?    @map("entity_name")
-  details     String?
-  ipAddress   String?    @map("ip_address")
-  createdAt   DateTime   @default(now()) @map("created_at")
+  id         String      @id @default(uuid())
+  userId     String?     @map("user_id")
+  userName   String      @map("user_name")
+  action     AuditAction
+  entityType String      @map("entity_type")
+  entityId   String?     @map("entity_id")
+  entityName String?     @map("entity_name")
+  details    String?
+  ipAddress  String?     @map("ip_address")
+  createdAt  DateTime    @default(now()) @map("created_at")
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
@@ -422,40 +421,40 @@ enum AuditAction {
 // Организации (карточка организации + реквизиты)
 // ============================================================
 model Organization {
-  id                  String   @id @default(uuid())
-  name                String
-  legalForm           String   @map("legal_form")
-  shortName           String   @map("short_name")
-  inn                 String
-  kpp                 String?
-  ogrn                String
-  legalAddress        String   @map("legal_address")
-  actualAddress       String?  @map("actual_address")
-  postalCode          String?  @map("postal_code")
-  city                String?
-  phone               String?
-  email               String?
-  website             String?
-  directorName        String?  @map("director_name")
-  accountantName      String?  @map("accountant_name")
-  bankName            String?  @map("bank_name")
-  checkingAccount     String?  @map("checking_account")
-  correspondentAccount String? @map("correspondent_account")
-  bik                 String?
-  taxSystem           String?  @map("tax_system")
-  industry            String?
-  employeeCount       Int?     @map("employee_count")
-  foundedDate         String?  @map("founded_date")
-  logo                String?  @db.Text
-  notes               String?
-  createdById         String?  @map("created_by")
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
-  updatedById         String?  @map("updated_by")
+  id                   String   @id @default(uuid())
+  name                 String
+  legalForm            String   @map("legal_form")
+  shortName            String   @map("short_name")
+  inn                  String
+  kpp                  String?
+  ogrn                 String
+  legalAddress         String   @map("legal_address")
+  actualAddress        String?  @map("actual_address")
+  postalCode           String?  @map("postal_code")
+  city                 String?
+  phone                String?
+  email                String?
+  website              String?
+  directorName         String?  @map("director_name")
+  accountantName       String?  @map("accountant_name")
+  bankName             String?  @map("bank_name")
+  checkingAccount      String?  @map("checking_account")
+  correspondentAccount String?  @map("correspondent_account")
+  bik                  String?
+  taxSystem            String?  @map("tax_system")
+  industry             String?
+  employeeCount        Int?     @map("employee_count")
+  foundedDate          String?  @map("founded_date")
+  logo                 String?  @db.Text
+  notes                String?
+  createdById          String?  @map("created_by")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+  updatedById          String?  @map("updated_by")
 
-  users        User[]
-  employees    Employee[]
-  equipment    Equipment[]
+  users           User[]
+  employees       Employee[]
+  equipment       Equipment[]
   virtualMachines VirtualMachine[]
 
   @@index([inn])
