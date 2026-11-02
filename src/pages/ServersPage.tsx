@@ -93,11 +93,15 @@ export function ServersPage() {
     setFilterOS('');
   };
 
-  // Обработка query параметра host из URL
+  // Обработка query параметров URL: host — фильтр по хосту, q — текстовый поиск ВМ
   useEffect(() => {
     const hostParam = searchParams.get('host');
     if (hostParam) {
       setFilterHost(hostParam);
+    }
+    const qParam = searchParams.get('q');
+    if (qParam) {
+      setSearchQuery(qParam);
     }
   }, [searchParams]);
 

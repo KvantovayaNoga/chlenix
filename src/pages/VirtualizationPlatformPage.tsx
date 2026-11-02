@@ -3,6 +3,7 @@ import { useNavigate } from '../router';
 import { useDataStore } from '../store/dataStore';
 import { Layers, Server, HardDrive, TerminalSquare, Cpu, ChevronDown, Pencil } from 'lucide-react';
 import { VmCountBadge } from '../components/VmCountBadge';
+import { EquipmentCardModal } from '../components/EquipmentCardModal';
 import { ClusterEditModal } from './PhysicalServersPage';
 import {
   buildVirtualizationPlatforms,
@@ -87,12 +88,15 @@ function ClusterBlock({
   branchName,
   onOpenVms,
   onOpenPhysical,
+  onOpenEquipment,
 }: {
   cluster: PlatformCluster;
   branchName: string;
   /** Переход к ВМ конкретного хоста (по id оборудования) */
   onOpenVms: (hostId: string) => void;
   onOpenPhysical: () => void;
+  /** Открыть карточку оборудования (СХД внутри кластера) — просмотр без выхода со страницы */
+  onOpenEquipment: (equipmentId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const hasResources = cluster.cpuTotal > 0 || cluster.ramTotal > 0 || cluster.diskTotalGB > 0;
@@ -162,7 +166,15 @@ function ClusterBlock({
               </p>
               <div className="space-y-2 pl-3 border-l-2 border-cyan-100 dark:border-cyan-900/40">
                 {cluster.storages.map((st) => (
-                  <div key={st.id} className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+                  <div
+                    key={st.id}
+                    role="button"
+                    tabIndex={0}
+                    title="Открыть карточку оборудования"
+                    onClick={() => onOpenEquipment(st.id)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenEquipment(st.id); } }}
+                    className="cursor-pointer flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-700 hover:border-cyan-300 dark:hover:border-cyan-700 hover:bg-cyan-50/40 dark:hover:bg-cyan-900/10 transition-colors"
+                  >
                     <div className="bg-cyan-50 dark:bg-cyan-900/30 p-2 rounded-lg"><HardDrive className="w-5 h-5 text-cyan-600 dark:text-cyan-400" /></div>
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-gray-800 dark:text-gray-100 truncate">{st.name}</p>
@@ -175,7 +187,7 @@ function ClusterBlock({
                         {(st.storageCapacityGB || st.diskGB) && ` • ${formatGB(st.storageCapacityGB || st.diskGB || 0)}`}
                       </p>
                     </div>
-                    <button onClick={onOpenPhysical} className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline whitespace-nowrap">
+                    <button onClick={(e) => { e.stopPropagation(); onOpenPhysical(); }} className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline whitespace-nowrap">
                       Открыть
                     </button>
                   </div>
@@ -201,6 +213,9 @@ export function VirtualizationPlatformPage() {
   // Редактирование кластера из шапки платформы — ровно та же форма ClusterForm,
   // что открывается кликом по «Кластер виртуализации» в «Физические серверы».
   const [editingCluster, setEditingCluster] = useState<Equipment | null>(null);
+
+  // Карточка оборудования (СХД / консоль управления) — просмотр без выхода со страницы.
+  const [viewingEquipmentId, setViewingEquipmentId] = useState<string | null>(null);
 
   const platforms = useMemo(
     () => buildVirtualizationPlatforms(equipment, virtualMachines),
@@ -330,6 +345,7 @@ export function VirtualizationPlatformPage() {
                           branchName={getBranchName(c.hosts[0]?.branchId || p.storage[0]?.branchId || '')}
                           onOpenVms={(hostId) => navigate(`/servers?host=${hostId}`)}
                           onOpenPhysical={() => navigate('/servers/physical')}
+                          onOpenEquipment={(id) => setViewingEquipmentId(id)}
                         />
                       ))}
                   </div>
@@ -373,7 +389,15 @@ export function VirtualizationPlatformPage() {
                 ) : (
                   <div className="space-y-2">
                     {p.storage.map((st) => (
-                      <div key={st.id} className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+                      <div
+                        key={st.id}
+                        role="button"
+                        tabIndex={0}
+                        title="Открыть карточку оборудования"
+                        onClick={() => setViewingEquipmentId(st.id)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setViewingEquipmentId(st.id); } }}
+                        className="cursor-pointer flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-700 hover:border-cyan-300 dark:hover:border-cyan-700 hover:bg-cyan-50/40 dark:hover:bg-cyan-900/10 transition-colors"
+                      >
                         <div className="bg-cyan-50 dark:bg-cyan-900/30 p-2 rounded-lg"><HardDrive className="w-5 h-5 text-cyan-600 dark:text-cyan-400" /></div>
                         <div className="min-w-0 flex-1">
                           <p className="font-medium text-gray-800 dark:text-gray-100 truncate">{st.name}</p>
@@ -403,7 +427,15 @@ export function VirtualizationPlatformPage() {
                 ) : (
                   <div className="space-y-2">
                     {p.physicalConsoles.map((c) => (
-                      <div key={c.id} className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+                      <div
+                        key={c.id}
+                        role="button"
+                        tabIndex={0}
+                        title="Открыть карточку оборудования"
+                        onClick={() => setViewingEquipmentId(c.id)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setViewingEquipmentId(c.id); } }}
+                        className="cursor-pointer flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-700 hover:border-amber-300 dark:hover:border-amber-700 hover:bg-amber-50/40 dark:hover:bg-amber-900/10 transition-colors"
+                      >
                         <div className="bg-amber-50 dark:bg-amber-900/30 p-2 rounded-lg"><TerminalSquare className="w-5 h-5 text-amber-600 dark:text-amber-400" /></div>
                         <div className="min-w-0 flex-1">
                           <p className="font-medium text-gray-800 dark:text-gray-100 truncate">{c.name}</p>
@@ -412,8 +444,17 @@ export function VirtualizationPlatformPage() {
                         <span className={`text-xs px-2 py-0.5 rounded-full ${serverRoleLabels.management_console.color}`}>Физ.</span>
                       </div>
                     ))}
+                    {/* Консоль-ВМ: карточка ВМ живёт на странице «Серверы» — переход с фильтром по имени */}
                     {p.managementConsoles.map((c) => (
-                      <div key={c.id} className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
+                      <div
+                        key={c.id}
+                        role="button"
+                        tabIndex={0}
+                        title="Открыть карточку ВМ (страница «Серверы», фильтр по этой ВМ)"
+                        onClick={() => navigate(`/servers?q=${encodeURIComponent(c.name)}`)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/servers?q=${encodeURIComponent(c.name)}`); } }}
+                        className="cursor-pointer flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-700 hover:border-amber-300 dark:hover:border-amber-700 hover:bg-amber-50/40 dark:hover:bg-amber-900/10 transition-colors"
+                      >
                         <div className="bg-amber-50 dark:bg-amber-900/30 p-2 rounded-lg"><TerminalSquare className="w-5 h-5 text-amber-600 dark:text-amber-400" /></div>
                         <div className="min-w-0 flex-1">
                           <p className="font-medium text-gray-800 dark:text-gray-100 truncate">{c.name}</p>
@@ -468,6 +509,12 @@ export function VirtualizationPlatformPage() {
       {/* Форма редактирования кластера — та же ClusterForm/ClusterEditModal, что и на странице физических серверов */}
       {editingCluster && (
         <ClusterEditModal cluster={editingCluster} onClose={() => setEditingCluster(null)} />
+      )}
+
+      {/* Карточка оборудования (СХД / консоль управления) — просмотр без выхода со страницы,
+          с кнопкой «Редактировать» внутри */}
+      {viewingEquipmentId && (
+        <EquipmentCardModal equipmentId={viewingEquipmentId} onClose={() => setViewingEquipmentId(null)} />
       )}
     </div>
   );
