@@ -266,7 +266,10 @@ model Equipment {
   model                String?
   purchaseDate         DateTime?         @map("purchase_date")
   writeOffDate         DateTime?         @map("write_off_date")
-  condition            Condition         @default(good)
+  condition            Condition         @default(exploitation)
+  // Дефект/причина ограничений: обязателен при статусе exploitation_restricted
+  // (проверка на уровне API, см. equipmentSchema).
+  defectNote           String?           @map("defect_note")
   assignedToEmployeeId String?           @map("assigned_to_employee_id")
   // МОЛ (материально ответственное лицо) — сотрудник, на подотчёте которого
   // числится это оборудование. Независимо от «закреплено за»: один сотрудник
@@ -348,12 +351,19 @@ enum EquipmentCategory {
   other
 }
 
+// Статусная модель оборудования (в UI — «Статус»). Значения соответствуют
+// statusLabels на фронтенде и VALUE_TRANSLATIONS.condition на бэкенде.
+// Старые значения (new/good/satisfactory/needs_repair/written_off) перенесены
+// миграцией 20261104_equipment_status_model.
 enum Condition {
-  new
-  good
-  satisfactory
-  needs_repair
-  written_off
+  exploitation
+  exploitation_restricted
+  reserve
+  repair
+  removed_from_register
+  lost_stolen
+  unfit
+  for_writeoff
 }
 
 // ============================================================

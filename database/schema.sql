@@ -97,8 +97,12 @@ CREATE TABLE equipment (
     purchase_date DATE,
     purchase_price DECIMAL(12, 2),
     write_off_date DATE,
-    condition VARCHAR(50) NOT NULL DEFAULT 'good'
-        CHECK (condition IN ('new', 'good', 'satisfactory', 'needs_repair', 'written_off')),
+    condition VARCHAR(50) NOT NULL DEFAULT 'exploitation'
+        CHECK (condition IN ('exploitation', 'exploitation_restricted', 'reserve', 'repair',
+                             'removed_from_register', 'lost_stolen', 'unfit', 'for_writeoff')),
+    -- Дефект/причина ограничений: обязателен при эксплуатации с ограничениями
+    -- (проверка на уровне API).
+    defect_note TEXT,
     assigned_to_employee_id UUID REFERENCES employees(id) ON DELETE SET NULL,
     location VARCHAR(255),
     notes TEXT,
