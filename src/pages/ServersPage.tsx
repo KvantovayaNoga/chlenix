@@ -437,8 +437,36 @@ export function ServersPage() {
 
 // Примечание: права синхронизированы с бэкендом — интерфейсы/сервисы доступны
 // admin и materially_responsible (canEdit), удаление самой ВМ — только admin.
-function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, services, onAddInterface, onEditInterface, onRemoveInterface, onAddService, onEditService, onDeleteService, getEmployeeName, getServerName, getClusterName, getVmClusterName, getUserName }: any) {
+// Экспортируется: модалка переиспользуется на странице «Обзор» (DashboardPage)
+// для просмотра ВМ из блока «Последние виртуальные машины».
+export function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, services, onAddInterface: onAddInterfaceProp, onEditInterface: onEditInterfaceProp, onRemoveInterface, onAddService: onAddServiceProp, onEditService: onEditServiceProp, onDeleteService, getEmployeeName, getServerName, getClusterName, getVmClusterName, getUserName }: any) {
+  // Собственные вложенные модалки редактирования интерфейса/сервиса и добавления
+  // интерфейса/сервиса: позволяют открывать модалку ВМ на любой странице
+  // (например, «Обзор») без подключения внешнего состояния вызывающей страницы.
+  const store = useDataStore();
+  const [localAddInterface, setLocalAddInterface] = useState(false);
+  const [localAddService, setLocalAddService] = useState(false);
+  const [localEditInterface, setLocalEditInterface] = useState<NetworkInterface | null>(null);
+  const [localEditService, setLocalEditService] = useState<Service | null>(null);
+
+  const handleAddInterface = () => (onAddInterfaceProp ? onAddInterfaceProp() : setLocalAddInterface(true));
+  const handleAddService = () => (onAddServiceProp ? onAddServiceProp() : setLocalAddService(true));
+  const handleEditInterface = (iface: NetworkInterface) => (onEditInterfaceProp ? onEditInterfaceProp(iface) : setLocalEditInterface(iface));
+  const handleEditService = (svc: Service) => (onEditServiceProp ? onEditServiceProp(svc) : setLocalEditService(svc));
+
+  // Если вызывающая страница не передала обработчики удаления (например, «Обзор»),
+  // удаляем через стор — изменения сразу отражаются в списке.
+  const handleRemoveInterface = (ifaceId: string) => {
+    if (onRemoveInterface) { onRemoveInterface(ifaceId); return; }
+    void store.removeNetworkInterface(vm.id, ifaceId);
+  };
+  const handleDeleteService = (svcId: string) => {
+    if (onDeleteService) { onDeleteService(svcId); return; }
+    void store.deleteService(svcId);
+  };
+
   return (
+    <>
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-800 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
@@ -467,7 +495,7 @@ function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, services, onA
           <div>
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-gray-200 flex items-center gap-2"><Network className="w-5 h-5" />Сетевые интерфейсы ({vm.networkInterfaces.length})</h3>
-              {canEdit && <button onClick={onAddInterface} className="text-sm text-indigo-400 hover:text-indigo-300 flex items-center gap-1"><Plus className="w-4 h-4" />Добавить</button>}
+              {canEdit && <button onClick={handleAddInterface} className="text-sm text-indigo-400 hover:text-indigo-300 flex items-center gap-1"><Plus className="w-4 h-4" />Добавить</button>}
             </div>
             <div className="space-y-2">
               {vm.networkInterfaces.map((ni: NetworkInterface) => (
@@ -481,8 +509,8 @@ function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, services, onA
                   </div>
                   {canEdit && (
                     <div className="flex items-center gap-2">
-                      <button onClick={() => onEditInterface(ni)} className="text-indigo-400 hover:text-indigo-300"><Edit className="w-4 h-4" /></button>
-                      <button onClick={() => onRemoveInterface(ni.id)} className="text-red-400 hover:text-red-300"><Trash2 className="w-4 h-4" /></button>
+                      <button onClick={() => handleEditInterface(ni)} className="text-indigo-400 hover:text-indigo-300"><Edit className="w-4 h-4" /></button>
+                      <button onClick={() => handleRemoveInterface(ni.id)} className="text-red-400 hover:text-red-300"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   )}
                 </div>
@@ -493,7 +521,7 @@ function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, services, onA
           <div>
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-gray-200 flex items-center gap-2"><Activity className="w-5 h-5" />Сервисы и middleware ({services.length})</h3>
-              {canEdit && <button onClick={onAddService} className="text-sm text-indigo-400 hover:text-indigo-300 flex items-center gap-1"><Plus className="w-4 h-4" />Добавить</button>}
+              {canEdit && <button onClick={handleAddService} className="text-sm text-indigo-400 hover:text-indigo-300 flex items-center gap-1"><Plus className="w-4 h-4" />Добавить</button>}
             </div>
             <div className="space-y-2">
               {services.map((svc: Service) => (
@@ -506,8 +534,8 @@ function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, services, onA
                     <span className={`px-2 py-0.5 rounded text-xs ${serviceStatusLabels[svc.status].color}`}>{serviceStatusLabels[svc.status].label}</span>
                     {canEdit && (
                       <>
-                        <button onClick={() => onEditService(svc)} className="text-indigo-400 hover:text-indigo-300"><Edit className="w-4 h-4" /></button>
-                        <button onClick={() => onDeleteService(svc.id)} className="text-red-400 hover:text-red-300"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => handleEditService(svc)} className="text-indigo-400 hover:text-indigo-300"><Edit className="w-4 h-4" /></button>
+                        <button onClick={() => handleDeleteService(svc.id)} className="text-red-400 hover:text-red-300"><Trash2 className="w-4 h-4" /></button>
                       </>
                     )}
                   </div>
@@ -522,7 +550,38 @@ function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, services, onA
           </div>
         </div>
       </div>
-    </div>
+
+      {/* Вложенные модалки (используются, когда вызывающая страница не передала
+          собственные обработчики — например, блок «Последние ВМ» на странице «Обзор») */}
+      {localAddInterface && (
+        <AddInterfaceModal onClose={() => setLocalAddInterface(false)} onSave={async (data: any) => { await store.addNetworkInterface(vm.id, data); setLocalAddInterface(false); }} />
+      )}
+      {localAddService && (
+        <AddServiceModal onClose={() => setLocalAddService(false)} onSave={(data: any) => { void store.addService({ ...data, virtualMachineId: vm.id }); setLocalAddService(false); }} />
+      )}
+      {localEditInterface && (
+        <EditInterfaceModal
+          interface={localEditInterface}
+          onClose={() => setLocalEditInterface(null)}
+          onSave={async (data: any) => {
+            try {
+              await api.put(`/network-interfaces/${localEditInterface.id}`, data);
+              await store.reloadVMs();
+              setLocalEditInterface(null);
+            } catch {
+              alert('Не удалось сохранить интерфейс');
+            }
+          }}
+        />
+      )}
+      {localEditService && (
+        <EditServiceModal
+          service={localEditService}
+          onClose={() => setLocalEditService(null)}
+          onSave={(data: any) => { void store.updateService(localEditService.id, data); setLocalEditService(null); }}
+        />
+      )}
+    </>
   );
 }
 

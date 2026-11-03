@@ -1,9 +1,61 @@
+import { useMemo, useState } from 'react';
 import { useDataStore } from '../store/dataStore';
+import { useAuthStore } from '../store/authStore';
+import { VMDetailModal } from './ServersPage';
 import { Users, Monitor, AlertTriangle, CheckCircle, XCircle, Server, TrendingUp, Cpu, Activity, Building2 } from 'lucide-react';
 
 export function DashboardPage() {
-  const { getDashboardStats, virtualMachines, equipment, employees, departments } = useDataStore();
+  const {
+    getDashboardStats, virtualMachines, equipment, employees, departments, services, users,
+  } = useDataStore();
+  const { canManageServers, isAdmin, currentUser } = useAuthStore();
+  // Клик по ВМ в блоке «Последние виртуальные машины» открывает ту же модалку,
+  // что и в категории «Виртуальные машины». Снимок на момент открытия, актуальная
+  // версия резолвится из стора (см. ServersPage).
+  const [selectedVMSnapshot, setSelectedVM] = useState<any | null>(null);
+  const selectedVM = useMemo(
+    () => (selectedVMSnapshot ? virtualMachines.find((v) => v.id === selectedVMSnapshot.id) ?? selectedVMSnapshot : null),
+    [selectedVMSnapshot, virtualMachines],
+  );
   const stats = getDashboardStats();
+
+  // Иерархия видимости (зеркало бэкенда): обычный сотрудник видит только свои ВМ,
+  // начальник отдела — ВМ подчинённых, «Руководство» — все ВМ организации.
+  const vis = currentUser?.equipmentVisibility;
+  const visibleVMs = useMemo(() => (vis && !vis.all
+    ? virtualMachines.filter((vm: any) => {
+        const ids = new Set<string>(vis.employeeIds ?? []);
+        return (vm.responsibleEmployeeId && ids.has(vm.responsibleEmployeeId)) ||
+               (vm.serviceResponsibleEmployeeId && ids.has(vm.serviceResponsibleEmployeeId)) ||
+               (vm.materiallyResponsibleEmployeeId && ids.has(vm.materiallyResponsibleEmployeeId));
+      })
+    : virtualMachines), [virtualMachines, vis]);
+
+  const getEmployeeName = (id: string | null) => {
+    if (!id) return '—';
+    const emp = employees.find(e => e.id === id);
+    return emp ? `${emp.lastName} ${emp.firstName}` : 'Неизвестный';
+  };
+  const getServerName = (serverId: string | null) => {
+    if (!serverId) return '—';
+    const server = equipment.find(s => s.id === serverId);
+    return server?.name || serverId;
+  };
+  const getClusterName = (clusterId: string | null | undefined) => {
+    if (!clusterId) return '—';
+    const cl = equipment.find(s => s.id === clusterId);
+    return cl ? (cl.clusterName || cl.name) : clusterId;
+  };
+  const getVmClusterName = (vm: any): string => {
+    const host = vm?.hostServerId ? equipment.find(s => s.id === vm.hostServerId) : null;
+    if (!host?.parentClusterId) return '—';
+    return getClusterName(host.parentClusterId);
+  };
+  const getUserName = (userId: string | null) => {
+    if (!userId) return '—';
+    const user = users.find(u => u.id === userId);
+    return user?.fullName || 'Система';
+  };
 
   const runningVMs = virtualMachines.filter(vm => vm.status === 'running');
   const stoppedVMs = virtualMachines.filter(vm => vm.status === 'stopped');
@@ -74,8 +126,16 @@ export function DashboardPage() {
       <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 mb-6">
         <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200 mb-4">Последние виртуальные машины</h3>
         <div className="space-y-2">
-          {virtualMachines.slice(0, 5).map(vm => (
-            <div key={vm.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+          {visibleVMs.slice(0, 5).map(vm => (
+            <div
+              key={vm.id}
+              role="button"
+              tabIndex={0}
+              title="Открыть карточку виртуальной машины"
+              onClick={() => setSelectedVM(vm)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedVM(vm); } }}
+              className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg cursor-pointer hover:bg-indigo-50 dark:hover:bg-gray-700 hover:ring-1 hover:ring-indigo-200 dark:hover:ring-indigo-800 transition-colors"
+            >
               <div className="flex items-center gap-3">
                 <Cpu className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                 <div>
@@ -94,7 +154,24 @@ export function DashboardPage() {
         </div>
       </div>
 
-
+      {/* Карточка ВМ — та же модалка, что при клике в категории «Виртуальные машины».
+          Обработчики добавления/редактирования не передаются: VMDetailModal сама
+          управляет своими вложенными модалками через стор. */}
+      {selectedVM && (
+        <VMDetailModal
+          vm={selectedVM}
+          onClose={() => setSelectedVM(null)}
+          canEdit={canManageServers()}
+          isAdmin={isAdmin()}
+          employees={employees}
+          services={services.filter((s: any) => s.virtualMachineId === selectedVM.id)}
+          getEmployeeName={getEmployeeName}
+          getServerName={getServerName}
+          getClusterName={getClusterName}
+          getVmClusterName={getVmClusterName}
+          getUserName={getUserName}
+        />
+      )}
     </div>
   );
 }
