@@ -32,7 +32,7 @@ const conditionLabels = {
 
 export function EquipmentPage() {
   const { equipment, employees, branches, addEquipment, updateEquipment, deleteEquipment } = useDataStore();
-  const { canManageEmployees, canManageServers, users } = useAuthStore();
+  const { canManageEmployees, canManageServers, users, currentUser } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterCondition, setFilterCondition] = useState('');
@@ -85,7 +85,19 @@ export function EquipmentPage() {
     setFilterAssignment('all');
   };
 
-  const filteredEquipment = equipment.filter((eq) => {
+  // Иерархия видимости оборудования (сервер уже фильтрует /equipment, здесь — зеркало):
+  // обычный сотрудник видит только закреплённое за ним, начальник отдела — всё
+  // оборудование своих подчинённых и своё, отдел «Руководство» — всё оборудование организации.
+  const vis = currentUser?.equipmentVisibility;
+  const visibleEquipment = vis && !vis.all
+    ? equipment.filter((eq) => {
+        const ids = new Set(vis.employeeIds ?? []);
+        return (eq.assignedToEmployeeId && ids.has(eq.assignedToEmployeeId)) ||
+               (eq.materiallyResponsibleEmployeeId && ids.has(eq.materiallyResponsibleEmployeeId));
+      })
+    : equipment;
+
+  const filteredEquipment = visibleEquipment.filter((eq) => {
     const matchesSearch =
       `${eq.name} ${eq.brand} ${eq.model} ${eq.serialNumber} ${eq.inventoryNumber}`
         .toLowerCase()

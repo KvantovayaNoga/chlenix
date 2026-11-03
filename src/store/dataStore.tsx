@@ -140,6 +140,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const reloadEquipment = useCallback(async () => {
     const list = await api.get<Equipment[]>('/equipment');
+    // Та же иерархия видимости, что и в loadAll (сервер фильтрует, UI зеркалит)
+    const vis = currentUserRef.current?.equipmentVisibility;
+    if (vis && !vis.all) {
+      const ids = new Set(vis.employeeIds ?? []);
+      setEquipment(list.filter((e) =>
+        (e.assignedToEmployeeId && ids.has(e.assignedToEmployeeId)) ||
+        (e.materiallyResponsibleEmployeeId && ids.has(e.materiallyResponsibleEmployeeId))));
+      return;
+    }
     setEquipment(list);
   }, []);
 
@@ -195,7 +204,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setBranches(brs);
         setDataCenters(dcs);
         setEmployees(emps);
-        setEquipment(eq);
+        // Иерархия видимости оборудования: обычный сотрудник видит только закреплённое
+        // за ним, начальник отдела — всё оборудование отдела (включая своё),
+        // «Руководство» и служебные роли — всё оборудование организации.
+        // Сервер уже отдаёт отфильтрованный список; это зеркальная защита на UI.
+        const vis = currentUserRef.current?.equipmentVisibility;
+        let visibleEq = eq;
+        if (vis && !vis.all) {
+          const ids = new Set(vis.employeeIds ?? []);
+          visibleEq = eq.filter((e) =>
+            (e.assignedToEmployeeId && ids.has(e.assignedToEmployeeId)) ||
+            (e.materiallyResponsibleEmployeeId && ids.has(e.materiallyResponsibleEmployeeId)));
+        }
+        setEquipment(visibleEq);
         setVirtualMachines(vms);
         setServices(vms.flatMap((vm) => vm.services || []));
         setAuditLog(logs);

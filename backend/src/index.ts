@@ -362,6 +362,69 @@ async function getUserOrgScope(userId: string): Promise<{ orgId: string | null; 
   return { orgId: u?.organizationId ?? null, role: u?.role ?? 'viewer' };
 }
 
+// ============================================================
+// Видимость оборудования по организационной иерархии
+// - обычный пользователь видит только оборудование, закреплённое за ним;
+// - «Начальник отдела» — всё оборудование своих подчинённых + своё;
+// - отдел «Руководство» — всё оборудование организации целиком;
+// - admin/sysadmin/hr_specialist/materially_responsible — без ограничений
+//   (у МОЛ доступ к закреплённому за ним оборудованию уже есть).
+// ============================================================
+const HEAD_POSITION_RE = /начальник|руководитель|заведующий|обозначение|ceo|cfo|cto|coo/i;
+const LEADERSHIP_DEPT_RE = /руководств|гендирекц|дирекц|правлен|совет/i;
+
+/** Служебные роли видят всё оборудование организации без ограничений. */
+function roleExempt(role: string): boolean {
+  return role === 'admin' || role === 'sysadmin' || role === 'hr_specialist' || role === 'materially_responsible';
+}
+
+type MeEmpInfo = { id: string; departmentId: string; positionName: string; departmentName: string } | null;
+
+/** Карточка сотрудника, привязанного к учётной записи (в активной организации). */
+async function getMyEmployeeInfo(userId: string, orgId: string | null): Promise<MeEmpInfo> {
+  const meEmp = await prisma.employee.findFirst({
+    where: { userId, ...(orgId ? { organizationId: orgId } : {}) },
+    select: {
+      id: true, departmentId: true,
+      position: { select: { name: true } },
+      department: { select: { name: true } },
+    },
+  });
+  if (!meEmp) return null;
+  return {
+    id: meEmp.id,
+    departmentId: meEmp.departmentId,
+    positionName: meEmp.position?.name ?? '',
+    departmentName: meEmp.department?.name ?? '',
+  };
+}
+
+/** Id сотрудников, видимых текущему пользователю по иерархии (включая его самого). */
+async function visibleEmployeeIdsFor(me: MeEmpInfo, orgId: string | null): Promise<string[]> {
+  if (!me) return []; // нет карточки сотрудника — личного закрепления нет
+  const ids = new Set<string>([me.id]);
+  // Начальник отдела: все сотрудники того же отдела (подчинённые) + своё
+  if (HEAD_POSITION_RE.test(me.positionName) && me.departmentId) {
+    const deps = await prisma.employee.findMany({
+      where: { departmentId: me.departmentId, ...(orgId ? { organizationId: orgId } : {}) },
+      select: { id: true },
+    });
+    for (const d of deps) ids.add(d.id);
+  }
+  return Array.from(ids);
+}
+
+/** where-условие для выборки оборудования с учётом прав видимого набора сотрудников. */
+async function equipmentVisibilityWhere(userId: string, role: string, orgId: string | null): Promise<any | null> {
+  // null => никаких дополнительных ограничений (служебные роли)
+  if (role === 'admin' || role === 'sysadmin' || role === 'hr_specialist' || role === 'materially_responsible') return null;
+  const me = await getMyEmployeeInfo(userId, orgId);
+  // Руководство видит всё оборудование организации целиком
+  if (me?.departmentName && LEADERSHIP_DEPT_RE.test(me.departmentName)) return null;
+  const empIds = await visibleEmployeeIdsFor(me, orgId);
+  return { OR: [{ assignedToEmployeeId: { in: empIds } }, { materiallyResponsibleEmployeeId: { in: empIds } }] };
+}
+
 // Где может работать пользователь: организации, участником которых он является
 // (таблица user_organizations) + активная организация из последней сессии
 // (users.organization_id) + (для админа) все организации системы.
@@ -665,7 +728,22 @@ app.get('/api/auth/me', authMiddleware, async (c) => {
   }
   // Какие организации доступны пользователю (для переключателя в интерфейсе)
   const accessibleOrganizations = await getAccessibleOrgs(user.id);
-  return c.json({ ...publicUser(user), accessibleOrganizations });
+  // Карточка сотрудника, привязанная к учётной записи (для иерархии видимости оборудования на UI)
+  const meEmp = await getMyEmployeeInfo(user.id, user.organizationId ?? null);
+  const visibleEmployeeIds = meEmp ? await visibleEmployeeIdsFor(meEmp, user.organizationId ?? null) : [];
+  return c.json({
+    ...publicUser(user),
+    accessibleOrganizations,
+    employee: meEmp ? { id: meEmp.id, departmentName: meEmp.departmentName, positionName: meEmp.positionName } : null,
+    equipmentVisibility: {
+      // всё оборудование организации (служебные роли и «Руководство»)
+      all: !meEmp ? false
+        : (roleExempt(user.role) || LEADERSHIP_DEPT_RE.test(meEmp.departmentName)),
+      // id сотрудников, чьё оборудование видно (своё + подчинённые для начальника отдела)
+      employeeIds: meEmp && !LEADERSHIP_DEPT_RE.test(meEmp.departmentName) && !roleExempt(user.role)
+        ? visibleEmployeeIds : null,
+    },
+  });
 });
 
 // ============================================================
@@ -1752,6 +1830,10 @@ app.get('/api/equipment', authMiddleware, async (c) => {
   const scope = await getUserOrgScope(c.get('user').userId);
   const where: any = {};
   if (scope.orgId) where.organizationId = scope.orgId; else where.organizationId = null;
+  // Иерархия видимости: обычный сотрудник — только своё закреплённое оборудование,
+  // начальник отдела — всё оборудование отдела, «Руководство» — всё оборудование организации.
+  const vis = await equipmentVisibilityWhere(c.get('user').userId, scope.role, scope.orgId);
+  if (vis) Object.assign(where, vis);
   const items = await prisma.equipment.findMany({ where, include: equipmentInclude, orderBy: { createdAt: 'desc' } });
   return c.json(items.map(publicEquipmentBrief));
 });
@@ -1762,6 +1844,14 @@ app.get('/api/equipment/:id', authMiddleware, async (c) => {
   if (!item) return c.json({ error: 'Not found' }, 404);
   if (item.organizationId && item.organizationId !== scope.orgId && scope.role !== 'admin') {
     return c.json({ error: 'Нет доступа к этой организации' }, 403);
+  }
+  // Иерархия видимости: карточка доступна только тем, кто видит единицу в списке
+  const vis = await equipmentVisibilityWhere(c.get('user').userId, scope.role, scope.orgId);
+  if (vis) {
+    const ids = (vis as any).OR[0].assignedToEmployeeId.in as string[];
+    const linked = (item.assignedToEmployeeId && ids.includes(item.assignedToEmployeeId))
+      || (item.materiallyResponsibleEmployeeId && ids.includes(item.materiallyResponsibleEmployeeId));
+    if (!linked) return c.json({ error: 'Оборудование не закреплено за вами или вашим отделом' }, 403);
   }
   return c.json(publicEquipmentBrief(item));
 });
