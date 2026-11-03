@@ -192,9 +192,42 @@ apply_schema() {
       echo "⚠️ migrate deploy упал (rc=$MIG_RC) — пробуем db push как резервный путь..."
     fi
   elif find prisma/migrations -maxdepth 2 -name 'migration.sql' 2>/dev/null | grep -q .; then
-    echo "ℹ️ В prisma/migrations есть migration.sql, но НЕТ _journal.json."
-    echo "   Это пустая заглушка из Dockerfile либо неполная история — migrate deploy"
-    echo "   на такой папке дал бы ошибку/P3005. Используем db push (штатный режим)."
+    # ИСПРАВЛЕНИЕ ЦИКЛА «backend is unhealthy» ПРИ ДЕПЛОЕ С НОВЫМИ СТАТУСАМИ:
+    # раньше эта ветка сразу уходила на db push. Но если БД уже содержит
+    # колонки/значения, которых старая схема НЕ знает (например, колонка
+    # defect_note появилась через deploy.sh / ручной ALTER, либо в condition
+    # уже лежат legacy-значения вроде 'good'), то db push:
+    #   а) дропает неизвестную схеме колонку (потеря данных!), после чего
+    #      новый backend падает на SELECT с P2022 «column does not exist»;
+    #   б) либо падает сам (CHECK/конфликт типов) → контейнер нездоров →
+    #      frontend не стартует («dependency backend failed to start»).
+    # Правильный путь для папки с валидными SQL-миграциями — применить их
+    # напрямую через psql в порядке каталогов (миграции идемпотентны:
+    # IF EXISTS / UPDATE ... WHERE / ADD COLUMN IF NOT EXISTS). Журнала
+    # _prisma_migrations при этом нет, но повторное применение безопасно,
+    # а последующий db push сверит схему с Prisma Client.
+    echo "ℹ️ В prisma/migrations есть migration.sql без _journal.json."
+    echo "   Применяем их напрямую через psql (идемпотентно), затем сверим схему db push."
+    PSQL_DB="${POSTGRES_DB:-${POSTGRES_USER:-chlenix}}"
+    for m in $(find prisma/migrations -maxdepth 2 -name 'migration.sql' 2>/dev/null | sort); do
+      echo "   ▶ $m"
+      if ! psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$m" >/dev/null 2> /tmp/psql_err.txt; then
+        ERR_TXT=$(cat /tmp/psql_err.txt 2>/dev/null)
+        case "$ERR_TXT" in
+          *"already exists"*|*"duplicate"*|*"does not exist"*|*"cannot drop"*)
+            # Объект уже создан ранее (db push/deploy.sh) или миграция
+            # частично применена — это ожидаемо, продолжаем.
+            echo "     ↳ часть объектов уже существует — ок (идемпотентный шаг пропущен)" ;;
+          *)
+            echo "     ⚠️ Ошибка применения $m:"
+            echo "$ERR_TXT" | tail -4
+            echo "     Продолжаем со следующими миграциями, финальная сверка — db push." ;;
+        esac
+      else
+        echo "     ✓ применена"
+      fi
+    done
+    rm -f /tmp/psql_err.txt
   fi
 
   # Регенерируем Prisma Client из ТЕКУЩЕЙ schema.prisma перед применением

@@ -2186,7 +2186,13 @@ const equipmentSchema = z.object({
   model: strOrEmpty(z.string()),
   purchaseDate: z.preprocess((v) => (emptyToNull(v) === null ? undefined : v), z.coerce.date().optional().nullable()),
   writeOffDate: z.preprocess((v) => (emptyToNull(v) === null ? undefined : v), z.coerce.date().optional().nullable()),
-  condition: z.enum(['exploitation', 'exploitation_restricted', 'reserve', 'repair', 'removed_from_register', 'lost_stolen', 'unfit', 'for_writeoff']).optional(),
+  // Совместимость со старыми данными (миграция переносит значения позже):
+  // API принимает и старые, и новые значения; нормализация — в normalizeCondition.
+  condition: z.enum([
+    'exploitation', 'exploitation_restricted', 'reserve', 'repair', 'removed_from_register', 'lost_stolen', 'unfit', 'for_writeoff',
+    // legacy-значения (до миграции 20261104_equipment_status_model)
+    'new', 'good', 'satisfactory', 'needs_repair', 'written_off',
+  ]).optional(),
   // Дефект/причина ограничений: обязателен при статусе «Эксплуатация с ограничениями»
   // (проверка обязательности — на уровне маршрутов create/update, см. defectRequiredError).
   defectNote: strOrEmpty(z.string()),
@@ -2219,6 +2225,23 @@ const equipmentSchema = z.object({
 });
 
 const equipmentInclude = { assignedToEmployee: true, materiallyResponsibleEmployee: true, branch: true, dataCenter: true } as const;
+
+// Переходный период деплоя: контейнер backend может подняться раньше, чем к
+// БД применится новая CHECK-конструкция/миграция переноса (или db push на
+// старой колонке без defect_note). Чтобы POST/PUT не падали с 500 из-за
+// legacy-значений состояния, нормализуем их в новую статусную модель —
+// так же, как это делает миграция 20261104_equipment_status_model.
+const LEGACY_CONDITION_MAP: Record<string, string> = {
+  new: 'exploitation',
+  good: 'exploitation',
+  satisfactory: 'exploitation_restricted',
+  needs_repair: 'repair',
+  written_off: 'for_writeoff',
+};
+function normalizeCondition(value: string | null | undefined): string | null | undefined {
+  if (!value) return value;
+  return LEGACY_CONDITION_MAP[value] ?? value;
+}
 
 // Статусная модель оборудования: «Эксплуатация с ограничениями» требует указать
 // дефект или причину ограничений (defectNote). Возвращает текст ошибки либо null.
@@ -2397,7 +2420,7 @@ app.post('/api/equipment', authMiddleware, requireRole([...EQUIPMENT_CREATE_ROLE
 
   // Статус «Эксплуатация с ограничениями» требует указать дефект/причину ограничений.
   {
-    const defectErr = defectRequiredError(data.condition ?? 'exploitation', data.defectNote);
+    const defectErr = defectRequiredError(normalizeCondition(data.condition) ?? 'exploitation', data.defectNote);
     if (defectErr) return c.json({ error: defectErr }, 400);
   }
 
@@ -2460,7 +2483,7 @@ app.post('/api/equipment', authMiddleware, requireRole([...EQUIPMENT_CREATE_ROLE
       inventoryNumber: data.inventoryNumber ?? null,
       brand: data.brand ?? null,
       model: data.model ?? null,
-      condition: data.condition ?? 'exploitation',
+      condition: normalizeCondition(data.condition) ?? 'exploitation',
       defectNote: data.defectNote ?? null,
       floor: data.floor ?? null,
       room: data.room ?? null,
@@ -2533,10 +2556,12 @@ app.put('/api/equipment/:id', authMiddleware, requireRole([...EQUIPMENT_MANAGE_R
   }
 
   const newData: any = { ...parsed.data };
+  // Нормализация legacy-значений состояния в новую статусную модель (см. normalizeCondition).
+  if ('condition' in newData) newData.condition = normalizeCondition(newData.condition);
   // Статус «Эксплуатация с ограничениями» требует дефект/причину ограничений.
   // Учитываем, что PATCH может менять только одно из двух полей.
   if ('condition' in newData || 'defectNote' in newData) {
-    const effectiveCondition = 'condition' in newData ? newData.condition : old.condition;
+    const effectiveCondition = 'condition' in newData ? newData.condition : normalizeCondition(old.condition);
     const effectiveDefect = 'defectNote' in newData ? newData.defectNote : old.defectNote;
     const defectErr = defectRequiredError(effectiveCondition, effectiveDefect);
     if (defectErr) return c.json({ error: defectErr }, 400);

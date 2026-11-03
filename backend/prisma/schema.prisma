@@ -266,7 +266,7 @@ model Equipment {
   model                String?
   purchaseDate         DateTime?         @map("purchase_date")
   writeOffDate         DateTime?         @map("write_off_date")
-  condition            Condition         @default(exploitation)
+  condition            String            @default("exploitation") @db.Text
   // Дефект/причина ограничений: обязателен при статусе exploitation_restricted
   // (проверка на уровне API, см. equipmentSchema).
   defectNote           String?           @map("defect_note")
@@ -353,19 +353,12 @@ enum EquipmentCategory {
 
 // Статусная модель оборудования (в UI — «Статус»). Значения соответствуют
 // statusLabels на фронтенде и VALUE_TRANSLATIONS.condition на бэкенде.
+// Хранится как TEXT с CHECK в БД (см. database/schema.sql и миграцию
+// 20261104_equipment_status_model) — НЕ как enum PostgreSQL: enum-колонка
+// при деплои через db push давала P3018 (ALTER TYPE ... ADD VALUE нельзя
+// внутри транзакции) → backend нездоров → frontend не стартовал.
 // Старые значения (new/good/satisfactory/needs_repair/written_off) перенесены
-// миграцией 20261104_equipment_status_model.
-enum Condition {
-  exploitation
-  exploitation_restricted
-  reserve
-  repair
-  removed_from_register
-  lost_stolen
-  unfit
-  for_writeoff
-}
-
+// миграцией; нормализация legacy-значений — normalizeCondition в src/index.ts.
 // ============================================================
 // Виртуальные машины
 // ============================================================
