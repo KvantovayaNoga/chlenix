@@ -27,8 +27,8 @@ interface JoinRequestItem {
 type StatusFilter = 'pending' | 'approved' | 'rejected';
 
 // Роли, которые можно выдать при одобрении (синхронизировано с
-// ASSIGNABLE_JOIN_ROLES в backend/src/index.ts)
-const ASSIGNABLE_ROLES: UserRole[] = ['viewer', 'materially_responsible', 'hr_specialist', 'sysadmin'];
+// ASSIGNABLE_JOIN_ROLES в backend/src/index.ts — все роли, включая администратора)
+const ASSIGNABLE_ROLES: UserRole[] = ['admin', 'viewer', 'materially_responsible', 'hr_specialist', 'sysadmin'];
 
 const statusLabels: Record<StatusFilter, string> = {
   pending: 'Новые',

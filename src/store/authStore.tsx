@@ -86,6 +86,13 @@ interface AuthState {
    * HR — всё кроме ЦОД, sysadmin — только ЦОД, admin — всё.
    */
   canEditDirectory: (model: string) => boolean;
+  /**
+   * Уведомление для страницы входа: текст причины, по которой сервер сбросил
+   * сессию (например, «учётная запись заблокирована» — п.4). Читается и
+   * очищается LoginPage один раз при отображении.
+   */
+  sessionNotice: string | null;
+  clearSessionNotice: () => void;
 }
 
 async function call(fn: () => Promise<unknown>): Promise<{ success: boolean; error?: string }> {
@@ -104,6 +111,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<User[]>([]);
   const [initialized, setInitialized] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(false);
+  // Текст причины сброса сессии (блокировка аккаунта и т.п.) — показывается на LoginPage
+  const [sessionNotice, setSessionNotice] = useState<string | null>(null);
 
   const isAuthenticated = !!currentUser;
 
@@ -383,8 +392,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (role === 'sysadmin') return model === 'dataCenter';
         return false;
       },
+      sessionNotice,
+      clearSessionNotice: () => setSessionNotice(null),
     }),
-    [currentUser, users, isAuthenticated, initialized, bootstrapping, bootstrap, login, register, logout, refreshUsers, addUser, updateUser, deleteUser, setTheme, switchOrganization, isAdminUser, uiRole, impersonatedRole, setImpersonatedRole],
+    [currentUser, users, isAuthenticated, initialized, bootstrapping, bootstrap, login, register, logout, refreshUsers, addUser, updateUser, deleteUser, setTheme, switchOrganization, isAdminUser, uiRole, impersonatedRole, setImpersonatedRole, sessionNotice],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -428,6 +439,8 @@ const authFallback: AuthState = {
   canSwitchOrganization: () => false,
   canManageServers: () => false,
   canEditDirectory: () => false,
+  sessionNotice: null,
+  clearSessionNotice: () => {},
 };
 
 // Совместимое имя хука. Вызов без аргумента возвращает всё состояние;

@@ -204,8 +204,10 @@ export function UsersPage() {
         </div>
       </div>
 
-      {showAddModal && <UserModal onClose={() => setShowAddModal(false)} onSave={(data) => { addUser(data as any); setShowAddModal(false); }} />}
-      {editingUser && <UserModal user={editingUser} onClose={() => setEditingUser(null)} onSave={(data) => { updateUser(editingUser.id, data); setEditingUser(null); }} />}
+      {showAddModal && <UserModal onClose={() => setShowAddModal(false)} onSave={async (data) => { await addUser(data as any); setShowAddModal(false); }} />}
+      {/* П.2: дожидаемся обновления и перезапрашиваем список — изменения
+          (роль, блокировка) сразу видны на странице без перезагрузки */}
+      {editingUser && <UserModal user={editingUser} onClose={() => setEditingUser(null)} onSave={async (data) => { const res = await updateUser(editingUser.id, data); if (res.success) await refreshUsers(); setEditingUser(null); }} />}
       
       {viewingHistory && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

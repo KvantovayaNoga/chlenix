@@ -2814,6 +2814,17 @@ app.post('/api/join-requests/:id/approve', authMiddleware, requireRole(['admin']
     }),
   ]);
 
+  // П.2: меняем роль/организацию у пользователя, который сейчас может быть
+  // в системе — переводим tokenVersion, чтобы его старый JWT перестал быть
+  // валидным; при следующем запросе он получит 401 и будет перезалогинен
+  // уже с актуальной ролью (без «внутренней ошибки сервера» на клиенте).
+  try {
+    await prisma.user.update({
+      where: { id: updated.id },
+      data: { tokenVersion: { increment: 1 } },
+    });
+  } catch {}
+
   // Одобрение заявки = вступление: фиксируем членство в организации
   await ensureMemberships(request.applicantId, [request.organizationId]);
 

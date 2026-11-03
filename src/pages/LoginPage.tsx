@@ -9,7 +9,10 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuthStore();
+  // sessionNotice — причина мгновенного сброса сессии (например, админ
+  // заблокировал учётную запись пользователя — п.4). Показываем баннером и
+  // очищаем, чтобы сообщение не повторялось после повторного входа.
+  const { login, sessionNotice, clearSessionNotice } = useAuthStore();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -39,6 +42,19 @@ export function LoginPage() {
         {/* Form */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 border border-gray-200 dark:border-gray-700">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-200 mb-6">Вход в систему</h2>
+
+          {sessionNotice && (
+            <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg text-amber-700 dark:text-amber-300 text-sm">
+              {sessionNotice}
+              <button
+                type="button"
+                onClick={() => clearSessionNotice()}
+                className="ml-2 text-xs underline opacity-70 hover:opacity-100"
+              >
+                скрыть
+              </button>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-300 text-sm">
