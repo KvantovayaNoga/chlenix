@@ -19,7 +19,7 @@ export function PhysicalServersPage() {
   // Права синхронизированы с бэкендом: физический сервер/кластер — это Equipment,
   // создание/редактирование — admin|hr_specialist (любая техника) + sysadmin
   // (только инфраструктурная, см. isInfraEquipment), удаление — SERVER_ROLES (admin|sysadmin).
-  const { canManageServerCards, canManageServers, users } = useAuthStore();
+  const { canManageServerCards, canAddEquipment, canManageServers, users } = useAuthStore();
   const navigate = useNavigate();
   const [editingServer, setEditingServer] = useState<Equipment | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -59,7 +59,7 @@ export function PhysicalServersPage() {
           <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Физические серверы</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">Серверное оборудование организации</p>
         </div>
-        {canManageServerCards() && (
+        {canAddEquipment() && (
           <div className="flex items-center gap-3">
             {/* Кластер — отдельная форма (логическая сущность без инвентарной карточки) */}
             <button onClick={() => setShowClusterForm(true)} className="bg-white dark:bg-gray-800 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 px-5 py-2.5 rounded-xl font-medium hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-all flex items-center gap-2">
@@ -69,6 +69,9 @@ export function PhysicalServersPage() {
               <Plus className="w-5 h-5" />Добавить сервер
             </button>
           </div>
+        )}
+        {!canAddEquipment() && canManageServerCards() && (
+          <span className="text-xs text-gray-400 dark:text-gray-500 self-center">Добавление серверов недоступно для вашей роли</span>
         )}
       </div>
 

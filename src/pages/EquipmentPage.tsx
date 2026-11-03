@@ -32,7 +32,7 @@ const conditionLabels = {
 
 export function EquipmentPage() {
   const { equipment, employees, branches, addEquipment, updateEquipment, deleteEquipment } = useDataStore();
-  const { canManageEmployees, canManageServers, users, currentUser } = useAuthStore();
+  const { canManageEmployees, canAddEquipment, canManageServers, users, currentUser } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterCondition, setFilterCondition] = useState('');
@@ -136,7 +136,7 @@ export function EquipmentPage() {
           <h1 className="text-3xl font-bold text-gray-700 dark:text-gray-200">Техника и имущество</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">Управление оборудованием и имуществом организации</p>
         </div>
-        {canManageEmployees() && (
+        {canAddEquipment() && (
           <button
             onClick={() => setShowAddModal(true)}
             className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20"

@@ -137,8 +137,15 @@ const EMPLOYEE_MANAGE_ROLES: string[] = ['admin', 'hr_specialist'];
 /** Право менять активную организацию (switch-organization): admin + HR.
  *  Решение от 2026-11: МОЛ, системный администратор и пользователь — без такого права. */
 const ORG_SWITCH_ROLES: string[] = ['admin', 'hr_specialist'];
-/** Создание/редактирование карточек оборудования: admin + HR (МОЛ — только связка assign/unassign). */
+/** Редактирование карточек оборудования: admin + HR (МОЛ — только связка assign/unassign). */
 const EQUIPMENT_MANAGE_ROLES: string[] = ['admin', 'hr_specialist'];
+/**
+ * Создание нового оборудования: только admin (+ sysadmin — инфраструктурная
+ * техника, см. isInfraEquipment). Решение от 2026-11: специалист по кадрам
+ * оборудование НЕ добавляет (ни в «Оборудовании», ни где-либо ещё);
+ * редактирование существующих карточек за HR сохранено.
+ */
+const EQUIPMENT_CREATE_ROLES: string[] = ['admin'];
 /**
  * Инфраструктурная техника (роль в виртуализации задана): её заводит системный
  * администратор (уточняя данные у МОЛ), поэтому sysadmin допущен к create/update
@@ -1864,8 +1871,9 @@ app.get('/api/equipment/:id/history', authMiddleware, async (c) => {
   return c.json(history.map(publicHistory));
 });
 
-// sysadmin допускается (см. проверку isInfraEquipment ниже): может заводить карточки серверов
-app.post('/api/equipment', authMiddleware, requireRole([...EQUIPMENT_MANAGE_ROLES, 'sysadmin']), async (c) => {
+// Создание оборудования: admin + sysadmin (инфраструктурная техника).
+// Специалист по кадрам новых карточек не создаёт (EQUIPMENT_CREATE_ROLES).
+app.post('/api/equipment', authMiddleware, requireRole([...EQUIPMENT_CREATE_ROLES, 'sysadmin']), async (c) => {
   const body = await c.req.json().catch(() => null);
   // ClusterForm передаёт состав кластера служебным полем __members — извлекаем его
   // до валидации схемы (в equipmentSchema его нет).
@@ -1882,7 +1890,7 @@ app.post('/api/equipment', authMiddleware, requireRole([...EQUIPMENT_MANAGE_ROLE
 
   // sysadmin может заводить карточки инфраструктурной техники (серверы/кластеры/СХД),
   // уточняя данные у МОЛ; офисное оборудование (serverRole не задан) ему недоступно.
-  if (!EQUIPMENT_MANAGE_ROLES.includes(roleOf(c)) && !isInfraEquipment(data.serverRole)) {
+  if (!EQUIPMENT_CREATE_ROLES.includes(roleOf(c)) && !isInfraEquipment(data.serverRole)) {
     return c.json({ error: 'Недостаточно прав: системному администратору доступно только создание серверов и кластеров' }, 403);
   }
 

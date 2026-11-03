@@ -64,6 +64,13 @@ interface AuthState {
   canEditOrganization: () => boolean;
   /** Создание/редактирование карточек серверов/кластеров: admin + HR + sysadmin (см. isInfraEquipment на бэкенде). */
   canManageServerCards: () => boolean;
+  /**
+   * Создание НОВОГО оборудования (кнопки «Добавить» везде): admin + sysadmin.
+   * Решение от 2026-11: специалист по кадрам оборудование не добавляет —
+   * ни в разделе «Оборудование», ни где-либо ещё (зеркало EQUIPMENT_CREATE_ROLES
+   * на бэкенде). Редактирование существующих карточек за HR сохранено.
+   */
+  canAddEquipment: () => boolean;
   /** Связка «сотрудник ↔ оборудование»: admin + HR + МОЛ (ASSIGN_ROLES). */
   canAssignEquipment: () => boolean;
   /**
@@ -356,6 +363,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        * поэтому здесь достаточно admin+sysadmin+HR.
        */
       canManageServerCards: () => isAdminUser || uiRole === 'sysadmin' || uiRole === 'hr_specialist',
+      // Создание нового оборудования — без HR (см. EQUIPMENT_CREATE_ROLES на бэкенде).
+      canAddEquipment: () => isAdminUser || uiRole === 'sysadmin',
       canAssignEquipment: () => isAdminUser || uiRole === 'hr_specialist' || uiRole === 'materially_responsible',
       // Смена организации: только admin и HR (см. комментарий в интерфейсе AuthState).
       canSwitchOrganization: () => isAdminUser || uiRole === 'hr_specialist',
@@ -410,6 +419,7 @@ const authFallback: AuthState = {
   canManageEmployees: () => false,
   canEditOrganization: () => false,
   canManageServerCards: () => false,
+  canAddEquipment: () => false,
   canAssignEquipment: () => false,
   canSwitchOrganization: () => false,
   canManageServers: () => false,
