@@ -1,20 +1,24 @@
 import { useState } from 'react';
 import { useDataStore } from '../store/dataStore';
 import { useAuthStore } from '../store/authStore';
-import { Building2, Briefcase, MapPin, Server, Plus, Edit, Trash2, X, ListChecks } from 'lucide-react';
-import type { Department, Position, Branch, DataCenter, ActivityType } from '../types';
+import { Building2, Briefcase, MapPin, Server, Plus, Edit, Trash2, X, ListChecks, Library, Minus } from 'lucide-react';
+import type { Department, Position, Branch, DataCenter, ActivityType, CustomDirectory } from '../types';
 
 export function DirectoriesPage() {
-  const { departments, positions, activityTypes, branches, dataCenters, addDepartment, updateDepartment, deleteDepartment, addPosition, updatePosition, deletePosition, addActivityType, updateActivityType, deleteActivityType, addBranch, updateBranch, deleteBranch, addDataCenter, updateDataCenter, deleteDataCenter } = useDataStore();
+  const { departments, positions, activityTypes, branches, dataCenters, customDirectories, addDepartment, updateDepartment, deleteDepartment, addPosition, updatePosition, deletePosition, addActivityType, updateActivityType, deleteActivityType, addBranch, updateBranch, deleteBranch, addDataCenter, updateDataCenter, deleteDataCenter, addCustomDirectory, updateCustomDirectory, deleteCustomDirectory } = useDataStore();
   // Права на справочники по ролям — зеркало canEditDirectory() с бэкенда:
   // admin — всё; hr_specialist — отделы/должности/филиалы (ЦОД только просмотр);
-  // sysadmin — только ЦОД; остальные — только просмотр.
+  // sysadmin — только ЦОД; внутренние справочники — эксклюзив администратора;
+  // остальные — только просмотр.
   const { canEditDirectory } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'departments' | 'positions' | 'activity-types' | 'branches' | 'data-centers'>('departments');
-  const activeTabModel = activeTab === 'data-centers' ? 'dataCenter' : activeTab === 'branches' ? 'branch' : activeTab === 'activity-types' ? 'activityType' : activeTab === 'departments' ? 'department' : 'position';
+  const [activeTab, setActiveTab] = useState<'departments' | 'positions' | 'activity-types' | 'branches' | 'data-centers' | 'internal-directories'>('departments');
+  const activeTabModel = activeTab === 'internal-directories' ? 'customDirectory' : activeTab === 'data-centers' ? 'dataCenter' : activeTab === 'branches' ? 'branch' : activeTab === 'activity-types' ? 'activityType' : activeTab === 'departments' ? 'department' : 'position';
   const canEditActive = canEditDirectory(activeTabModel);
   const [editingItem, setEditingItem] = useState<any>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  // Внутренние справочники: редактирование набора записей вынесено в отдельную
+  // модалку (сущность + её items), а не в общий DirectoryModal
+  const [editingDirectory, setEditingDirectory] = useState<CustomDirectory | null>(null);
   // Сообщение об ошибке/успехе прямо на странице (общий error из store может быть
   // перезаписан фоновыми операциями, поэтому перехватываем результат конкретной операции)
   const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
@@ -25,6 +29,8 @@ export function DirectoriesPage() {
     { id: 'activity-types' as const, label: 'Виды деятельности', icon: ListChecks, count: activityTypes.length },
     { id: 'branches' as const, label: 'Филиалы', icon: MapPin, count: branches.length },
     { id: 'data-centers' as const, label: 'ЦОД', icon: Server, count: dataCenters.length },
+    // Подкатегория «Справочники → Внутренние справочники»
+    { id: 'internal-directories' as const, label: 'Внутренние справочники', icon: Library, count: customDirectories.length },
   ];
 
   const { error: storeError } = useDataStore();
@@ -39,6 +45,7 @@ export function DirectoriesPage() {
     else if (activeTab === 'positions') ok = await addPosition({ name: data.name.trim(), description: data.description?.trim() || null });
     else if (activeTab === 'activity-types') ok = await addActivityType({ okved: data.okved.trim(), name: data.name.trim(), isMain: Boolean(data.isMain) });
     else if (activeTab === 'branches') ok = await addBranch({ name: data.name.trim(), address: data.address?.trim() || '', description: data.description?.trim() || null });
+    else if (activeTab === 'internal-directories') ok = await addCustomDirectory({ name: data.name.trim(), description: data.description?.trim() || null, items: (data.items ?? []).map((v: string) => v.trim()).filter(Boolean) });
     else ok = await addDataCenter({ name: data.name.trim(), owner: data.owner?.trim() || '', address: data.address?.trim() || null, description: data.description?.trim() || null });
     if (ok) {
       setFeedback({ type: 'success', text: 'Запись добавлена в справочник' });
@@ -53,6 +60,10 @@ export function DirectoriesPage() {
     let ok = false;
     if (activeTab === 'activity-types') {
       return await updateActivityType(item.id, { okved: item.okved.trim(), name: item.name.trim(), isMain: Boolean(item.isMain) });
+    }
+    if (activeTab === 'internal-directories') {
+      // Сохраняем и наименование/описание, и полный набор записей справочника
+      return await updateCustomDirectory(item.id, { name: item.name.trim(), description: item.description?.trim() || null, items: (item.items ?? []).map((v: string) => v.trim()).filter(Boolean) });
     }
     const payload = { ...item, name: item.name.trim(), description: item.description?.trim() || null };
     if (activeTab === 'departments') ok = await updateDepartment(item.id, payload);
@@ -74,6 +85,7 @@ export function DirectoriesPage() {
     else if (activeTab === 'positions') ok = await deletePosition(id);
     else if (activeTab === 'activity-types') ok = await deleteActivityType(id);
     else if (activeTab === 'branches') ok = await deleteBranch(id);
+    else if (activeTab === 'internal-directories') ok = await deleteCustomDirectory(id);
     else ok = await deleteDataCenter(id);
     if (!ok) showErr('Не удалось удалить запись (возможно, она используется в карточках сотрудников)');
   };
@@ -83,7 +95,7 @@ export function DirectoriesPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-700 dark:text-gray-200">Справочники</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Управление отделами, должностями, видами деятельности, филиалами и ЦОДами</p>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Управление отделами, должностями, видами деятельности, филиалами, ЦОДами и внутренними справочниками</p>
         </div>
         {canEditActive && (
           <button onClick={() => setShowAddModal(true)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20">
@@ -232,11 +244,45 @@ export function DirectoriesPage() {
               ))}
             </div>
           )}
+
+          {/* Подкатегория «Внутренние справочники»: справочники, которые создаёт
+              администратор и использует в дальнейшем. Запись справочника =
+              наименование + набор значений (items). */}
+          {activeTab === 'internal-directories' && (
+            <div className="space-y-2">
+              {customDirectories.length === 0 && <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">Нет внутренних справочников. Администратор может создать произвольный справочник (наименование + набор записей) — он будет использоваться в дальнейшем.</p>}
+              {customDirectories.map(dir => (
+                <div key={dir.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Library className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="font-medium text-gray-700 dark:text-gray-200">
+                        {dir.name}
+                        <span className="ml-2 text-xs font-semibold text-gray-600 dark:text-gray-300 bg-gray-200 dark:bg-gray-600 px-2 py-0.5 rounded-full align-middle">{dir.items.length}</span>
+                      </p>
+                      {dir.description && <p className="text-sm text-gray-600 dark:text-gray-400">{dir.description}</p>}
+                      {dir.items.length > 0 && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                          {dir.items.slice(0, 5).map(i => i.value).join(', ')}{dir.items.length > 5 ? ` и ещё ${dir.items.length - 5}…` : ''}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {canEditActive && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button onClick={() => setEditingDirectory(dir)} className="text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 p-1" title="Редактировать справочник и его записи"><Edit className="w-4 h-4" /></button>
+                      <button onClick={() => { if (confirm(`Удалить внутренний справочник «${dir.name}» вместе со всеми записями?`)) handleDelete(dir.id); }} className="text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 p-1"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Add/Edit Modal */}
-      {(showAddModal || editingItem) && (
+      {(showAddModal || (editingItem && activeTab !== 'internal-directories')) && (
         <DirectoryModal
           key={editingItem ? `edit-${editingItem.id}` : 'add'}
           item={editingItem}
@@ -246,6 +292,32 @@ export function DirectoriesPage() {
             // модалка закрывается сама только при успехе — при ошибке данные остаются в форме
             if (editingItem) return handleEdit({ ...editingItem, ...data });
             return handleAdd(data);
+          }}
+        />
+      )}
+
+      {/* Модалка внутреннего справочника: наименование + описание + список записей */}
+      {(showAddModal && activeTab === 'internal-directories') && (
+        <CustomDirectoryModal
+          key="add-directory"
+          directory={null}
+          onClose={() => setShowAddModal(false)}
+          onSave={async (data) => {
+            const ok = await handleAdd(data);
+            if (ok) setShowAddModal(false);
+            return ok;
+          }}
+        />
+      )}
+      {editingDirectory && (
+        <CustomDirectoryModal
+          key={`edit-directory-${editingDirectory.id}`}
+          directory={editingDirectory}
+          onClose={() => setEditingDirectory(null)}
+          onSave={async (data) => {
+            const ok = await handleEdit({ ...editingDirectory, name: data.name, description: data.description, items: data.items });
+            if (ok) setEditingDirectory(null);
+            return ok;
           }}
         />
       )}
@@ -305,6 +377,94 @@ function DirectoryModal({ item, type, onClose, onSave }: { item: any; type: stri
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Отмена</button>
             <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">{item ? 'Сохранить' : 'Добавить'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Модалка внутреннего справочника (подкатегория «Внутренние справочники»)
+// Наименование + описание + редактируемый набор записей (items).
+// Доступ на сохранение — только администратор (проверяется и на бэкенде).
+// ============================================================
+function CustomDirectoryModal({ directory, onClose, onSave }: {
+  directory: CustomDirectory | null;
+  onClose: () => void;
+  onSave: (data: { name: string; description: string | null; items: string[] }) => Promise<boolean>;
+}) {
+  const [name, setName] = useState(directory?.name ?? '');
+  const [description, setDescription] = useState(directory?.description ?? '');
+  const [items, setItems] = useState<string[]>(directory ? directory.items.map(i => i.value) : []);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const addItem = () => {
+    const v = draft.trim();
+    if (!v) return;
+    // значения уникальны внутри справочника (зеркало бэкенда)
+    if (!items.some(x => x.toLowerCase() === v.toLowerCase())) setItems(prev => [...prev, v]);
+    setDraft('');
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (saving) return;
+    if (!name.trim()) { alert('Укажите наименование внутреннего справочника'); return; }
+    // незакоммиченное значение из поля ввода добавляем в список
+    const finalItems = [...items];
+    const d = draft.trim();
+    if (d && !finalItems.some(x => x.toLowerCase() === d.toLowerCase())) finalItems.push(d);
+    setSaving(true);
+    const ok = await onSave({ name, description: description.trim() || null, items: finalItems });
+    if (!ok) setSaving(false); // при неудаче оставляем модалку открытой с введёнными данными
+  };
+
+  const fieldCls = 'w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200';
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-xl font-bold text-gray-700 dark:text-gray-200">{directory ? 'Редактировать внутренний справочник' : 'Новый внутренний справочник'}</h2>
+          <button onClick={onClose} className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"><X className="w-6 h-6" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Наименование<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Напр.: Инвентарные группы" className={fieldCls} required autoFocus /></div>
+          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Описание</label><textarea value={description ?? ''} onChange={(e) => setDescription(e.target.value)} className={fieldCls} rows={2} placeholder="Для чего будет использоваться справочник" /></div>
+
+          {/* Набор записей справочника */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Записи справочника</label>
+            <div className="flex gap-2 mb-2">
+              <input
+                type="text"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addItem(); } }}
+                placeholder="Новая запись и Enter"
+                className={fieldCls}
+              />
+              <button type="button" onClick={addItem} className="shrink-0 px-3 py-2 border border-indigo-200 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30"><Plus className="w-4 h-4" /></button>
+            </div>
+            {items.length === 0 ? (
+              <p className="text-xs text-gray-500 dark:text-gray-400 py-2 text-center border border-dashed border-gray-200 dark:border-gray-600 rounded-lg">Записей пока нет — добавьте значения по одной</p>
+            ) : (
+              <ul className="max-h-48 overflow-y-auto space-y-1 border border-gray-200 dark:border-gray-600 rounded-lg p-2">
+                {items.map((v, idx) => (
+                  <li key={`${v}-${idx}`} className="flex items-center justify-between gap-2 px-2 py-1.5 bg-gray-50 dark:bg-gray-700 rounded">
+                    <span className="text-sm text-gray-700 dark:text-gray-200 truncate">{v}</span>
+                    <button type="button" onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))} className="shrink-0 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400"><Minus className="w-4 h-4" /></button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Отмена</button>
+            <button type="submit" disabled={saving} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60">{directory ? 'Сохранить' : 'Создать справочник'}</button>
           </div>
         </form>
       </div>
