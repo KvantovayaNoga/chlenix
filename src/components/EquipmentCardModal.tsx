@@ -117,6 +117,16 @@ export function EquipmentCardModal({ equipmentId, onClose }: { equipmentId: stri
             ) : (
               <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">Не закреплено</span>
             )}
+            {/* МОЛ — материально ответственное лицо, на подотчёте которого числится оборудование */}
+            {(() => {
+              const mol = (eq as any).materiallyResponsibleEmployee;
+              const molName = mol
+                ? [mol.lastName, mol.firstName, mol.middleName].filter(Boolean).join(' ')
+                : (() => { const e = employees.find((e) => e.id === (eq as any).materiallyResponsibleEmployeeId); return e ? `${e.lastName} ${e.firstName}` : null; })();
+              return molName ? (
+                <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 inline-flex items-center gap-1" title="Материально ответственное лицо — сотрудник, на подотчёте которого числится это оборудование"><User className="w-3 h-3" /> МОЛ: {molName}</span>
+              ) : null;
+            })()}
             {eq.writeOffDate && <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">Списано {new Date(eq.writeOffDate).toLocaleDateString('ru-RU')}</span>}
           </div>
 

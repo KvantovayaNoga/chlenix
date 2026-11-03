@@ -220,6 +220,9 @@ export interface Equipment {
   assignedToEmployeeId: string | null;
   /** ФИО сотрудника, закреплённого за оборудованием (сервер отдаёт вложенный объект) */
   assignedToEmployee?: { id: string; firstName: string; lastName: string; middleName?: string } | null;
+  /** МОЛ — материально ответственное лицо, на подотчёте которого числится оборудование */
+  materiallyResponsibleEmployeeId?: string | null;
+  materiallyResponsibleEmployee?: { id: string; firstName: string; lastName: string; middleName?: string } | null;
   // Расположение: филиал (branchId) ИЛИ внешний/облачный ЦОД (dataCenterId).
   // Для физической техники — всегда филиал; ЦОД доступен кластерам виртуализации.
   branchId: string | null;
@@ -300,6 +303,9 @@ export interface VirtualMachine {
   diskGB: number;
   responsibleEmployeeId: string | null;
   serviceResponsibleEmployeeId: string | null;
+  /** МОЛ — материально ответственное лицо, на подотчёте которого числится ВМ */
+  materiallyResponsibleEmployeeId?: string | null;
+  materiallyResponsibleEmployee?: { id: string; firstName: string; lastName: string; middleName?: string } | null;
   networkInterfaces: NetworkInterface[];
   status: 'running' | 'stopped' | 'maintenance' | 'decommissioned';
   /** Роль ВМ в системе виртуализации (например, консоль управления — vCenter как ВМ) */

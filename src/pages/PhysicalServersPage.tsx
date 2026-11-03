@@ -15,7 +15,7 @@ import { VmCountBadge } from '../components/VmCountBadge';
 import type { StorageSystemType, StorageProtocol } from '../types';
 
 export function PhysicalServersPage() {
-  const { equipment, branches, dataCenters, addEquipment, updateEquipment, deleteEquipment, getVMsByHost } = useDataStore();
+  const { equipment, employees, branches, dataCenters, addEquipment, updateEquipment, deleteEquipment, getVMsByHost } = useDataStore();
   // Права синхронизированы с бэкендом: физический сервер/кластер — это Equipment,
   // создание/редактирование — admin|hr_specialist (любая техника) + sysadmin
   // (только инфраструктурная, см. isInfraEquipment), удаление — SERVER_ROLES (admin|sysadmin).
@@ -160,6 +160,7 @@ export function PhysicalServersPage() {
                   );
                 })()}
                 <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Расположение:</span><span className="text-gray-800 dark:text-gray-200">{getLocationName(server)} {server.room && `, ${server.room}`}</span></div>
+                <div className="flex justify-between" title="Материально ответственное лицо — сотрудник, на подотчёте которого числится сервер"><span className="text-gray-500 dark:text-gray-400">МОЛ:</span><span className="text-gray-800 dark:text-gray-200">{(() => { const m: any = (server as any).materiallyResponsibleEmployee; if (m) return [m.lastName, m.firstName].filter(Boolean).join(' '); const e = employees.find(e => e.id === (server as any).materiallyResponsibleEmployeeId); return e ? `${e.lastName} ${e.firstName}` : '—'; })()}</span></div>
                 {!isCluster && (
                   <div className="flex justify-between items-center">
                     <span className="text-gray-500 dark:text-gray-400">ВМ на сервере:</span>
@@ -269,6 +270,7 @@ function ServerModal({ server, onClose, onSave, branches, dataCenters, allEquipm
     name: server?.name || '', serialNumber: server?.serialNumber || '', inventoryNumber: server?.inventoryNumber || '',
     brand: server?.brand || '', model: server?.model || '', purchaseDate: server?.purchaseDate || new Date().toISOString().split('T')[0],
     condition: server?.condition || 'good', assignedToEmployeeId: server?.assignedToEmployeeId || null,
+    materiallyResponsibleEmployeeId: (server as any)?.materiallyResponsibleEmployeeId || null,
     branchId: server?.branchId || '', dataCenterId: server?.dataCenterId || '', floor: server?.floor || '', room: server?.room || '',
     cpuCores: server?.cpuCores || null, ramGB: server?.ramGB || null, diskGB: server?.diskGB || null,
     serverRole: (server?.serverRole || '') as ServerRole | '',
@@ -502,6 +504,12 @@ function ServerModal({ server, onClose, onSave, branches, dataCenters, allEquipm
             onChange={(id) => setFormData(p => ({ ...p, assignedToEmployeeId: id }))}
             label="Ответственный"
             placeholder="Поиск сотрудника..."
+          />
+          <EmployeeSearch
+            value={formData.materiallyResponsibleEmployeeId || null}
+            onChange={(id) => setFormData(p => ({ ...p, materiallyResponsibleEmployeeId: id }))}
+            label="МОЛ (материально ответственное лицо)"
+            placeholder="Сотрудник, на подотчёте которого числится сервер..."
           />
           <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Примечания</label><textarea value={formData.notes} onChange={(e) => setFormData(p => ({ ...p, notes: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" rows={2} /></div>
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">

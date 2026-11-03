@@ -217,6 +217,7 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
   provisionedOn: 'назначенный хост',
   responsibleEmployeeId: 'ответственный (инфраструктура)',
   serviceResponsibleEmployeeId: 'ответственный (сервисы)',
+  materiallyResponsibleEmployeeId: 'МОЛ (мат. ответственное лицо)',
   description: 'описание',
   address: 'адрес',
   shortName: 'краткое наименование',
@@ -1095,6 +1096,8 @@ function publicEquipmentBrief(eq: any): any {
   out.createdAt = isoDate(out.createdAt);
   out.updatedAt = isoDate(out.updatedAt);
   if ('assignedToEmployee' in out) out.assignedToEmployee = briefEmp(out.assignedToEmployee);
+  // МОЛ — материально ответственное лицо, на подотчёте которого числится оборудование
+  if ('materiallyResponsibleEmployee' in out) out.materiallyResponsibleEmployee = briefEmp(out.materiallyResponsibleEmployee);
   if ('branch' in out && out.branch) out.branch = { id: out.branch.id, name: out.branch.name };
   if ('dataCenter' in out && out.dataCenter) out.dataCenter = { id: out.dataCenter.id, name: out.dataCenter.name };
   delete out.assignedToEmployeeIdRaw;
@@ -1108,6 +1111,7 @@ function publicVM(vm: any): any {
     hostServer: vm.hostServer ? publicEquipmentBrief(vm.hostServer) : (vm.hostServer === null ? null : vm.hostServer),
     responsibleEmployee: briefEmp(vm.responsibleEmployee),
     serviceResponsibleEmployee: briefEmp(vm.serviceResponsibleEmployee),
+    materiallyResponsibleEmployee: briefEmp(vm.materiallyResponsibleEmployee),
     networkInterfaces: (vm.networkInterfaces || []).map((ni: any) => ({ ...ni, createdAt: isoDate(ni.createdAt), updatedAt: isoDate(ni.updatedAt) })),
     services: (vm.services || []).map((sv: any) => ({ ...sv, createdAt: isoDate(sv.createdAt), updatedAt: isoDate(sv.updatedAt) })),
   };
@@ -1314,6 +1318,9 @@ const equipmentSchema = z.object({
   writeOffDate: z.preprocess((v) => (emptyToNull(v) === null ? undefined : v), z.coerce.date().optional().nullable()),
   condition: z.enum(['new', 'good', 'satisfactory', 'needs_repair', 'written_off']).optional(),
   assignedToEmployeeId: strOrEmpty(z.string()),
+  // МОЛ (материально ответственное лицо) — сотрудник, на подотчёте которого
+  // числится это оборудование
+  materiallyResponsibleEmployeeId: strOrEmpty(z.string()),
   // Место размещения: филиал (branchId) или ЦОД (dataCenterId).
   // Для физической техники обязателен филиал; для кластеров допустим ЦОД
   // (арендованные/облачные мощности) — проверка «ровно одного из двух» ниже по serverRole.
@@ -1338,7 +1345,7 @@ const equipmentSchema = z.object({
   notes: strOrEmpty(z.string()),
 });
 
-const equipmentInclude = { assignedToEmployee: true, branch: true, dataCenter: true } as const;
+const equipmentInclude = { assignedToEmployee: true, materiallyResponsibleEmployee: true, branch: true, dataCenter: true } as const;
 
 // ============================================================
 // Серверы виртуализации: роли, кластеры и проверки целостности
@@ -1504,6 +1511,7 @@ app.post('/api/equipment', authMiddleware, requireRole([...EQUIPMENT_MANAGE_ROLE
     return c.json({ error: 'Выберите филиал' }, 400);
   }
   const assignedToEmployeeId = await resolveRef('employee', data.assignedToEmployeeId);
+  const materiallyResponsibleEmployeeId = await resolveRef('employee', data.materiallyResponsibleEmployeeId);
 
   const duplicate = data.inventoryNumber ? await prisma.equipment.findUnique({ where: { inventoryNumber: data.inventoryNumber } }) : null;
   if (duplicate) {
@@ -1549,6 +1557,7 @@ app.post('/api/equipment', authMiddleware, requireRole([...EQUIPMENT_MANAGE_ROLE
       dataCenterId,
       locationType,
       assignedToEmployeeId,
+      materiallyResponsibleEmployeeId,
       purchaseDate: normalizeDateField(data.purchaseDate),
       writeOffDate: normalizeDateField(data.writeOffDate),
       updatedById: currentUser.userId,
@@ -1622,6 +1631,7 @@ app.put('/api/equipment/:id', authMiddleware, requireRole([...EQUIPMENT_MANAGE_R
     newData.locationType = newData.dataCenterId ? 'data_center' : newData.branchId ? 'branch' : null;
   }
   if ('assignedToEmployeeId' in newData) newData.assignedToEmployeeId = await resolveRef('employee', newData.assignedToEmployeeId);
+  if ('materiallyResponsibleEmployeeId' in newData) newData.materiallyResponsibleEmployeeId = await resolveRef('employee', newData.materiallyResponsibleEmployeeId);
   if ('purchaseDate' in newData) newData.purchaseDate = normalizeDateField(newData.purchaseDate);
   if ('writeOffDate' in newData) newData.writeOffDate = normalizeDateField(newData.writeOffDate);
   if ('serverRole' in newData) newData.serverRole = newData.serverRole || null;
@@ -1792,6 +1802,8 @@ const vmSchema = z.object({
   diskGB: z.number().min(0).optional(),
   responsibleEmployeeId: z.string().optional().nullable(),
   serviceResponsibleEmployeeId: z.string().optional().nullable(),
+  // МОЛ (материально ответственное лицо) — сотрудник, на подотчёте которого числится ВМ
+  materiallyResponsibleEmployeeId: strOrEmpty(z.string()),
   status: z.enum(['running', 'stopped', 'maintenance', 'decommissioned']).optional(),
   // Пустая строка / null = «роль не назначена» (автономный сервер без роли в
   // виртуализации тоже может быть хостом для ВМ) — нормализуем в null, чтобы
@@ -1808,6 +1820,7 @@ const vmInclude = {
   hostServer: true,
   responsibleEmployee: true,
   serviceResponsibleEmployee: true,
+  materiallyResponsibleEmployee: true,
   networkInterfaces: true,
   services: true,
 } as const;
@@ -1864,6 +1877,7 @@ app.post('/api/virtual-machines', authMiddleware, requireRole(SERVER_ROLES), asy
   const hostServerId = await resolveRef('equipment', data.hostServerId);
   const responsibleEmployeeId = await resolveRef('employee', data.responsibleEmployeeId);
   const serviceResponsibleEmployeeId = await resolveRef('employee', data.serviceResponsibleEmployeeId);
+  const materiallyResponsibleEmployeeId = await resolveRef('employee', data.materiallyResponsibleEmployeeId);
   // Хост обязателен: без него ВМ «нигде не живёт» и её нельзя ни разместить,
   // ни отнести к кластеру (кластер определяется автоматически по хосту).
   if (!hostServerId) {
@@ -1897,6 +1911,7 @@ app.post('/api/virtual-machines', authMiddleware, requireRole(SERVER_ROLES), asy
       hostServerId,
       responsibleEmployeeId,
       serviceResponsibleEmployeeId,
+      materiallyResponsibleEmployeeId,
       updatedById: currentUser.userId,
     },
     include: vmInclude,
@@ -1939,6 +1954,7 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(SERVER_ROLES), 
   }
   if ('responsibleEmployeeId' in newData) newData.responsibleEmployeeId = await resolveRef('employee', newData.responsibleEmployeeId);
   if ('serviceResponsibleEmployeeId' in newData) newData.serviceResponsibleEmployeeId = await resolveRef('employee', newData.serviceResponsibleEmployeeId);
+  if ('materiallyResponsibleEmployeeId' in newData) newData.materiallyResponsibleEmployeeId = await resolveRef('employee', newData.materiallyResponsibleEmployeeId);
   if ('serverRole' in newData) newData.serverRole = newData.serverRole || null;
   if ('provisionedOn' in newData) newData.provisionedOn = newData.provisionedOn || null;
   newData.updatedById = currentUser.userId;

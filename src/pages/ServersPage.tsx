@@ -311,6 +311,7 @@ export function ServersPage() {
                 <div><span className="text-gray-600 dark:text-gray-400 text-xs">Ресурсы:</span><p className="font-medium text-gray-700 dark:text-gray-200">{vm.cpuCores} CPU / {vm.ramGB} ГБ / {vm.diskGB} ГБ</p></div>
                 <div><span className="text-gray-600 dark:text-gray-400 text-xs">Ответ. (инфра):</span><p className="font-medium text-gray-700 dark:text-gray-200">{getEmployeeName(vm.responsibleEmployeeId)}</p></div>
                 <div><span className="text-gray-600 dark:text-gray-400 text-xs">Ответ. (сервисы):</span><p className="font-medium text-gray-700 dark:text-gray-200">{getEmployeeName(vm.serviceResponsibleEmployeeId)}</p></div>
+                <div title="Материально ответственное лицо — сотрудник, на подотчёте которого числится ВМ"><span className="text-gray-600 dark:text-gray-400 text-xs">МОЛ:</span><p className="font-medium text-gray-700 dark:text-gray-200">{(() => { const m: any = (vm as any).materiallyResponsibleEmployee; if (m) return [m.lastName, m.firstName].filter(Boolean).join(' '); const mid = (vm as any).materiallyResponsibleEmployeeId; return mid ? getEmployeeName(mid) : '—'; })()}</p></div>
               </div>
               {/* Network Interfaces */}
               <div className="flex flex-wrap gap-2 mb-2">
@@ -460,6 +461,7 @@ function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, services, onA
           <div className="grid grid-cols-2 gap-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
             <div><p className="text-xs text-gray-400 mb-1">Ответственный (инфраструктура)</p><p className="font-medium text-gray-200">{getEmployeeName(vm.responsibleEmployeeId)}</p></div>
             <div><p className="text-xs text-gray-400 mb-1">Ответственный (сервисы/middleware)</p><p className="font-medium text-gray-200">{getEmployeeName(vm.serviceResponsibleEmployeeId)}</p></div>
+            <div title="Материально ответственное лицо — сотрудник, на подотчёте которого числится ВМ"><p className="text-xs text-gray-400 mb-1">МОЛ (мат. ответственное лицо)</p><p className="font-medium text-gray-200">{(() => { const m: any = (vm as any).materiallyResponsibleEmployee; if (m) return [m.lastName, m.firstName].filter(Boolean).join(' '); const mid = (vm as any).materiallyResponsibleEmployeeId; return mid ? getEmployeeName(mid) : '—'; })()}</p></div>
           </div>
 
           <div>
@@ -533,6 +535,7 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
     name: vm?.name || '', hostname: vm?.hostname || '', type: vm?.type || 'virtual', hostServerId: vm?.hostServerId || null,
     os: vm?.os || '', cpuCores: vm?.cpuCores || 2, ramGB: vm?.ramGB || 4, diskGB: vm?.diskGB || 50,
     responsibleEmployeeId: vm?.responsibleEmployeeId || null, serviceResponsibleEmployeeId: vm?.serviceResponsibleEmployeeId || null,
+    materiallyResponsibleEmployeeId: (vm as any)?.materiallyResponsibleEmployeeId || null,
     status: vm?.status || 'running', notes: vm?.notes || '',
     serverRole: (vm?.serverRole || '') as ServerRole | '',
     provisionedOn: vm?.provisionedOn || '',
@@ -611,6 +614,12 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
               value={formData.serviceResponsibleEmployeeId}
               onChange={(id) => setFormData(p => ({ ...p, serviceResponsibleEmployeeId: id }))}
               label="Ответственный (сервисы)"
+            />
+            <EmployeeSearch
+              value={formData.materiallyResponsibleEmployeeId}
+              onChange={(id) => setFormData(p => ({ ...p, materiallyResponsibleEmployeeId: id }))}
+              label="МОЛ (материально ответственное лицо)"
+              placeholder="Сотрудник, на подотчёте которого числится ВМ..."
             />
           </div>
           <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Примечания</label><textarea value={formData.notes} onChange={(e) => setFormData(p => ({ ...p, notes: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" rows={2} /></div>

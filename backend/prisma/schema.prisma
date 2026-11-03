@@ -204,8 +204,13 @@ model Employee {
   linkedUser   User?         @relation("EmployeeUser", fields: [userId], references: [id])
 
   equipment            Equipment[]           @relation("AssignedEquipment")
+  // Оборудование/имущество, числящееся за сотрудником как за МОЛ (материально
+  // ответственное лицо) — на подотчёте
+  molEquipment         Equipment[]           @relation("MolEquipment")
   vmResponsible        VirtualMachine[]      @relation("VMInfraResponsible")
   vmServiceResponsible VirtualMachine[]      @relation("VMServiceResponsible")
+  // Виртуальные машины, числящиеся за сотрудником как за МОЛ
+  molVirtualMachines   VirtualMachine[]      @relation("MolVirtualMachine")
   assignments          EquipmentAssignment[]
 
   @@index([departmentId])
@@ -234,6 +239,10 @@ model Equipment {
   writeOffDate         DateTime?         @map("write_off_date")
   condition            Condition         @default(good)
   assignedToEmployeeId String?           @map("assigned_to_employee_id")
+  // МОЛ (материально ответственное лицо) — сотрудник, на подотчёте которого
+  // числится это оборудование. Независимо от «закреплено за»: один сотрудник
+  // может пользоваться техникой, а материальную ответственность несёт другой.
+  materiallyResponsibleEmployeeId String? @map("materially_responsible_employee_id")
   // Место размещения: филиал организации (branchId, обязателен для физической техники)
   // ИЛИ внешний/облачный ЦОД (dataCenterId — используется кластерами на арендованных мощностях).
   // Для кластеров заполнен ровно один из двух: locationType указывает, какой именно.
@@ -271,6 +280,8 @@ model Equipment {
   // Связи
   organization       Organization? @relation(fields: [organizationId], references: [id])
   assignedToEmployee Employee?     @relation("AssignedEquipment", fields: [assignedToEmployeeId], references: [id])
+  // МОЛ — материально ответственное лицо, на подотчёте которого числится оборудование
+  materiallyResponsibleEmployee Employee? @relation("MolEquipment", fields: [materiallyResponsibleEmployeeId], references: [id])
   branch             Branch?       @relation(fields: [branchId], references: [id])
   dataCenter         DataCenter?   @relation(fields: [dataCenterId], references: [id])
   updatedBy          User?         @relation("EquipmentUpdater", fields: [updatedById], references: [id])
@@ -287,6 +298,7 @@ model Equipment {
   @@index([parentClusterId])
   @@index([category])
   @@index([assignedToEmployeeId])
+  @@index([materiallyResponsibleEmployeeId])
   @@index([condition])
   @@index([branchId])
   @@index([dataCenterId])
@@ -335,6 +347,9 @@ model VirtualMachine {
   diskGB                       Float    @default(50) @map("disk_gb")
   responsibleEmployeeId        String?  @map("responsible_employee_id")
   serviceResponsibleEmployeeId String?  @map("service_responsible_employee_id")
+  // МОЛ (материально ответственное лицо) — сотрудник, на подотчёте которого
+  // числится эта виртуальная машина (смежная сущность оборудования)
+  materiallyResponsibleEmployeeId String? @map("materially_responsible_employee_id")
   status                       VMStatus @default(running)
   // Роль ВМ в системе виртуализации (например, консоль управления — vCenter как ВМ)
   serverRole                   String?  @map("server_role")
@@ -350,6 +365,8 @@ model VirtualMachine {
   hostServer                 Equipment?    @relation("HostServer", fields: [hostServerId], references: [id])
   responsibleEmployee        Employee?     @relation("VMInfraResponsible", fields: [responsibleEmployeeId], references: [id])
   serviceResponsibleEmployee Employee?     @relation("VMServiceResponsible", fields: [serviceResponsibleEmployeeId], references: [id])
+  // МОЛ — материально ответственное лицо, на подотчёте которого числится ВМ
+  materiallyResponsibleEmployee Employee?  @relation("MolVirtualMachine", fields: [materiallyResponsibleEmployeeId], references: [id])
   updatedBy                  User?         @relation("VMUpdater", fields: [updatedById], references: [id])
 
   networkInterfaces NetworkInterface[]
@@ -359,6 +376,7 @@ model VirtualMachine {
   @@index([hostServerId])
   @@index([responsibleEmployeeId])
   @@index([serviceResponsibleEmployeeId])
+  @@index([materiallyResponsibleEmployeeId])
   @@index([status])
   @@map("virtual_machines")
 }

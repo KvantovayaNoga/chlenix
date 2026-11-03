@@ -214,6 +214,7 @@ export function EquipmentPage() {
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400">Инв. №</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400">Сост.</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400">Закреплено за</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400" title="Материально ответственное лицо — сотрудник, на подотчёте которого числится оборудование">МОЛ</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400">Обновлено</th>
                 {canManageEmployees() && <th className="text-right px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400">Действия</th>}
               </tr>
@@ -250,6 +251,7 @@ export function EquipmentPage() {
                       <span className={`px-2 py-1 rounded text-xs font-medium ${condition.color}`}>{condition.label}</span>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600">{getEmployeeName(eq.assignedToEmployeeId)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{eq.materiallyResponsibleEmployee ? `${eq.materiallyResponsibleEmployee.lastName} ${eq.materiallyResponsibleEmployee.firstName}` : eq.materiallyResponsibleEmployeeId ? getEmployeeName(eq.materiallyResponsibleEmployeeId) : '—'}</td>
                     <td className="px-4 py-3">
                       <div className="text-xs text-gray-500">
                         <p>{new Date(eq.updatedAt).toLocaleDateString('ru-RU')}</p>
@@ -320,7 +322,7 @@ function EquipmentModal({
     equipment || {
       name: '', category: 'computer', serialNumber: '', inventoryNumber: '',
       brand: '', model: '', purchaseDate: new Date().toISOString().split('T')[0], writeOffDate: null,
-      condition: 'good', assignedToEmployeeId: null, branchId: '', floor: '', room: '', notes: '',
+      condition: 'good', assignedToEmployeeId: null, materiallyResponsibleEmployeeId: null, branchId: '', floor: '', room: '', notes: '',
     }
   );
 
@@ -352,6 +354,14 @@ function EquipmentModal({
                 onChange={(id) => handleChange('assignedToEmployeeId', id)}
                 label="Закреплено за сотрудником"
                 placeholder="Поиск сотрудника..."
+              />
+            </div>
+            <div className="md:col-span-2">
+              <EmployeeSearch
+                value={formData.materiallyResponsibleEmployeeId || null}
+                onChange={(id) => handleChange('materiallyResponsibleEmployeeId', id)}
+                label="МОЛ (материально ответственное лицо)"
+                placeholder="Сотрудник, на подотчёте которого числится оборудование..."
               />
             </div>
             <div>
