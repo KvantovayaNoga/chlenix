@@ -247,6 +247,14 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
   responsibleEmployeeId: 'ответственный (инфраструктура)',
   serviceResponsibleEmployeeId: 'ответственный (сервисы)',
   materiallyResponsibleEmployeeId: 'МОЛ (мат. ответственное лицо)',
+  // «Место размещения» оборудования: заполнен ровно один из двух ключей
+  // (branchId ИЛИ dataCenterId). Пишем в историю одной строкой с названием,
+  // а не двумя записями («филиал: было X → стало —» + «ЦОД: было — → стало Y»).
+  branchId: 'место размещения',
+  dataCenterId: 'место размещения',
+  owner: 'владелец/эксплуатирующая организация',
+  birthDate: 'дата рождения',
+  userId: 'привязанный пользователь',
   description: 'описание',
   address: 'адрес',
   shortName: 'краткое наименование',
@@ -289,6 +297,7 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
 
 // Человекочитаемые переводы значений enum-полей (в базе значения хранятся по-английски).
 const VALUE_TRANSLATIONS: Record<string, Record<string, string>> = {
+  // Синхронно с enum Condition (prisma) и подписями в EquipmentCardModal.
   condition: {
     new: 'новый',
     good: 'хорошее',
@@ -296,6 +305,7 @@ const VALUE_TRANSLATIONS: Record<string, Record<string, string>> = {
     needs_repair: 'требует ремонта',
     written_off: 'списано',
   },
+  // Синхронно с enum EquipmentCategory.
   category: {
     computer: 'компьютер',
     monitor: 'монитор',
@@ -308,6 +318,7 @@ const VALUE_TRANSLATIONS: Record<string, Record<string, string>> = {
     phone: 'телефон',
     other: 'прочее',
   },
+  // Роли в виртуализации (Equipment.serverRole / VirtualMachine.serverRole).
   serverRole: {
     hypervisor_host: 'хост гипервизора',
     storage: 'СХД',
@@ -315,24 +326,55 @@ const VALUE_TRANSLATIONS: Record<string, Record<string, string>> = {
     standalone: 'автономный сервер',
     cluster: 'кластер',
   },
+  // Статус ВМ (enum VMStatus).
   status: {
     running: 'запущена',
     stopped: 'остановлена',
     maintenance: 'в обслуживании',
     decommissioned: 'выведена из эксплуатации',
   },
+  // Тип ВМ (enum VMType).
   type: {
     virtual: 'виртуальная машина',
     container: 'контейнер',
     cloud: 'облачная',
   },
+  // Роли пользователей системы — синхронно с enum Role и ROLE_LABELS фронтенда.
   role: {
-    user: 'пользователь',
-    mol: 'МОЛ',
-    sysadmin: 'системный администратор',
-    hr: 'HR / кадровик',
-    leader: 'начальник отдела',
-    admin: 'администратор',
+    admin: 'Администратор',
+    hr_specialist: 'Специалист по кадрам',
+    sysadmin: 'Системный администратор',
+    materially_responsible: 'Мат. ответственное лицо',
+    viewer: 'Пользователь',
+  },
+  // Тема оформления профиля.
+  theme: {
+    light: 'светлая',
+    dark: 'тёмная',
+    system: 'системная',
+  },
+  // Тип СХД (Equipment.storageType).
+  storageType: {
+    san: 'SAN',
+    nas: 'NAS',
+    hci: 'HCI',
+  },
+  // Протокол СХД (Equipment.storageProtocol).
+  storageProtocol: {
+    iscsi: 'iSCSI',
+    fc: 'Fibre Channel',
+    fcoe: 'FCoE',
+    nfs: 'NFS',
+    smb: 'SMB',
+    sas: 'SAS',
+    nvmeof: 'NVMe-oF',
+    vsan: 'vSAN',
+    ceph: 'Ceph',
+  },
+  // Тип местоположения (Equipment.locationType).
+  locationType: {
+    branch: 'филиал',
+    data_center: 'ЦОД',
   },
 };
 
@@ -366,24 +408,24 @@ const REF_FIELD_MODELS: Record<string, RefModel | RefModel[]> = {
   serviceResponsibleEmployeeId: 'employee',
   branchId: 'branch',
   dataCenterId: 'dataCenter',
-  // Поле «место размещения» у оборудования: заполнен ровно один из двух
-  // внешних ключей (филиал ИЛИ ЦОД), поэтому разрешаем оба кандидата.
-  locationType: ['branch', 'dataCenter'],
   departmentId: 'department',
   positionId: 'position',
   organizationId: 'organization',
   parentClusterId: 'equipment',
   hostServerId: 'equipment',
+  // Привязка учётной записи в карточке сотрудника: пишем ФИО пользователя, а не uuid.
+  userId: 'user',
 };
 
 // Краткая человекочитаемая подпись записи по имени модели справочника.
-async function refDisplayName(model: RefModel, id: string): Promise<string | null> {
+async function refDisplayName(model: RefModel | 'user', id: string): Promise<string | null> {
   const rec: any = await (prisma as any)[model].findUnique({ where: { id } });
   if (!rec) return null;
   if (model === 'employee') {
     const fio = [rec.lastName, rec.firstName, rec.middleName].filter(Boolean).join(' ');
     return fio || rec.name || 'сотрудник (удалён)';
   }
+  if (model === 'user') return rec.fullName || 'пользователь (без имени)';
   if (model === 'equipment') return rec.name || 'оборудование (без имени)';
   return rec.name || rec.shortName || null;
 }
@@ -401,6 +443,27 @@ async function historyDisplayValue(key: string, value: any): Promise<string> {
     return 'запись удалена';
   }
   return displayValue(key, value);
+}
+
+// Человекочитаемое «место размещения» оборудования: филиал ИЛИ ЦОД одной
+// строкой («филиал: Северный», «ЦОД: Москва-1»), иначе история показывала бы
+// два отдельных изменения с «—» и название без указания типа.
+async function locationLabel(oldObj: Record<string, any>, newObj: Record<string, any>): Promise<string | null> {
+  const resolve = async (obj: Record<string, any>): Promise<string> => {
+    if (obj.dataCenterId) {
+      const name = await historyDisplayValue('dataCenterId', obj.dataCenterId);
+      return `ЦОД: ${name}`;
+    }
+    if (obj.branchId) {
+      const name = await historyDisplayValue('branchId', obj.branchId);
+      return `филиал: ${name}`;
+    }
+    return '—';
+  };
+  const before = await resolve(oldObj);
+  const after = await resolve(newObj);
+  if (before === after) return null;
+  return `${before} → ${after}`;
 }
 
 // Поля с бинарными/большими данными (data-URL аватара/логотипа): в историю
@@ -425,6 +488,11 @@ async function applyUpdate(opts: {
   clusterMembersAfter?: string[];
 }) {
   const changes: string[] = [];
+  // Флаги полей, чьи изменения уже записаны в историю (для служебного
+  // аудит-логина «Обновлено: ...»). Записи HistoryRecord создаются сразу в
+  // момент обнаружения изменения — так сбой на одном поле не «съедает»
+  // историю остальных.
+  const changedKeys = new Set<string>();
   const norm = (v: any) => {
     if (v instanceof Date) return v.toISOString();
     if (v === undefined || v === null || v === '') return '';
@@ -432,7 +500,8 @@ async function applyUpdate(opts: {
   };
   // Записывает в историю одно изменение в человекочитаемом виде:
   // «поле: было X → стало Y» (без uuid — значения разрешаются через
-  // historyDisplayValue).
+  // historyDisplayValue). Ошибку БД пробрасываем наружу — вызывающий код
+  // перехватывает её и пишет warning, не прерывая обновление.
   const recordChange = async (fieldName: string, oldValue: string, newValue: string) => {
     changes.push(`${fieldName}: "${oldValue}" → "${newValue}"`);
     await prisma.historyRecord.create({
@@ -449,11 +518,15 @@ async function applyUpdate(opts: {
   };
   for (const key of TRACKED_KEYS) {
     if (!(key in opts.newData)) continue;
+    // «Место размещения» обрабатывается ниже одной объединённой записью
+    // (филиал ИЛИ ЦОД), пропускаем его ключи в обычном diff.
+    if (opts.entityType === 'equipment' && (key === 'branchId' || key === 'dataCenterId')) continue;
     const nv = opts.newData[key];
     // null означает «значение сброшено» и должно попадать в diff;
     // undefined — поле не передавалось, пропускаем.
     if (nv === undefined) continue;
     const ov = opts.oldObj[key];
+
     // Унификация типов перед сравнением: числа из БД (Int/Float) приходят как
     // number, а из формы строками ('16'), null и '' — одно и то же «пустое»
     // значение. Без этого изменения числовых полей (этаж, кабинет, RAM…)
@@ -477,31 +550,64 @@ async function applyUpdate(opts: {
       return String(ca) === String(cb);
     };
     if (!same(ov, nv)) {
-      // Медиа-поля (аватар/логотип): без содержимого — только человекочитаемый факт.
-      const mediaLabel = MEDIA_FIELDS[key];
-      if (mediaLabel) {
-        const hadOld = norm(ov) !== '';
-        const hasNew = norm(nv) !== '';
-        const verb = !hadOld && hasNew ? `Загружен ${mediaLabel}`
-          : hadOld && !hasNew ? `Удалён ${mediaLabel}`
-            : `Изменён ${mediaLabel}`;
-        changes.push(verb);
+      try {
+        // Медиа-поля (аватар/логотип): без содержимого — только человекочитаемый факт.
+        const mediaLabel = MEDIA_FIELDS[key];
+        if (mediaLabel) {
+          const hadOld = norm(ov) !== '';
+          const hasNew = norm(nv) !== '';
+          const verb = !hadOld && hasNew ? `Загружен ${mediaLabel}`
+            : hadOld && !hasNew ? `Удалён ${mediaLabel}`
+              : `Изменён ${mediaLabel}`;
+          changes.push(verb);
+          await prisma.historyRecord.create({
+            data: {
+              entityType: opts.entityType,
+              entityId: opts.entityId,
+              action: 'updated',
+              fieldName: mediaLabel,
+              oldValue: hadOld ? 'присутствовал' : '—',
+              newValue: hasNew ? 'присутствует' : '—',
+              changedBy: opts.ctx.fullName,
+            },
+          });
+          changedKeys.add(key);
+          continue;
+        }
+        const oldLabel = await historyDisplayValue(key, ov);
+        const newLabel = await historyDisplayValue(key, nv);
+        await recordChange(HISTORY_FIELD_LABELS[key], oldLabel, newLabel);
+        changedKeys.add(key);
+      } catch (e) {
+        // Сбой записи истории не должен отменять уже сохранённое обновление.
+        console.error(`history write failed for ${opts.entityType}.${key}:`, e);
+      }
+    }
+  }
+
+  // Место размещения оборудования одной понятной строкой: «филиал: X → ЦОД: Y».
+  if (opts.entityType === 'equipment' && ('branchId' in opts.newData || 'dataCenterId' in opts.newData)) {
+    try {
+      const merged = await locationLabel(opts.oldObj, { ...opts.oldObj, ...opts.newData });
+      if (merged) {
+        const [before, ...rest] = merged.split(' → ');
+        changes.push(`место размещения: ${merged}`);
         await prisma.historyRecord.create({
           data: {
             entityType: opts.entityType,
             entityId: opts.entityId,
             action: 'updated',
-            fieldName: mediaLabel,
-            oldValue: hadOld ? 'присутствовал' : '—',
-            newValue: hasNew ? 'присутствует' : '—',
+            fieldName: 'место размещения',
+            oldValue: before,
+            newValue: rest.join(' → '),
             changedBy: opts.ctx.fullName,
           },
         });
-        continue;
+        changedKeys.add('branchId');
+        changedKeys.add('dataCenterId');
       }
-      const oldLabel = await historyDisplayValue(key, ov);
-      const newLabel = await historyDisplayValue(key, nv);
-      await recordChange(HISTORY_FIELD_LABELS[key], oldLabel, newLabel);
+    } catch (e) {
+      console.error('history write failed for equipment location:', e);
     }
   }
 
@@ -1020,10 +1126,23 @@ app.patch('/api/users/me/theme', authMiddleware, async (c) => {
   if (!parsed.success) {
     return c.json({ error: 'Некорректные данные' }, 400);
   }
+  const prev = await prisma.user.findUnique({ where: { id: currentUser.userId }, select: { theme: true } });
   const user = await prisma.user.update({
     where: { id: currentUser.userId },
     data: { theme: parsed.data.theme },
   });
+  // Тема — отслеживаемое поле: пишем смену в историю (в человекочитаемом виде).
+  if (prev && prev.theme !== parsed.data.theme) {
+    await applyUpdate({
+      ctx: currentUser,
+      ipAddress: c.req.header('x-forwarded-for'),
+      entityType: 'user',
+      entityId: currentUser.userId,
+      entityName: user.fullName,
+      oldObj: { theme: prev.theme },
+      newData: { theme: parsed.data.theme },
+    });
+  }
   return c.json(publicUser(user));
 });
 
