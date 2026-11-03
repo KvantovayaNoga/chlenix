@@ -1,5 +1,6 @@
-import { History, User, Calendar, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, History, User, Calendar, X } from 'lucide-react';
+import { api } from '../api/client';
 
 export interface HistoryEntry {
   id: string;
@@ -16,6 +17,15 @@ export interface HistoryEntry {
 interface HistoryLogProps {
   history: HistoryEntry[];
   title?: string;
+  /**
+   * Ключ сущности (например `org:${id}`, `eq:${id}`, `vm:${id}`). Используется
+   * для сброса раскрытого состояния модалки при переключении между карточками.
+   */
+  entityKey?: string;
+  /** Количество записей в свёрнутом («общем») виде. По умолчанию — 3. */
+  collapsedCount?: number;
+  /** Вызывается при клике на блок «История изменений» — открывает модалку полной истории. */
+  onOpenFull?: () => void;
 }
 
 // Группа в списке истории: одна строка на сохранение. Заголовок — запись с
@@ -26,6 +36,53 @@ interface HistoryGroup {
   key: string;
   head: HistoryEntry;      // отображаемая в списке запись (заголовок или одиночная)
   details: HistoryEntry[]; // детализация по полям (для модального окна)
+}
+
+// Специальный маркер: в selectedGroup означает «открыта модалка полной истории».
+const FULL_SENTINEL: HistoryGroup = { key: '__full__', head: {} as HistoryEntry, details: [] };
+
+/**
+ * Хук актуальной истории изменений сущности. Загружает историю с сервера
+ * (GET `${path}?_t=<revision>`) и автоматически подтягивает новые записи:
+ *  - при изменении revision (счётчик обновлений глобального стора);
+ *  - при каждом открытии/обновлении модалки полной истории (проверка на лету);
+ *  - при фокусе окна / возврате на вкладку браузера.
+ * Поэтому после любого сохранения история обновляется ВЕЗДЕ без перезагрузки
+ * страницы и без перехода на другие разделы.
+ */
+export function useEntityHistory(path: string | null, revision?: number): { history: HistoryEntry[]; loading: boolean } {
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  // Монотонный счётчик ответов: защищает от «гонки» асинхронных запросов
+  // (поздний ответ по старым данным не должен перетирать свежие).
+  const reqIdRef = useRef(0);
+
+  useEffect(() => {
+    if (!path) { setHistory([]); setLoading(false); return; }
+    const id = ++reqIdRef.current;
+    setLoading(true);
+    api.get<HistoryEntry[]>(`${path}${path.includes('?') ? '&' : '?'}_t=${revision ?? 0}`)
+      .then((h) => { if (id === reqIdRef.current) { setHistory(h); setLoading(false); } })
+      .catch(() => { if (id === reqIdRef.current) { setHistory([]); setLoading(false); } });
+  }, [path, revision]);
+
+  useEffect(() => {
+    if (!path) return;
+    const onFocus = () => {
+      const id = ++reqIdRef.current;
+      api.get<HistoryEntry[]>(`${path}${path.includes('?') ? '&' : '?'}_t=${Date.now()}`)
+        .then((h) => { if (id === reqIdRef.current) setHistory(h); })
+        .catch(() => {});
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) onFocus(); });
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      // visibilitychange-слушатель остаётся на время жизни модуля — лёгкий и идемпотентный.
+    };
+  }, [path]);
+
+  return { history, loading };
 }
 
 const GROUP_FIELD = 'изменения';
@@ -58,8 +115,11 @@ function groupHistory(history: HistoryEntry[]): HistoryGroup[] {
   return groups.sort((a, b) => b.head.changedAt.localeCompare(a.head.changedAt));
 }
 
-export function HistoryLog({ history, title = 'История изменений' }: HistoryLogProps) {
+export function HistoryLog({ history, title = 'История изменений', entityKey, collapsedCount = 3, onOpenFull }: HistoryLogProps) {
   const [selectedGroup, setSelectedGroup] = useState<HistoryGroup | null>(null);
+  // При переключении между карточками (смена entityKey) закрываем модалку,
+  // чтобы не показывать детали истории другой сущности.
+  useEffect(() => { setSelectedGroup(null); }, [entityKey]);
   const groups = useMemo(() => groupHistory(history), [history]);
 
   if (history.length === 0) {
@@ -128,23 +188,105 @@ export function HistoryLog({ history, title = 'История изменений
     );
   };
 
+  const visibleGroups = groups.slice(0, collapsedCount);
+  const hiddenCount = groups.length - visibleGroups.length;
+
+  // Модалка ПОЛНОЙ истории: сверху вниз, самое последнее изменение — вверху.
+  const fullModal = (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => { setSelectedGroup(null); onOpenFull?.(); }}>
+      <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col border border-gray-200 dark:border-gray-700 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+            <History className="w-6 h-6" />
+            {title} — полностью
+          </h2>
+          <button onClick={() => { setSelectedGroup(null); onOpenFull?.(); }} className="p-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+        <div className="p-6 overflow-y-auto space-y-3">
+          {groups.map((g) => {
+            const act = getActionText(g.head.action);
+            return (
+              <div key={g.key} className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{g.head.changedBy}</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                    <Calendar className="w-3 h-3" />
+                    {new Date(g.head.changedAt).toLocaleString('ru-RU')}
+                  </div>
+                </div>
+                <div className="text-sm mb-2">
+                  <span className={`font-medium ${act.color}`}>{act.text}</span>
+                  {g.head.fieldName === GROUP_FIELD && g.head.newValue ? (
+                    <span className="text-gray-600 dark:text-gray-300">
+                      {g.head.newValue.startsWith('Обновлено:') ? `: ${g.head.newValue.slice('Обновлено:'.length).trim()}` : `: ${g.head.newValue}`}
+                    </span>
+                  ) : (
+                    g.head.fieldName && <span className="text-gray-600 dark:text-gray-300">: {g.head.fieldName}</span>
+                  )}
+                </div>
+                {/* Детализация по полям для групповых сохранений */}
+                {g.details.length > 0 && (
+                  <div className="space-y-3 mt-2">
+                    {g.details.map((d) => (
+                      <div key={d.id} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+                        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">{d.fieldName}</p>
+                        {d.oldValue !== null && d.oldValue !== undefined && d.newValue !== null && d.newValue !== undefined ? (
+                          renderDiff(d.oldValue, d.newValue)
+                        ) : (
+                          <p className="text-gray-700 dark:text-gray-300 text-sm">{d.newValue ?? d.oldValue}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Одиночная запись без группы (старые данные / создание / закрепление) */}
+                {g.details.length === 0 && g.head.fieldName !== GROUP_FIELD && g.head.oldValue && g.head.newValue && (
+                  <div className="mt-2 text-xs">{renderDiff(g.head.oldValue, g.head.newValue)}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  // Если открыта модалка полной истории (детали конкретной записи не выбраны) — показываем её.
+  if (onOpenFull && selectedGroup === FULL_SENTINEL) {
+    return fullModal;
+  }
+
   return (
     <>
-      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-        <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
-          <History className="w-5 h-5" />
-          {title}
+      <div
+        className={`bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700 ${onOpenFull ? 'cursor-pointer ring-1 ring-transparent hover:ring-indigo-300/60 dark:hover:ring-indigo-600/40 transition' : ''}`}
+        onClick={onOpenFull ? () => setSelectedGroup(FULL_SENTINEL) : undefined}
+        role={onOpenFull ? 'button' : undefined}
+        title={onOpenFull ? 'Открыть полную историю изменений' : undefined}
+      >
+        <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4 flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2"><History className="w-5 h-5" />{title}</span>
+          {onOpenFull && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400">
+              <ChevronDown className="w-4 h-4" />Показать все ({groups.length})
+            </span>
+          )}
         </h3>
-        <div className="space-y-3 max-h-96 overflow-y-auto">
-          {groups.map((group) => {
+        <div className="space-y-3">
+          {visibleGroups.map((group) => {
             const entry = group.head;
             const action = getActionText(entry.action);
             const isGroup = entry.fieldName === GROUP_FIELD;
             return (
-              <div 
+              <div
                 key={group.key} 
                 className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 hover:border-gray-300 dark:hover:border-gray-500 transition-colors"
-                onClick={() => setSelectedGroup(group)}
+                onClick={(e) => { e.stopPropagation(); setSelectedGroup(group); }}
               >
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -189,9 +331,19 @@ export function HistoryLog({ history, title = 'История изменений
             );
           })}
         </div>
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setSelectedGroup(FULL_SENTINEL); }}
+            className="mt-3 w-full flex items-center justify-center gap-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 rounded-lg py-2 transition-colors"
+          >
+            <ChevronDown className="w-4 h-4" />
+            Показать всю историю ({groups.length})
+          </button>
+        )}
       </div>
 
-      {selectedGroup && (
+      {selectedGroup && selectedGroup !== FULL_SENTINEL && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto border border-gray-200 dark:border-gray-700" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">

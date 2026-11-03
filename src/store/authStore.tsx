@@ -10,6 +10,11 @@ import type { ReactNode } from 'react';
 import type { User, UserRole, ThemePreference } from '../types';
 import { api, getToken, setToken, ApiError } from '../api/client';
 import { syncThemeFromProfile } from './themeStore';
+// Шина изменений данных: успешные мутации пользователей тоже должны
+// мгновенно обновлять «Историю изменений» (см. useEntityHistory).
+let notifyDataChangedRef: (() => void) | null = null;
+export function registerDataChangedNotifier(fn: () => void) { notifyDataChangedRef = fn; }
+function notifyDataChanged() { notifyDataChangedRef?.(); }
 
 interface AuthState {
   currentUser: User | null;

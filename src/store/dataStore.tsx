@@ -7,12 +7,32 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { api, setToken } from '../api/client';
-import { useAuthStore } from './authStore';
+import { useAuthStore, registerDataChangedNotifier } from './authStore';
 import type {
   Employee, Equipment, VirtualMachine, Service, User,
   AuditLogEntry, Department, Position, Branch, DataCenter, Organization, DashboardStats,
   ActivityType, CustomDirectory,
 } from '../types';
+
+// ============================================================
+// Глобальная шина изменений данных.
+// Любая успешная мутация (dataStore.run, authStore.addUser/updateUser/...)
+// вызывает notifyDataChanged(); подписанные компоненты (useEntityHistory)
+// мгновенно перезапрашивают свои данные с сервера — история обновляется
+// ВЕЗДЕ сразу после сохранения, без перезагрузки страницы.
+// ============================================================
+const DATA_CHANGED_EVENT = 'chlenix:data-changed';
+
+export function notifyDataChanged() {
+  window.dispatchEvent(new Event(DATA_CHANGED_EVENT));
+}
+
+/** Подписка на глобальное событие «данные изменены». */
+export function onDataChanged(cb: () => void): () => void {
+  const h = () => cb();
+  window.addEventListener(DATA_CHANGED_EVENT, h);
+  return () => window.removeEventListener(DATA_CHANGED_EVENT, h);
+}
 
 interface DataState {
   organizations: Organization[];
@@ -30,6 +50,12 @@ interface DataState {
   loaded: boolean;
   loading: boolean;
   error: string | null;
+  /**
+   * Счётчик успешных изменений данных. Любая мутация через REST API его
+   * увеличивает — подписанные на него компоненты (история изменений)
+   * мгновенно перезапрашивают актуальные записи с сервера.
+   */
+  dataRevision: number;
 
   loadAll: () => Promise<void>;
   reloadVMs: () => Promise<void>;
@@ -127,6 +153,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Ревизия данных: увеличивается после каждого успешного изменения (см. run()).
+  const [dataRevision, setDataRevision] = useState(0);
 
   const { isAuthenticated, currentUser, setCurrentUser } = useAuthStore();
 
@@ -178,6 +206,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     try {
       await fn();
       setError(null);
+      // Успешное изменение данных — поднимаем ревизию. Компоненты истории
+      // (useEntityHistory) подписаны на неё и мгновенно подтягивают новые
+      // записи из БД ВЕЗДЕ, где открыта «История изменений», без перезагрузки
+      // страницы и перехода между разделами.
+      setDataRevision((r) => r + 1);
+      notifyDataChanged();
       return true;
     } catch (e) {
       setError((e as Error)?.message || 'Ошибка сервера');
@@ -584,7 +618,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<DataState>(() => ({
     organizations, departments, positions, activityTypes, customDirectories, branches, dataCenters, employees, equipment,
-    virtualMachines, services, auditLog, loaded, loading, error,
+    virtualMachines, services, auditLog, loaded, loading, error, dataRevision,
     loadAll, clearError, reloadVMs,
     addOrganization, updateOrganization, deleteOrganization, getOrganizationById, getCurrentUserOrganization,
     addDepartment, updateDepartment, deleteDepartment,
@@ -602,7 +636,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     getDashboardStats,
   }), [
     organizations, departments, positions, activityTypes, customDirectories, branches, dataCenters, employees, equipment,
-    virtualMachines, services, auditLog, loaded, loading, error,
+    virtualMachines, services, auditLog, loaded, loading, error, dataRevision,
     loadAll, clearError, reloadVMs,
     addOrganization, updateOrganization, deleteOrganization, getOrganizationById, getCurrentUserOrganization,
     addDepartment, updateDepartment, deleteDepartment,
@@ -644,6 +678,7 @@ const EMPTY_DATA_STATE: DataState = {
   loaded: false,
   loading: false,
   error: null,
+  dataRevision: 0,
   loadAll: asyncNoop as unknown as DataState['loadAll'],
   reloadVMs: asyncNoop as unknown as DataState['reloadVMs'],
   clearError: () => {},
