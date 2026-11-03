@@ -37,6 +37,8 @@ export function EquipmentPage() {
   const [filterCategory, setFilterCategory] = useState('');
   const [filterCondition, setFilterCondition] = useState('');
   const [filterAssignment, setFilterAssignment] = useState<'all' | 'assigned' | 'unassigned'>('all');
+  // Фильтр по МОЛ: '' — все; 'me' — подотчётное текущему сотруднику; иначе id конкретного сотрудника
+  const [filterMol, setFilterMol] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
   const [viewingHistory, setViewingHistory] = useState<Equipment | null>(null);
@@ -56,6 +58,7 @@ export function EquipmentPage() {
     filterCategory,
     filterCondition,
     filterAssignment,
+    filterMol,
   };
 
   const handleSaveFilter = (name: string, filters: Record<string, any>) => {
@@ -72,6 +75,7 @@ export function EquipmentPage() {
     if (filters.filterCategory !== undefined) setFilterCategory(filters.filterCategory);
     if (filters.filterCondition !== undefined) setFilterCondition(filters.filterCondition);
     if (filters.filterAssignment !== undefined) setFilterAssignment(filters.filterAssignment);
+    if (filters.filterMol !== undefined) setFilterMol(filters.filterMol);
   };
 
   const handleDeleteFilter = (id: string) => {
@@ -83,6 +87,7 @@ export function EquipmentPage() {
     setFilterCategory('');
     setFilterCondition('');
     setFilterAssignment('all');
+    setFilterMol('');
   };
 
   // Иерархия видимости оборудования (сервер уже фильтрует /equipment, здесь — зеркало):
@@ -97,6 +102,16 @@ export function EquipmentPage() {
       })
     : equipment;
 
+  // Список сотрудников для фильтра по МОЛ: только те, кто числится МОЛ за каким-либо
+  // оборудованием (плюс текущий пользователь — быстрый доступ к подотчётному ему).
+  const molEmployeeIds = new Set(
+    visibleEquipment.map((eq) => eq.materiallyResponsibleEmployeeId).filter(Boolean) as string[]
+  );
+  if (currentUser?.employee?.id) molEmployeeIds.add(currentUser.employee.id);
+  const molEmployees = employees.filter((e) => molEmployeeIds.has(e.id));
+  const empFullName = (e: { lastName: string; firstName: string; middleName?: string }) =>
+    [e.lastName, e.firstName, e.middleName].filter(Boolean).join(' ');
+
   const filteredEquipment = visibleEquipment.filter((eq) => {
     const matchesSearch =
       `${eq.name} ${eq.brand} ${eq.model} ${eq.serialNumber} ${eq.inventoryNumber}`
@@ -108,7 +123,10 @@ export function EquipmentPage() {
       filterAssignment === 'all' ||
       (filterAssignment === 'assigned' && eq.assignedToEmployeeId) ||
       (filterAssignment === 'unassigned' && !eq.assignedToEmployeeId);
-    return matchesSearch && matchesCategory && matchesCondition && matchesAssignment;
+    // Фильтр по МОЛ: показать только подотчётное оборудование выбранного сотрудника
+    const molId = filterMol === 'me' ? (currentUser?.employee?.id ?? '') : filterMol;
+    const matchesMol = !filterMol || (molId ? eq.materiallyResponsibleEmployeeId === molId : true);
+    return matchesSearch && matchesCategory && matchesCondition && matchesAssignment && matchesMol;
   });
 
   const getEmployeeName = (id: string | null) => {
@@ -200,6 +218,16 @@ export function EquipmentPage() {
             <option value="all">Все</option>
             <option value="assigned">Закреплённые</option>
             <option value="unassigned">Свободные</option>
+          </select>
+          {/* Фильтр по МОЛ: материально ответственные могут оставить только подотчётное им оборудование */}
+          <select value={filterMol} onChange={(e) => setFilterMol(e.target.value)} className="px-4 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" title="Материально ответственное лицо — показать подотчётное оборудование">
+            <option value="">МОЛ: все</option>
+            {currentUser?.employee?.id && (
+              <option value="me">МОЛ: моё подотчётное</option>
+            )}
+            {molEmployees.map((e) => (
+              <option key={e.id} value={e.id}>{empFullName(e)}</option>
+            ))}
           </select>
         </div>
         {showFilterManager && (

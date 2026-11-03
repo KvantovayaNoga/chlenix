@@ -1841,6 +1841,18 @@ app.get('/api/equipment', authMiddleware, async (c) => {
   // начальник отдела — всё оборудование отдела, «Руководство» — всё оборудование организации.
   const vis = await equipmentVisibilityWhere(c.get('user').userId, scope.role, scope.orgId);
   if (vis) Object.assign(where, vis);
+  // Фильтр по МОЛ (?molEmployeeId=<id>): материально ответственные лица могут
+  // отобрать в общем списке только подотчётное им оборудование. Значение
+  // 'me' — текущий сотрудник (для ролей без карточек other-фильтрация не применяется).
+  const molParam = c.req.query('molEmployeeId');
+  if (molParam) {
+    let molId = molParam === 'me' ? null : molParam;
+    if (molParam === 'me') {
+      const meEmp = await getMyEmployeeInfo(c.get('user').userId, scope.orgId);
+      molId = meEmp?.id ?? null;
+    }
+    if (molId) where.materiallyResponsibleEmployeeId = molId;
+  }
   const items = await prisma.equipment.findMany({ where, include: equipmentInclude, orderBy: { createdAt: 'desc' } });
   return c.json(items.map(publicEquipmentBrief));
 });
