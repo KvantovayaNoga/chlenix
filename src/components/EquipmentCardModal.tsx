@@ -10,6 +10,7 @@ import { useDataStore } from '../store/dataStore';
 import { useAuthStore } from '../store/authStore';
 import { EquipmentModalWrapper } from '../pages/EquipmentPage';
 import { ServerEditModal, ClusterEditModal } from '../pages/PhysicalServersPage';
+import { statusLabels } from '../utils/equipmentStatus';
 
 const categoryLabels: Record<EquipmentCategory, string> = {
   computer: 'Компьютер', monitor: 'Монитор', peripheral: 'Периферия', furniture: 'Мебель',
@@ -19,13 +20,7 @@ const categoryIcons: Record<EquipmentCategory, React.ElementType> = {
   computer: Monitor, monitor: Monitor, peripheral: MousePointerClick, furniture: Armchair,
   server: Server, virtual_machine: Cpu, network: Network, phone: Phone, storage: Database, other: Package,
 };
-const conditionLabels: Record<string, { label: string; color: string }> = {
-  new: { label: 'Новое', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
-  good: { label: 'Хорошее', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
-  satisfactory: { label: 'Удовлетворительное', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' },
-  needs_repair: { label: 'Требует ремонта', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
-  written_off: { label: 'Списано', color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' },
-};
+// Статусная модель оборудования — общий справочник src/utils/equipmentStatus.ts.
 const serverRoleLabels: Record<string, string> = {
   hypervisor_host: 'Хост гипервизора', storage: 'СХД', management_console: 'Консоль управления', cluster: 'Кластер', standalone: 'Автономный сервер',
 };
@@ -65,7 +60,7 @@ export function EquipmentCardModal({ equipmentId, onClose }: { equipmentId: stri
   }
 
   const Icon = categoryIcons[eq.category] ?? Package;
-  const condition = conditionLabels[eq.condition];
+  const condition = statusLabels[eq.condition] ?? { label: eq.condition, color: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' };
   const employee = eq.assignedToEmployee
     ? [eq.assignedToEmployee.lastName, eq.assignedToEmployee.firstName, eq.assignedToEmployee.middleName].filter(Boolean).join(' ')
     : employees.find((e) => e.id === eq.assignedToEmployeeId)?.lastName ?? null;
@@ -164,6 +159,7 @@ export function EquipmentCardModal({ equipmentId, onClose }: { equipmentId: stri
             )}
             {eq.parentClusterId && <ParentClusterRow parentId={eq.parentClusterId} />}
 
+            {eq.defectNote ? <Row label="Дефект / причина ограничений" value={eq.defectNote} /> : null}
             {eq.notes && <Row label="Примечания" value={eq.notes} />}
             <Row icon={Building} label="Учёт" value={`Создано: ${new Date(eq.createdAt).toLocaleDateString('ru-RU')} • Обновлено: ${new Date(eq.updatedAt).toLocaleDateString('ru-RU')}`} />
           </div>

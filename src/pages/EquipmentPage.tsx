@@ -397,6 +397,11 @@ function EquipmentModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // Статус «Эксплуатация с ограничениями» требует дефект/причину ограничений.
+    if (statusRequiresDefect(formData.condition) && !String(formData.defectNote ?? '').trim()) {
+      alert('Укажите дефект или причину ограничений для статуса «Эксплуатация с ограничениями»');
+      return;
+    }
     // Кластер — логическая сущность: МОЛ/инвентарные поля ему не принадлежат
     onSave(isClusterEdit ? { ...formData, materiallyResponsibleEmployeeId: null } : formData);
   };
@@ -444,11 +449,17 @@ function EquipmentModal({
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Состояние</label>
-              <select value={formData.condition || 'good'} onChange={(e) => handleChange('condition', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">
-                {Object.entries(conditionLabels).map(([key, { label }]) => (<option key={key} value={key}>{label}</option>))}
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Статус</label>
+              <select value={formData.condition || DEFAULT_EQUIPMENT_STATUS} onChange={(e) => handleChange('condition', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                {Object.entries(activeStatusLabels).map(([key, { label }]) => (<option key={key} value={key}>{label}</option>))}
               </select>
             </div>
+            {statusRequiresDefect(formData.condition) && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Дефект / причина ограничений *</label>
+                <textarea value={formData.defectNote || ''} onChange={(e) => handleChange('defectNote', e.target.value)} rows={2} className="w-full px-3 py-2 border border-yellow-300 dark:border-yellow-600 rounded-lg focus:ring-2 focus:ring-yellow-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Обязательно при статусе «Эксплуатация с ограничениями»" />
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Серийный номер *</label>
               <input type="text" value={formData.serialNumber || ''} onChange={(e) => handleChange('serialNumber', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required placeholder="Уникальный серийный номер" />

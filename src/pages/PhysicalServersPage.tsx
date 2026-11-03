@@ -10,6 +10,7 @@ import type { HistoryEntry } from '../types';
 import { ClusterForm, LocationSelect } from '../components/ClusterForm';
 import type { Equipment, ServerRole } from '../types';
 import { serverRoleLabels, hypervisorSuggestions, normalizeServerPayload, storageTypeLabels, storageProtocolLabels, roleHasResourceFields, formatGB } from '../utils/virtualization';
+import { DEFAULT_EQUIPMENT_STATUS } from '../utils/equipmentStatus';
 import { StorageField } from '../components/StorageField';
 import { DecimalInput } from '../components/DecimalInput';
 import { ServerRoleIcon } from '../components/ServerRoleIcon';
@@ -326,7 +327,7 @@ function ServerModal({ server, onClose, onSave, branches, dataCenters, allEquipm
   const [formData, setFormData] = useState({
     name: server?.name || '', serialNumber: server?.serialNumber || '', inventoryNumber: server?.inventoryNumber || '',
     brand: server?.brand || '', model: server?.model || '', purchaseDate: server?.purchaseDate || new Date().toISOString().split('T')[0],
-    condition: server?.condition || 'good', assignedToEmployeeId: server?.assignedToEmployeeId || null,
+    condition: server?.condition || DEFAULT_EQUIPMENT_STATUS, assignedToEmployeeId: server?.assignedToEmployeeId || null,
     materiallyResponsibleEmployeeId: (server as any)?.materiallyResponsibleEmployeeId || null,
     branchId: server?.branchId || '', dataCenterId: server?.dataCenterId || '', floor: server?.floor || '', room: server?.room || '',
     cpuCores: server?.cpuCores || null, ramGB: server?.ramGB || null, diskGB: server?.diskGB || null,

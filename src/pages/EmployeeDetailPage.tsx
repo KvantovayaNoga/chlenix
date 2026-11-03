@@ -6,6 +6,7 @@ import type { EquipmentCategory, UserOrganizationRef } from '../types';
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { AddEmployeeModal } from './EmployeesPage';
+import { statusLabels } from '../utils/equipmentStatus';
 import { EquipmentCardModal } from '../components/EquipmentCardModal';
 import { UserOrganizationsModal } from '../components/UserOrganizationsModal';
 
@@ -17,13 +18,7 @@ const categoryIcons: Record<EquipmentCategory, React.ElementType> = {
   computer: Monitor, monitor: Monitor, peripheral: MousePointerClick, furniture: Armchair,
   server: Server, virtual_machine: Cpu, network: Network, phone: Phone, storage: Database, other: Package,
 };
-const conditionLabels = {
-  new: { label: 'Новое', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
-  good: { label: 'Хорошее', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
-  satisfactory: { label: 'Удовлетворительное', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' },
-  needs_repair: { label: 'Требует ремонта', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
-  written_off: { label: 'Списано', color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' },
-};
+const conditionLabels = statusLabels; // общий справочник статусов — src/utils/equipmentStatus.ts
 const vmStatusLabels = {
   running: { label: 'Запущена', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
   stopped: { label: 'Остановлена', color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' },
