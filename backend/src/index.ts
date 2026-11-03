@@ -1659,9 +1659,9 @@ const orgText = z.preprocess(
 );
 
 const organizationSchema = z.object({
-  name: z.string().min(2),
+  name: z.string().min(2),           // Полное наименование
   legalForm: orgText,          // ОПФ — произвольный текст (вводится руками)
-  shortName: orgText,
+  shortName: z.string().trim().min(2, 'Укажите краткое наименование'), // Краткое наименование — обязательно
   inn: z.string().min(4),
   kpp: orgText,
   ogrn: z.string().min(4),
@@ -1754,7 +1754,7 @@ app.post('/api/organizations', authMiddleware, requireRole(ORG_CREATE_ROLES), as
     data: {
       name: parsed.data.name,
       legalForm: parsed.data.legalForm ?? null,
-      shortName: parsed.data.shortName ?? parsed.data.name,
+      shortName: parsed.data.shortName || parsed.data.name, // fallback для старых клиентов; UI требует краткое наименование
       inn: parsed.data.inn,
       ogrn: parsed.data.ogrn,
       legalAddress: parsed.data.legalAddress ?? null,

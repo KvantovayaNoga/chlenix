@@ -133,12 +133,18 @@ export function OrganizationPage() {
                   («Сменить организацию» / «+ Создать организацию») — внутри карточки
                   организации эти кнопки больше не нужны. */}
               <div className="flex flex-wrap items-center gap-3">
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-800 dark:text-white">{organization.name}</h1>
+                {/* Крупным шрифтом — краткое наименование организации */}
+                <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+                  {organization.shortName || organization.name}
+                </h1>
                 <span className="px-3 py-1 bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-500/30 rounded-full text-xs font-semibold">
                   {organization.legalForm || '—'}
                 </span>
               </div>
-              {organization.shortName && <p className="text-gray-500 dark:text-gray-400 mt-1">{organization.shortName}</p>}
+              {/* Внизу сереньким — полное наименование */}
+              {organization.name && (
+                <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">{organization.name}</p>
+              )}
               <div className="flex flex-wrap gap-x-6 gap-y-2 mt-4 text-sm text-gray-500 dark:text-gray-400">
                 {(organization.city || organization.legalAddress) && (
                   <span className="flex items-center gap-1.5">
@@ -385,7 +391,9 @@ function EditOrganizationForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (form.name.trim().length < 3) return;
-    onSave({ ...form, name: form.name.trim() });
+    // Краткое наименование обязательно (как в форме регистрации)
+    if ((form.shortName ?? '').trim().length < 2) return;
+    onSave({ ...form, name: form.name.trim(), shortName: form.shortName!.trim() });
   };
 
   return (
@@ -400,6 +408,11 @@ function EditOrganizationForm({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Порядок полей как в форме регистрации: сначала краткое, затем полное наименование */}
+        <div className="md:col-span-2">
+          <label className={labelCls}>Краткое наименование<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
+          <input type="text" value={form.shortName ?? ''} onChange={(e) => handleChange('shortName', e.target.value)} placeholder="ООО «Ромашка»" className={inputCls} required />
+        </div>
         <div className="md:col-span-2">
           <label className={labelCls}>Полное наименование<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
           <input type="text" value={form.name} onChange={(e) => handleChange('name', e.target.value)} className={inputCls} required />
@@ -408,10 +421,6 @@ function EditOrganizationForm({
           <label className={labelCls}>Организационно-правовая форма<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
           {/* ОПФ — свободное текстовое поле: формы вписываются вручную */}
           <input type="text" value={form.legalForm ?? ''} onChange={(e) => handleChange('legalForm', e.target.value)} placeholder="Например: ООО, АНО, ФГБУ…" className={inputCls} />
-        </div>
-        <div>
-          <label className={labelCls}>Краткое наименование</label>
-          <input type="text" value={form.shortName} onChange={(e) => handleChange('shortName', e.target.value)} className={inputCls} />
         </div>
         <div>
           <label className={labelCls}>ИНН<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>

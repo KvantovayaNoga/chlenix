@@ -74,9 +74,9 @@ export type OrganizationLegalForm = 'OOO' | 'AO' | 'PAO' | 'IAO' | 'IPO' | 'PT' 
 
 export interface Organization {
   id: string;
-  name: string;                 // Наименование организации
+  name: string;                 // Полное наименование организации
   legalForm: string | null;     // ОПФ — свободный текст (вводится вручную)
-  shortName: string;            // Краткое наименование
+  shortName: string;            // Краткое наименование (обязательное)
   inn: string;                  // ИНН
   kpp: string;                  // КПП (может отсутствовать, например у ИП)
   ogrn: string;                 // ОГРН / ОГРНИП

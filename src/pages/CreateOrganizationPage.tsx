@@ -75,6 +75,11 @@ export function CreateOrganizationPage() {
       setError('Укажите полное наименование организации (минимум 3 символа)');
       return;
     }
+    // Краткое наименование также обязательно (поле идёт первым в форме)
+    if (form.shortName.trim().length < 2) {
+      setError('Укажите краткое наименование организации (минимум 2 символа)');
+      return;
+    }
     if (form.inn.trim().length !== 10 && form.inn.trim().length !== 12) {
       setError('ИНН должен содержать 10 (юридическое лицо) или 12 (физическое лицо/ИП) цифр');
       return;
@@ -109,7 +114,7 @@ export function CreateOrganizationPage() {
       org = await addOrganization({
         name: form.name.trim(),
         legalForm: finalLegalForm,
-        shortName: form.shortName.trim() || form.name.trim(),
+        shortName: form.shortName.trim(),
         inn: form.inn.trim(),
         kpp: form.kpp.trim(),
         ogrn: form.ogrn.trim(),
@@ -184,6 +189,18 @@ export function CreateOrganizationPage() {
               <Building2 className="w-5 h-5" /> Основные сведения
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Краткое наименование — первое и обязательное поле формы */}
+              <div className="md:col-span-2">
+                <label className={labelCls}>Краткое наименование<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
+                <input
+                  type="text"
+                  value={form.shortName}
+                  onChange={(e) => handleChange('shortName', e.target.value)}
+                  className={inputCls}
+                  placeholder="ООО «Ромашка»"
+                  required
+                />
+              </div>
               <div className="md:col-span-2">
                 <label className={labelCls}>Полное наименование<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
                 <input
@@ -216,16 +233,6 @@ export function CreateOrganizationPage() {
                     required
                   />
                 )}
-              </div>
-              <div>
-                <label className={labelCls}>Краткое наименование</label>
-                <input
-                  type="text"
-                  value={form.shortName}
-                  onChange={(e) => handleChange('shortName', e.target.value)}
-                  className={inputCls}
-                  placeholder="ООО «Ромашка»"
-                />
               </div>
               <div>
                 <label className={labelCls}>Дата основания</label>
