@@ -20,6 +20,9 @@ export interface HistoryEntry {
   newValue?: string;
   changedBy: string;
   changedAt: string;
+  // Изменения, внесённые одним сохранением, объединены общим batchId:
+  // запись-заголовок (fieldName === 'изменения') + детальные записи по полям.
+  batchId?: string | null;
 }
 
 export type ThemePreference = 'light' | 'dark' | 'system';

@@ -8,6 +8,7 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import crypto from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { SignJWT, jwtVerify } from 'jose';
 import bcrypt from 'bcryptjs';
@@ -485,36 +486,35 @@ async function applyUpdate(opts: {
   // состава в историю (кластер редактируется отдельным механизмом __members).
   clusterMembersBefore?: string[];
   clusterMembersAfter?: string[];
+  // Дополнительно к diff по полям: готовые изменения (например, смена пароля,
+  // значение которого не пишется в историю). Попадают в ту же группу batchId.
+  extraChanges?: { field: string; oldValue: string; newValue: string; summary: string }[];
 }) {
-  const changes: string[] = [];
-  // Флаги полей, чьи изменения уже записаны в историю (для служебного
-  // аудит-логина «Обновлено: ...»). Записи HistoryRecord создаются сразу в
-  // момент обнаружения изменения — так сбой на одном поле не «съедает»
-  // историю остальных.
-  const changedKeys = new Set<string>();
+  // Все изменения одного сохранения группируются в одну запись истории:
+  // «запись-заголовок» (краткий список затронутых полей) + детальные записи
+  // «поле: было X → стало Y», объединённые общим batchId. Фронтенд
+  // (HistoryLog) показывает заголовок, а детали раскрывает по клику.
+  type ChangeItem = { field: string; oldValue: string; newValue: string; summary: string };
+  const items: ChangeItem[] = [];
+  // Краткая подпись для заголовка группы: до 30 символов, многострочные и
+  // длинные значения («добавлен: …») сокращаются до первого слова/строки.
+  const brief = (s: string) => {
+    const firstLine = s.split('\n')[0].trim();
+    const short = firstLine.split(' ')[0] || firstLine;
+    const pick = short.length <= 24 ? short : firstLine;
+    return pick.length > 30 ? pick.slice(0, 29) + '…' : pick;
+  };
   const norm = (v: any) => {
     if (v instanceof Date) return v.toISOString();
     if (v === undefined || v === null || v === '') return '';
     return String(v);
   };
-  // Записывает в историю одно изменение в человекочитаемом виде:
-  // «поле: было X → стало Y» (без uuid — значения разрешаются через
-  // historyDisplayValue). Ошибку БД пробрасываем наружу — вызывающий код
-  // перехватывает её и пишет warning, не прерывая обновление.
-  const recordChange = async (fieldName: string, oldValue: string, newValue: string) => {
-    changes.push(`${fieldName}: "${oldValue}" → "${newValue}"`);
-    await prisma.historyRecord.create({
-      data: {
-        entityType: opts.entityType,
-        entityId: opts.entityId,
-        action: 'updated',
-        fieldName,
-        oldValue,
-        newValue,
-        changedBy: opts.ctx.fullName,
-      },
-    });
+  // Добавляет изменение в группу (без записи в БД — всё запишем одним
+  // батчем после обхода полей; сбой БД не должен отменять сохранение).
+  const recordChange = (fieldName: string, oldValue: string, newValue: string) => {
+    items.push({ field: fieldName, oldValue, newValue, summary: `${fieldName}: "${oldValue}" → "${newValue}"` });
   };
+  if (opts.extraChanges?.length) items.push(...opts.extraChanges);
   for (const key of TRACKED_KEYS) {
     if (!(key in opts.newData)) continue;
     // «Место размещения» обрабатывается ниже одной объединённой записью
@@ -549,64 +549,34 @@ async function applyUpdate(opts: {
       return String(ca) === String(cb);
     };
     if (!same(ov, nv)) {
-      try {
-        // Медиа-поля (аватар/логотип): без содержимого — только человекочитаемый факт.
-        const mediaLabel = MEDIA_FIELDS[key];
-        if (mediaLabel) {
-          const hadOld = norm(ov) !== '';
-          const hasNew = norm(nv) !== '';
-          const verb = !hadOld && hasNew ? `Загружен ${mediaLabel}`
-            : hadOld && !hasNew ? `Удалён ${mediaLabel}`
-              : `Изменён ${mediaLabel}`;
-          changes.push(verb);
-          await prisma.historyRecord.create({
-            data: {
-              entityType: opts.entityType,
-              entityId: opts.entityId,
-              action: 'updated',
-              fieldName: mediaLabel,
-              oldValue: hadOld ? 'присутствовал' : '—',
-              newValue: hasNew ? 'присутствует' : '—',
-              changedBy: opts.ctx.fullName,
-            },
-          });
-          changedKeys.add(key);
-          continue;
-        }
-        const oldLabel = await historyDisplayValue(key, ov);
-        const newLabel = await historyDisplayValue(key, nv);
-        await recordChange(HISTORY_FIELD_LABELS[key], oldLabel, newLabel);
-        changedKeys.add(key);
-      } catch (e) {
-        // Сбой записи истории не должен отменять уже сохранённое обновление.
-        console.error(`history write failed for ${opts.entityType}.${key}:`, e);
+      // Медиа-поля (аватар/логотип): без содержимого — только человекочитаемый факт.
+      const mediaLabel = MEDIA_FIELDS[key];
+      if (mediaLabel) {
+        const hadOld = norm(ov) !== '';
+        const hasNew = norm(nv) !== '';
+        const verb = !hadOld && hasNew ? `Загружен ${mediaLabel}`
+          : hadOld && !hasNew ? `Удалён ${mediaLabel}`
+            : `Изменён ${mediaLabel}`;
+        items.push({
+          field: mediaLabel,
+          oldValue: hadOld ? 'присутствовал' : '—',
+          newValue: hasNew ? 'присутствует' : '—',
+          summary: verb,
+        });
+        continue;
       }
+      const oldLabel = await historyDisplayValue(key, ov);
+      const newLabel = await historyDisplayValue(key, nv);
+      recordChange(HISTORY_FIELD_LABELS[key], oldLabel, newLabel);
     }
   }
 
   // Место размещения оборудования одной понятной строкой: «филиал: X → ЦОД: Y».
   if (opts.entityType === 'equipment' && ('branchId' in opts.newData || 'dataCenterId' in opts.newData)) {
-    try {
-      const merged = await locationLabel(opts.oldObj, { ...opts.oldObj, ...opts.newData });
-      if (merged) {
-        const [before, ...rest] = merged.split(' → ');
-        changes.push(`место размещения: ${merged}`);
-        await prisma.historyRecord.create({
-          data: {
-            entityType: opts.entityType,
-            entityId: opts.entityId,
-            action: 'updated',
-            fieldName: 'место размещения',
-            oldValue: before,
-            newValue: rest.join(' → '),
-            changedBy: opts.ctx.fullName,
-          },
-        });
-        changedKeys.add('branchId');
-        changedKeys.add('dataCenterId');
-      }
-    } catch (e) {
-      console.error('history write failed for equipment location:', e);
+    const merged = await locationLabel(opts.oldObj, { ...opts.oldObj, ...opts.newData });
+    if (merged) {
+      const [before, ...rest] = merged.split(' → ');
+      recordChange('место размещения', before, rest.join(' → '));
     }
   }
 
@@ -624,14 +594,54 @@ async function applyUpdate(opts: {
     const changedIds = [...new Set([...added, ...removed])];
     const named = new Map<string, string>();
     if (changedIds.length > 0) {
-      const items = await prisma.equipment.findMany({ where: { id: { in: changedIds } }, select: { id: true, name: true } });
-      for (const it of items) named.set(it.id, it.name || 'оборудование (без имени)');
+      const items_ = await prisma.equipment.findMany({ where: { id: { in: changedIds } }, select: { id: true, name: true } });
+      for (const it of items_) named.set(it.id, it.name || 'оборудование (без имени)');
     }
     for (const id of added) {
-      await recordChange('состав кластера', '—', `добавлен: ${named.get(id) ?? 'оборудование (удалено)'}`);
+      recordChange('состав кластера', '—', `добавлен: ${named.get(id) ?? 'оборудование (удалено)'}`);
     }
     for (const id of removed) {
-      await recordChange('состав кластера', `исключён: ${named.get(id) ?? 'оборудование (удалено)'}`, '—');
+      recordChange('состав кластера', `исключён: ${named.get(id) ?? 'оборудование (удалено)'}`, '—');
+    }
+  }
+
+  // Запись группы изменений в историю ОДНОЙ записью-заголовком + детализация:
+  //   главная запись: fieldName='изменения', newValue='Обновлено: поле1, поле2…';
+  //   детальные записи: по одному полю «было X → стало Y», тот же batchId.
+  // Фронтенд (HistoryLog) группирует по batchId: в списке виден только
+  // заголовок, детали раскрываются в модальном окне по клику.
+  if (items.length > 0) {
+    try {
+      const batchId = crypto.randomUUID();
+      const fieldNames = [...new Set(items.map((i) => i.field))];
+      const headline = fieldNames.map((f) => brief(f)).join(', ');
+      await prisma.historyRecord.create({
+        data: {
+          entityType: opts.entityType,
+          entityId: opts.entityId,
+          action: 'updated',
+          fieldName: 'изменения',
+          oldValue: null,
+          newValue: `Обновлено: ${headline} (${items.length})`,
+          changedBy: opts.ctx.fullName,
+          batchId,
+        },
+      });
+      await prisma.historyRecord.createMany({
+        data: items.map((i) => ({
+          entityType: opts.entityType,
+          entityId: opts.entityId,
+          action: 'updated',
+          fieldName: i.field,
+          oldValue: i.oldValue,
+          newValue: i.newValue,
+          changedBy: opts.ctx.fullName,
+          batchId,
+        })),
+      });
+    } catch (e) {
+      // Сбой записи истории не должен отменять уже сохранённое обновление.
+      console.error(`history write failed for ${opts.entityType}:`, e);
     }
   }
 
@@ -641,7 +651,7 @@ async function applyUpdate(opts: {
     opts.entityType,
     opts.entityId,
     opts.entityName,
-    changes.length > 0 ? `Обновлено: ${changes.join('; ')}` : 'Обновлены данные',
+    items.length > 0 ? `Обновлено: ${items.map((i) => i.summary).join('; ')}` : 'Обновлены данные',
     opts.ipAddress,
   );
 }
@@ -792,6 +802,9 @@ function publicHistory(h: any): any {
     newValue: h.newValue,
     changedBy: h.changedBy,
     changedAt: isoDate(h.createdAt),
+    // Группировка одного сохранения: записи с равными batchId — изменения,
+    // внесённые разом; заголовок группы имеет fieldName === 'изменения'.
+    batchId: h.batchId ?? null,
   };
 }
 
@@ -1458,11 +1471,12 @@ app.put('/api/users/:id', authMiddleware, async (c) => {
   delete safeOld.password;
   const safeNew: Record<string, any> = { ...updateData };
   delete safeNew.updatedById;
+  // Смена пароля учитывается в той же группе изменений, что и остальные поля
+  // (общий batchId), чтобы в истории обновление было одной записью.
+  let passwordChanged = false;
   if ('password' in safeNew) {
     delete safeNew.password;
-    await prisma.historyRecord.create({
-      data: { entityType: 'user', entityId: id, action: 'updated', fieldName: 'пароль', changedBy: currentUser.fullName },
-    });
+    passwordChanged = true;
   }
   await applyUpdate({
     ctx: currentUser,
@@ -1472,6 +1486,9 @@ app.put('/api/users/:id', authMiddleware, async (c) => {
     entityName: user.fullName,
     oldObj: safeOld,
     newData: safeNew,
+    extraChanges: passwordChanged
+      ? [{ field: 'пароль', oldValue: '—', newValue: 'изменён', summary: 'пароль: изменён (значение не сохраняется)' }]
+      : undefined,
   });
 
   // п.2: аватар пользователя — источник истины; при изменении/смене e-mail

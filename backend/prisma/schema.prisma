@@ -590,7 +590,13 @@ model HistoryRecord {
   newValue   String?  @map("new_value") @db.Text
   changedBy  String   @map("changed_by")
   createdAt  DateTime @default(now()) @map("created_at")
+  // Группировка изменений одного сохранения: записи, созданные в рамках одного
+  // обновления сущности, получают общий batchId. Краткое поле-заголовок группы
+  // («Обновлено: поле1, поле2…») хранится в записи с fieldName === 'изменения',
+  // детализация по каждому полю — в остальных записях с тем же batchId.
+  batchId    String?  @map("batch_id")
 
   @@index([entityType, entityId])
+  @@index([batchId])
   @@map("history_records")
 }
