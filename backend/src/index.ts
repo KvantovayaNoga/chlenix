@@ -100,7 +100,16 @@ const authMiddleware = async (c: any, next: any) => {
       where: { id: (payload as any).userId },
       select: { tokenVersion: true, isActive: true, organizationId: true },
     });
-    if (!account || !account.isActive || account.tokenVersion !== tv) {
+    if (!account) {
+      return c.json({ error: 'Сессия недействительна. Войдите заново.' }, 401);
+    }
+    // Блокировка учётной записи гасит ВСЕ её сессии мгновенно (п.4): версия
+    // токена поднимается при блокировке, поэтому здесь возвращаем понятную
+    // причину, а не общее «Сессия недействительна».
+    if (!account.isActive) {
+      return c.json({ error: 'Ваша учётная запись заблокирована. Обратитесь к администратору.' }, 401);
+    }
+    if (account.tokenVersion !== tv) {
       return c.json({ error: 'Сессия недействительна. Войдите заново.' }, 401);
     }
     // Активная организация всегда берётся из БД — актуальная из последней сессии
@@ -644,8 +653,12 @@ app.post('/api/auth/login', async (c) => {
   const { email, password } = parsed.data;
 
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !user.isActive) {
+  if (!user) {
     return c.json({ error: 'Неверный email или пароль' }, 401);
+  }
+  // Понятная ошибка вместо «Неверный email или пароль» для заблокированной учётки (п.3)
+  if (!user.isActive) {
+    return c.json({ error: 'Пользователь заблокирован. Обратитесь к администратору.' }, 403);
   }
 
   const validPassword = await bcrypt.compare(password, user.password);
@@ -1072,7 +1085,15 @@ app.put('/api/users/:id', authMiddleware, async (c) => {
       const r = z.enum(ALL_ROLES).safeParse(body.role);
       if (r.success) updateData.role = r.data;
     }
-    if (body.isActive !== undefined) updateData.isActive = !!body.isActive;
+    if (body.isActive !== undefined) {
+      updateData.isActive = !!body.isActive;
+      // П.4: блокировка моментально отзывает все права — гасим ВСЕ активные
+      // сессии пользователя (старые JWT становятся недействительными), а не
+      // только после перезагрузки страницы.
+      if (!body.isActive && target.isActive) {
+        updateData.tokenVersion = (target.tokenVersion ?? 0) + 1;
+      }
+    }
     if (body.organizationId !== undefined) {
       if (body.organizationId === null) {
         updateData.organizationId = null;
@@ -1108,10 +1129,14 @@ app.put('/api/users/:id', authMiddleware, async (c) => {
     await ensureMemberships(user.id, [user.organizationId]);
   }
 
-  // История: без значения пароля
+  // История: без значения пароля. В diff не включаем служебные поля БД
+  // (updatedById добавляется ниже) — иначе historyRecord.create падает с
+  // неизвестным полем и клиент получал «Внутренняя ошибка сервера», хотя
+  // изменения уже были сохранены (повторный клик давал «Роль уже назначена»).
   const safeOld: Record<string, any> = { ...target };
   delete safeOld.password;
   const safeNew: Record<string, any> = { ...updateData };
+  delete safeNew.updatedById;
   if ('password' in safeNew) {
     delete safeNew.password;
     await prisma.historyRecord.create({
@@ -2725,9 +2750,10 @@ const JOIN_ROLE_LABELS: Record<string, string> = {
   viewer: 'Пользователь',
 };
 
-// Роли, которые администратор системы может выдать при одобрении заявки
-// (администратор уже есть в системе — выдавать его через заявку не требуется).
-const ASSIGNABLE_JOIN_ROLES = ['viewer', 'materially_responsible', 'hr_specialist', 'sysadmin'] as const;
+// Роли, которые администратор системы может выдать при одобрении заявки.
+// Все роли доступны, включая «Администратор» (в управлении пользователями
+// ограничение отсутствовало — привели к единому поведению).
+const ASSIGNABLE_JOIN_ROLES = ALL_ROLES;
 
 function publicJoinRequest(r: any) {
   return {

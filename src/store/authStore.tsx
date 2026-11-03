@@ -170,9 +170,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(t);
   }, [bootstrap, bootstrapping, currentUser]);
 
-  // Истечение сессии — очищаем состояние, роутер перенаправит на страницу входа
+  // Истечение сессии — очищаем состояние, роутер перенаправит на страницу входа.
+  // Если сервер сообщил о блокировке учётной записи (п.4) — показываем этот
+  // текст на странице входа вместо общего «сессия истекла».
   useEffect(() => {
-    const onUnauthorized = () => {
+    const onUnauthorized = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail;
+      if (typeof detail === 'string' && detail) setSessionNotice(detail);
       setToken(null);
       setCurrentUser(null);
       setUsers([]);

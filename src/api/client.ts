@@ -42,7 +42,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   if (response.status === 401 && !path.startsWith('/auth/')) {
-    // Сессия истекла — очищаем токен, приложение перенаправит на страницу входа
+    // Сессия истекла — очищаем токен, приложение перенаправит на страницу входа.
+    // Текст ошибки читается из уже распарсенного тела ответа ниже; здесь тело
+    // ещё не доступно (его можно прочитать только один раз), поэтому detail не передаём.
     setToken(null);
     window.dispatchEvent(new CustomEvent('chlenix:unauthorized'));
   }
@@ -52,6 +54,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
+    // П.4: если сервер сообщает о блокировке учётной записи (401 из authMiddleware
+    // или 403 на входе) — мгновенно отзываем локальную сессию и права на UI,
+    // не дожидаясь перезагрузки страницы.
+    if (!path.startsWith('/auth/') && /заблокиров/i.test(String(data?.error ?? ''))) {
+      setToken(null);
+      window.dispatchEvent(new CustomEvent('chlenix:unauthorized', { detail: data?.error }));
+    }
     throw new ApiError(data?.error || `Ошибка запроса (${response.status})`, response.status);
   }
 
