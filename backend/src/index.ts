@@ -447,15 +447,91 @@ async function getUserOrgIds(userId: string): Promise<string[]> {
   return rows.map((r) => r.organizationId);
 }
 
-// Гарантирует наличие записи членства пользователя в организации.
-// Используется при создании организации, одобрении заявки и явном назначении админом.
-async function ensureMembership(userId: string, organizationId: string): Promise<void> {
-  if (!userId || !organizationId) return;
-  await prisma.userOrganization.upsert({
-    where: { userId_organizationId: { userId, organizationId } },
-    create: { userId, organizationId },
-    update: {},
+// Гарантирует наличие записей членства пользователя в списке организаций
+// (включая активную). Используется при самовступлении через переключение
+// организации, а также как «мост» для данных, созданных до миграции:
+// если у пользователя ещё нет ни одного членства, его текущая организация
+// становится членством автоматически.
+async function ensureMemberships(userId: string, organizationIds: Array<string | null | undefined>): Promise<void> {
+  const ids = [...new Set(organizationIds.filter((x): x is string => !!x))];
+  if (!ids.length) return;
+  await prisma.userOrganization.createMany({
+    data: ids.map((organizationId) => ({ userId, organizationId })),
+    skipDuplicates: true,
   }).catch(() => {});
+}
+
+// Организации, в которых пользователь был привязан исторически (до внедрения
+// таблицы членства): собираем из журнала изменений поля «организация».
+// Нужны для «мягкой миграции»: при первом обращении к карточке пользователя
+// прежние организации становятся его членствами.
+async function getHistoricalOrgIds(userId: string): Promise<string[]> {
+  const rows = await prisma.historyRecord.findMany({
+    where: { entityType: 'user', entityId: userId, fieldName: 'организация' },
+    select: { oldValue: true, newValue: true },
+  });
+  const orgs = await prisma.organization.findMany({ select: { id: true, name: true, shortName: true } });
+  const byLabel = new Map<string, string>();
+  for (const o of orgs) {
+    if (o.shortName) byLabel.set(o.shortName.toLowerCase(), o.id);
+    byLabel.set(o.name.toLowerCase(), o.id);
+  }
+  const ids = new Set<string>();
+  for (const r of rows) {
+    // значения могут быть uuid (новые записи PUT) или именами организаций —
+    // сопоставляем по имени/краткому имени; uuid проверяем напрямую
+    for (const raw of [r.oldValue, r.newValue]) {
+      if (typeof raw !== 'string') continue;
+      for (const part of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(part)) ids.add(part);
+        else {
+          const byName = byLabel.get(part.toLowerCase());
+          if (byName) ids.add(byName);
+        }
+      }
+    }
+  }
+  return [...ids];
+}
+
+// Инкремент версии токена — принудительный разлогин всех активных сессий
+// пользователя (используется при переносе в другую организацию).
+async function bumpTokenVersion(userId: string): Promise<void> {
+  await prisma.user.update({
+    where: { id: userId },
+    data: { tokenVersion: { increment: 1 } },
+  });
+}
+
+// Публичное представление пользователя + список его организаций (для карточки
+// и столбца «Организация» в списке сотрудников/пользователей).
+// organizations — результат include memberships.organization (или null, если
+// данные не запрашивались — тогда подтягиваем отдельно).
+async function withUserOrgs(u: any, orgs?: any[] | null) {
+  let list = orgs;
+  if (list == null) {
+    const ids = await getUserOrgIds(u.id);
+    if (u.organizationId && !ids.includes(u.organizationId)) ids.push(u.organizationId);
+    list = ids.length
+      ? await prisma.organization.findMany({ where: { id: { in: ids } }, orderBy: { name: 'asc' } })
+      : [];
+  }
+  return {
+    ...publicUser(u),
+    // Актуальная организация — та, где пользователь был в последней сессии
+    organizationName: u.organizationId
+      ? (list.find((o: any) => o.id === u.organizationId)?.shortName
+         || list.find((o: any) => o.id === u.organizationId)?.name
+         || null)
+      : null,
+    organizations: list.map((o: any) => ({
+      id: o.id,
+      name: o.name,
+      shortName: o.shortName ?? null,
+      inn: o.inn ?? '',
+      isActive: o.id === u.organizationId,
+    })),
+  };
 }
 
 function publicUser(u: any) {
@@ -519,7 +595,9 @@ app.post('/api/auth/login', async (c) => {
     c.req.header('x-forwarded-for') || c.req.header('x-real-ip'),
   );
 
-  return c.json({ token, user: publicUser(user) });
+  // При входе возвращаем и список организаций пользователя (актуальная —
+  // organizationId, та, где он был в последней сессии).
+  return c.json({ token, user: await withUserOrgs(user) });
 });
 
 app.post('/api/auth/register', async (c) => {
@@ -619,6 +697,10 @@ app.post('/api/auth/switch-organization', authMiddleware, requireRole(ORG_SWITCH
     data: { organizationId: target.id },
   });
 
+  // Мультиорганизационность: переключение фиксирует членство в новой организации
+  // (пользователь теперь состоит и в прежней, и в этой).
+  await ensureMemberships(user.id, [user.organizationId]);
+
   // Перевыпускаем токен с новой организацией — клиент заменит его в localStorage.
   // ВАЖНО: вместе с пользователем возвращаем и accessibleOrganizations — иначе фронт
   // перезапишет currentUser без этого поля, и кнопка «Сменить организацию» в сайдбаре
@@ -650,9 +732,37 @@ app.patch('/api/users/me/theme', authMiddleware, async (c) => {
 app.get('/api/users', authMiddleware, async (c) => {
   const users = await prisma.user.findMany({
     orderBy: { createdAt: 'desc' },
+    include: { memberships: { include: { organization: true } } },
   });
-  return c.json(users.map(publicUser));
+  // Столбец «Организация»: активная (из последней сессии) + все организации,
+  // в которых состоит пользователь.
+  return c.json(await Promise.all(users.map(async (u: any) => ({
+    ...publicUser(u),
+    organizationName: u.memberships.find((m: any) => m.organizationId === u.organizationId)?.organization?.shortName
+      || u.memberships.find((m: any) => m.organizationId === u.organizationId)?.organization?.name
+      || null,
+    organizations: dedupeOrgs(u).map((o: any) => ({
+      id: o.id,
+      name: o.name,
+      shortName: o.shortName ?? null,
+      inn: o.inn ?? '',
+      isActive: o.id === u.organizationId,
+    })),
+  }))));
 });
+
+// Членства + активная организация (может существовать без записи членства на
+// данных до миграции) — единый список организаций пользователя.
+function dedupeOrgs(u: any): any[] {
+  const list = u.memberships?.map((m: any) => m.organization).filter(Boolean) ?? [];
+  if (u.organizationId && !list.some((o: any) => o.id === u.organizationId)) {
+    // не должно случаться (getAccessibleOrgs добавляет), но на всякий случай
+    const own = u.memberships?.find((m: any) => m.organizationId === u.organizationId)?.organization;
+    if (own) list.push(own);
+  }
+  const seen = new Set<string>();
+  return list.filter((o: any) => (seen.has(o.id) ? false : (seen.add(o.id), true)));
+}
 
 app.get('/api/users/:id', authMiddleware, async (c) => {
   const { id } = c.req.param();
@@ -660,9 +770,119 @@ app.get('/api/users/:id', authMiddleware, async (c) => {
   if (currentUser.role !== 'admin' && currentUser.userId !== id) {
     return c.json({ error: 'Forbidden' }, 403);
   }
-  const user = await prisma.user.findUnique({ where: { id } });
+  const user = await prisma.user.findUnique({
+    where: { id },
+    include: { memberships: { include: { organization: true } } },
+  });
   if (!user) return c.json({ error: 'Not found' }, 404);
-  return c.json(publicUser(user));
+  return c.json(await withUserOrgs(user, dedupeOrgs(user)));
+});
+
+// ============================================================
+// Организации пользователя (мультиорганизационность)
+// GET — все организации, в которых состоит пользователь
+// PUT — администратор задаёт полный список: добавляет в новые,
+//       исключает из удалённых; при переносе в другую организацию
+//       активные сессии пользователя инвалидируются (разлогин),
+//       и при следующем входе он попадёт в актуальную организацию.
+// ============================================================
+app.get('/api/users/:id/organizations', authMiddleware, async (c) => {
+  const { id } = c.req.param();
+  const me = c.get('user');
+  if (me.role !== 'admin' && me.userId !== id) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+  const target = await prisma.user.findUnique({
+    where: { id },
+    include: { memberships: { include: { organization: true } } },
+  });
+  if (!target) return c.json({ error: 'Not found' }, 404);
+  const full = await withUserOrgs(target, dedupeOrgs(target));
+  return c.json({ organizationId: full.organizationId, organizationName: full.organizationName, organizations: full.organizations });
+});
+
+app.put('/api/users/:id/organizations', authMiddleware, requireRole(['admin']), async (c) => {
+  const { id } = c.req.param();
+  const me = c.get('user');
+
+  const parsed = z
+    .object({
+      organizationIds: z.array(z.string().uuid()),
+      activeOrganizationId: z.string().uuid().nullable().optional(),
+    })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
+
+  const target = await prisma.user.findUnique({
+    where: { id },
+    include: { memberships: { select: { organizationId: true } } },
+  });
+  if (!target) return c.json({ error: 'Not found' }, 404);
+
+  const requested = [...new Set(parsed.data.organizationIds)];
+  // Проверка существования организаций и человекочитаемые названия для истории
+  const orgsById = new Map<string, { id: string; name: string; shortName: string | null }>();
+  if (requested.length) {
+    const found = await prisma.organization.findMany({
+      where: { id: { in: requested } },
+      select: { id: true, name: true, shortName: true },
+    });
+    for (const o of found) orgsById.set(o.id, o);
+    const missing = requested.filter((oid) => !orgsById.has(oid));
+    if (missing.length) return c.json({ error: 'Одна или несколько организаций не найдены' }, 400);
+  }
+
+  const existing = target.memberships.map((m) => m.organizationId);
+  if (target.organizationId && !existing.includes(target.organizationId)) existing.push(target.organizationId);
+
+  const toAdd = requested.filter((oid) => !existing.includes(oid));
+  const toRemove = existing.filter((oid) => !requested.includes(oid));
+
+  // Активная организация: переданная (должна быть в списке), иначе первая из
+  // новых, иначе прежняя (если не исключена), иначе null.
+  let active: string | null = parsed.data.activeOrganizationId ?? null;
+  if (active && !requested.includes(active)) {
+    return c.json({ error: 'Активная организация должна входить в список организаций пользователя' }, 400);
+  }
+  if (!active) {
+    if (target.organizationId && requested.includes(target.organizationId)) active = target.organizationId;
+    else if (toAdd.length > 0) active = toAdd[0];
+    else active = requested[0] ?? null;
+  }
+
+  // Перенос в другую организацию (активная сменилась) — принудительный разлогин:
+  // инкремент tokenVersion гасит все выданные JWT, при следующем входе пользователь
+  // попадёт уже в актуальную организацию.
+  const orgChanged = active !== (target.organizationId ?? null);
+
+  await prisma.$transaction([
+    ...(toRemove.length ? [prisma.userOrganization.deleteMany({ where: { userId: id, organizationId: { in: toRemove } } })] : []),
+    ...(toAdd.length ? [prisma.userOrganization.createMany({ data: toAdd.map((organizationId) => ({ userId: id, organizationId })), skipDuplicates: true })] : []),
+    prisma.user.update({ where: { id }, data: { organizationId: active, ...(orgChanged ? { tokenVersion: { increment: 1 } } : {}) } }),
+  ]);
+
+  // История изменений: имена организаций (для отображения в карточке/журнале)
+  const orgLabel = (oid: string | null) =>
+    oid ? (orgsById.get(oid)?.shortName || orgsById.get(oid)?.name || oid) : '—';
+  const oldNames = existing.map(orgLabel).join(', ') || '—';
+  const newNames = requested.map(orgLabel).join(', ') || '—';
+  await prisma.historyRecord.create({
+    data: {
+      entityType: 'user', entityId: id, action: 'updated', fieldName: 'организация',
+      oldValue: oldNames, newValue: newNames, changedBy: me.fullName,
+    },
+  });
+  await writeAudit(
+    me, 'update', 'user', id, target.fullName,
+    `Организации пользователя обновлены: ${newNames}${orgChanged ? `; перенос в «${orgLabel(active)}» — сессия сброшена` : ''}`,
+    c.req.header('x-forwarded-for'),
+  );
+
+  const updated = await prisma.user.findUnique({
+    where: { id },
+    include: { memberships: { include: { organization: true } } },
+  });
+  return c.json(await withUserOrgs(updated, dedupeOrgs(updated)));
 });
 
 app.get('/api/users/:id/history', authMiddleware, async (c) => {
@@ -969,8 +1189,15 @@ app.post('/api/organizations', authMiddleware, requireRole(ORG_CREATE_ROLES), as
   const orgCount = await prisma.organization.count();
   if (orgCount <= 1) {
     await prisma.user.updateMany({ where: { organizationId: null }, data: { organizationId: org.id } });
+    // «Мягкая миграция»: всем пользователям без членств фиксируем эту организацию
+    await prisma.userOrganization.createMany({
+      data: (await prisma.user.findMany({ select: { id: true } })).map((u) => ({ userId: u.id, organizationId: org.id })),
+      skipDuplicates: true,
+    }).catch(() => {});
   }
   await prisma.user.update({ where: { id: currentUser.userId }, data: { organizationId: org.id } });
+  // Создавший становится участником новой организации
+  await ensureMemberships(currentUser.userId, [org.id]);
 
   const updatedMe = await prisma.user.findUnique({ where: { id: currentUser.userId } });
   const token = await issueToken(updatedMe);
@@ -2399,6 +2626,9 @@ app.post('/api/join-requests/:id/approve', authMiddleware, requireRole(['admin']
       include: joinRequestInclude,
     }),
   ]);
+
+  // Одобрение заявки = вступление: фиксируем членство в организации
+  await ensureMemberships(request.applicantId, [request.organizationId]);
 
   await createHistoryEntry('user', updated.id, me.fullName, 'updated', 'вступление в организацию');
   await writeAudit(
