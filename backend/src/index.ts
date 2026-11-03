@@ -284,12 +284,72 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
   isPublic: 'публичный IP',
   purchaseDate: 'дата покупки',
   writeOffDate: 'дата списания',
+  dataCenterId: 'ЦОД',
 };
 
-function displayValue(v: unknown): string {
+// Человекочитаемые переводы значений enum-полей (в базе значения хранятся по-английски).
+const VALUE_TRANSLATIONS: Record<string, Record<string, string>> = {
+  condition: {
+    new: 'новый',
+    good: 'хорошее',
+    satisfactory: 'удовлетворительное',
+    needs_repair: 'требует ремонта',
+    written_off: 'списано',
+  },
+  category: {
+    computer: 'компьютер',
+    monitor: 'монитор',
+    peripheral: 'периферия',
+    furniture: 'мебель',
+    server: 'сервер',
+    storage: 'СХД',
+    virtual_machine: 'виртуальная машина',
+    network: 'сетевое оборудование',
+    phone: 'телефон',
+    other: 'прочее',
+  },
+  serverRole: {
+    hypervisor_host: 'хост гипервизора',
+    storage: 'СХД',
+    management_console: 'консоль управления',
+    standalone: 'автономный сервер',
+    cluster: 'кластер',
+  },
+  status: {
+    running: 'запущена',
+    stopped: 'остановлена',
+    maintenance: 'в обслуживании',
+    decommissioned: 'выведена из эксплуатации',
+  },
+  type: {
+    virtual: 'виртуальная машина',
+    container: 'контейнер',
+    cloud: 'облачная',
+  },
+  role: {
+    user: 'пользователь',
+    mol: 'МОЛ',
+    sysadmin: 'системный администратор',
+    hr: 'HR / кадровик',
+    leader: 'начальник отдела',
+    admin: 'администратор',
+  },
+};
+
+// Поля, где uuid может встречаться и вне реестра REF_FIELD_MODELS (например,
+// «удалённый» филиал у сотрудника): в историю такие ID писать нельзя.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function displayValue(key: string, v: unknown): string {
   if (v === null || v === undefined || v === '') return '—';
   if (typeof v === 'boolean') return v ? 'да' : 'нет';
   if (v instanceof Date) return v.toISOString().split('T')[0];
+  if (typeof v === 'string') {
+    const tr = VALUE_TRANSLATIONS[key]?.[v];
+    if (tr) return tr;
+    // UUID никогда не пишем в историю как значение — только служебную пометку.
+    if (UUID_RE.test(v)) return 'запись удалена';
+  }
   return String(v);
 }
 
@@ -298,36 +358,49 @@ const TRACKED_KEYS = Object.keys(HISTORY_FIELD_LABELS);
 
 // Ссылочные поля (внешние ключи): в историю пишем человекочитаемые значения —
 // ФИО сотрудников, названия филиалов/ЦОД/отделов/должностей/организаций, а не uuid.
-const REF_FIELD_MODELS: Record<string, 'employee' | 'branch' | 'dataCenter' | 'department' | 'position' | 'organization' | 'equipment'> = {
+type RefModel = 'employee' | 'branch' | 'dataCenter' | 'department' | 'position' | 'organization' | 'equipment';
+const REF_FIELD_MODELS: Record<string, RefModel | RefModel[]> = {
   assignedToEmployeeId: 'employee',
   materiallyResponsibleEmployeeId: 'employee',
   responsibleEmployeeId: 'employee',
   serviceResponsibleEmployeeId: 'employee',
   branchId: 'branch',
   dataCenterId: 'dataCenter',
+  // Поле «место размещения» у оборудования: заполнен ровно один из двух
+  // внешних ключей (филиал ИЛИ ЦОД), поэтому разрешаем оба кандидата.
+  locationType: ['branch', 'dataCenter'],
   departmentId: 'department',
   positionId: 'position',
   organizationId: 'organization',
   parentClusterId: 'equipment',
+  hostServerId: 'equipment',
 };
+
+// Краткая человекочитаемая подпись записи по имени модели справочника.
+async function refDisplayName(model: RefModel, id: string): Promise<string | null> {
+  const rec: any = await (prisma as any)[model].findUnique({ where: { id } });
+  if (!rec) return null;
+  if (model === 'employee') {
+    const fio = [rec.lastName, rec.firstName, rec.middleName].filter(Boolean).join(' ');
+    return fio || rec.name || 'сотрудник (удалён)';
+  }
+  if (model === 'equipment') return rec.name || 'оборудование (без имени)';
+  return rec.name || rec.shortName || null;
+}
 
 async function historyDisplayValue(key: string, value: any): Promise<string> {
   if (value === null || value === undefined || value === '') return '—';
-  const model = REF_FIELD_MODELS[key];
-  if (model && typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
-    try {
-      const rec: any = await (prisma as any)[model].findUnique({ where: { id: value } });
-      if (rec) {
-        if (model === 'employee') {
-          const fio = [rec.lastName, rec.firstName, rec.middleName].filter(Boolean).join(' ');
-          return fio || rec.name || 'сотрудник (удалён)';
-        }
-        return rec.name || rec.shortName || '—';
-      }
-      return 'удалённая запись';
-    } catch { /* если запись недоступна — покажем как есть */ }
+  const models = REF_FIELD_MODELS[key];
+  if (models && typeof value === 'string' && UUID_RE.test(value)) {
+    for (const model of Array.isArray(models) ? models : [models]) {
+      try {
+        const name = await refDisplayName(model, value);
+        if (name) return name;
+      } catch { /* запись недоступна — пробуем следующего кандидата */ }
+    }
+    return 'запись удалена';
   }
-  return displayValue(value);
+  return displayValue(key, value);
 }
 
 // Поля с бинарными/большими данными (data-URL аватара/логотипа): в историю
@@ -346,8 +419,34 @@ async function applyUpdate(opts: {
   entityName: string;
   oldObj: Record<string, any>;
   newData: Record<string, any>;
+  // Состав кластера «до/после» (списки id членов) — для записи изменений
+  // состава в историю (кластер редактируется отдельным механизмом __members).
+  clusterMembersBefore?: string[];
+  clusterMembersAfter?: string[];
 }) {
   const changes: string[] = [];
+  const norm = (v: any) => {
+    if (v instanceof Date) return v.toISOString();
+    if (v === undefined || v === null || v === '') return '';
+    return String(v);
+  };
+  // Записывает в историю одно изменение в человекочитаемом виде:
+  // «поле: было X → стало Y» (без uuid — значения разрешаются через
+  // historyDisplayValue).
+  const recordChange = async (fieldName: string, oldValue: string, newValue: string) => {
+    changes.push(`${fieldName}: "${oldValue}" → "${newValue}"`);
+    await prisma.historyRecord.create({
+      data: {
+        entityType: opts.entityType,
+        entityId: opts.entityId,
+        action: 'updated',
+        fieldName,
+        oldValue,
+        newValue,
+        changedBy: opts.ctx.fullName,
+      },
+    });
+  };
   for (const key of TRACKED_KEYS) {
     if (!(key in opts.newData)) continue;
     const nv = opts.newData[key];
@@ -355,15 +454,29 @@ async function applyUpdate(opts: {
     // undefined — поле не передавалось, пропускаем.
     if (nv === undefined) continue;
     const ov = opts.oldObj[key];
-    // Нормализация: даты сравниваем по ISO, пустые строки и null приравниваем
-    // друг к другу (иначе назначение/снятие МОЛ не детектировалось из-за
-    // рассинхронизации '' / null).
-    const norm = (v: any) => {
-      if (v instanceof Date) return v.toISOString();
-      if (v === undefined || v === null || v === '') return '';
-      return String(v);
+    // Унификация типов перед сравнением: числа из БД (Int/Float) приходят как
+    // number, а из формы строками ('16'), null и '' — одно и то же «пустое»
+    // значение. Без этого изменения числовых полей (этаж, кабинет, RAM…)
+    // молча терялись: сравнение строк считало их «равными».
+    const coerce = (v: any): any => {
+      if (v === undefined || v === null || v === '') return null;
+      if (typeof v === 'string') {
+        const t = v.trim();
+        if (/^-?\d+(?:[.,]\d+)?$/.test(t)) return parseFloat(t.replace(',', '.'));
+      }
+      return v;
     };
-    if (norm(ov) !== norm(nv)) {
+    const same = (a: any, b: any) => {
+      const ca = coerce(a);
+      const cb = coerce(b);
+      if (ca === cb) return true;
+      if (typeof ca === 'number' && typeof cb === 'number') return Number.isNaN(ca) && Number.isNaN(cb) ? true : ca === cb;
+      if (ca instanceof Date || cb instanceof Date) return norm(a) === norm(b);
+      if (ca === null || cb === null) return false;
+      if (typeof ca === 'boolean' || typeof cb === 'boolean') return Boolean(ca) === Boolean(cb);
+      return String(ca) === String(cb);
+    };
+    if (!same(ov, nv)) {
       // Медиа-поля (аватар/логотип): без содержимого — только человекочитаемый факт.
       const mediaLabel = MEDIA_FIELDS[key];
       if (mediaLabel) {
@@ -388,20 +501,35 @@ async function applyUpdate(opts: {
       }
       const oldLabel = await historyDisplayValue(key, ov);
       const newLabel = await historyDisplayValue(key, nv);
-      changes.push(`${HISTORY_FIELD_LABELS[key]}: "${oldLabel}" → "${newLabel}"`);
-      await prisma.historyRecord.create({
-        data: {
-          entityType: opts.entityType,
-          entityId: opts.entityId,
-          action: 'updated',
-          fieldName: HISTORY_FIELD_LABELS[key],
-          oldValue: oldLabel,
-          newValue: newLabel,
-          changedBy: opts.ctx.fullName,
-        },
-      });
+      await recordChange(HISTORY_FIELD_LABELS[key], oldLabel, newLabel);
     }
   }
+
+  // Состав кластера: ClusterForm меняет parentClusterId у членов кластера прямым
+  // запросом (applyClusterMembers), мимо diff по полям. Если состав передавался
+  // явно — сравниваем его со старым и дописываем в историю понятные строки
+  // «добавлен/исключён» с названиями оборудования (без uuid).
+  if (opts.entityType === 'equipment' && Array.isArray(opts.clusterMembersBefore)) {
+    const beforeIds = opts.clusterMembersBefore;
+    const afterIds = opts.clusterMembersAfter ?? [];
+    const before = new Set(beforeIds);
+    const after = new Set(afterIds);
+    const added = afterIds.filter((id) => !before.has(id));
+    const removed = beforeIds.filter((id) => !after.has(id));
+    const changedIds = [...new Set([...added, ...removed])];
+    const named = new Map<string, string>();
+    if (changedIds.length > 0) {
+      const items = await prisma.equipment.findMany({ where: { id: { in: changedIds } }, select: { id: true, name: true } });
+      for (const it of items) named.set(it.id, it.name || 'оборудование (без имени)');
+    }
+    for (const id of added) {
+      await recordChange('состав кластера', '—', `добавлен: ${named.get(id) ?? 'оборудование (удалено)'}`);
+    }
+    for (const id of removed) {
+      await recordChange('состав кластера', `исключён: ${named.get(id) ?? 'оборудование (удалено)'}`, '—');
+    }
+  }
+
   await writeAudit(
     opts.ctx,
     'update',
@@ -2202,8 +2330,9 @@ app.put('/api/equipment/:id', authMiddleware, requireRole([...EQUIPMENT_MANAGE_R
     newData.locationType = newData.dataCenterId ? 'data_center' : newData.branchId ? 'branch' : null;
   }
   if ('assignedToEmployeeId' in newData) newData.assignedToEmployeeId = await resolveRef('employee', newData.assignedToEmployeeId);
-  if ('materiallyResponsibleEmployeeId' in newData) newData.materiallyResponsibleEmployeeId = await resolveRef('employee', newData.materiallyResponsibleEmployeeId);
-  // Кластер — логическая сущность: МОЛ/инвентарный/серийный номера ему не принадлежат.
+  // МОЛ: пустой выбор/несуществующий сотрудник => null (снятие МОЛ), а не
+  // undefined — иначе запись «не обновляется», и история молчит о снятии МОЛ.
+  if ('materiallyResponsibleEmployeeId' in newData) newData.materiallyResponsibleEmployeeId = await resolveRef('employee', newData.materiallyResponsibleEmployeeId) ?? null;
   // Итоговая роль (после применения PATCH) — cluster => принудительно обнуляем эти поля,
   // включая снятие ранее ошибочно назначенного МОЛ.
   {
@@ -2245,8 +2374,14 @@ app.put('/api/equipment/:id', authMiddleware, requireRole([...EQUIPMENT_MANAGE_R
 
   const item = await prisma.equipment.update({ where: { id }, data: newData, include: equipmentInclude });
 
-  // Состав кластера (ClusterForm): привязка/отвязка хостов, СХД и консолей управления
+  // Состав кластера (ClusterForm): привязка/отвязка хостов, СХД и консолей управления.
+  // До применения — снимок текущего состава, после — новый: разница попадёт в историю.
+  let clusterMembersBefore: string[] | undefined;
+  let clusterMembersAfter: string[] | undefined;
   if (requestedMembers !== null && item.serverRole === CLUSTER_ROLE) {
+    clusterMembersBefore = (await prisma.equipment.findMany({
+      where: { parentClusterId: id }, select: { id: true },
+    })).map((m) => m.id);
     try {
       await applyClusterMembers(item.id, item.organizationId, requestedMembers);
     } catch (e) {
@@ -2254,6 +2389,9 @@ app.put('/api/equipment/:id', authMiddleware, requireRole([...EQUIPMENT_MANAGE_R
       console.error('applyClusterMembers(update) failed:', e);
       return c.json({ error: 'Не удалось применить состав кластера' }, 400);
     }
+    clusterMembersAfter = (await prisma.equipment.findMany({
+      where: { parentClusterId: id }, select: { id: true },
+    })).map((m) => m.id);
   }
 
   await applyUpdate({
@@ -2264,6 +2402,8 @@ app.put('/api/equipment/:id', authMiddleware, requireRole([...EQUIPMENT_MANAGE_R
     entityName: item.name,
     oldObj: old as any,
     newData,
+    clusterMembersBefore,
+    clusterMembersAfter,
   });
 
   return c.json(publicEquipmentBrief(item));
@@ -2534,9 +2674,10 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(SERVER_ROLES), 
   } else if (!old.hostServerId) {
     return c.json({ error: 'У ВМ не задан хост-сервер. Выберите хост для сохранения.' }, 400);
   }
-  if ('responsibleEmployeeId' in newData) newData.responsibleEmployeeId = await resolveRef('employee', newData.responsibleEmployeeId);
-  if ('serviceResponsibleEmployeeId' in newData) newData.serviceResponsibleEmployeeId = await resolveRef('employee', newData.serviceResponsibleEmployeeId);
-  if ('materiallyResponsibleEmployeeId' in newData) newData.materiallyResponsibleEmployeeId = await resolveRef('employee', newData.materiallyResponsibleEmployeeId);
+  if ('responsibleEmployeeId' in newData) newData.responsibleEmployeeId = await resolveRef('employee', newData.responsibleEmployeeId) ?? null;
+  if ('serviceResponsibleEmployeeId' in newData) newData.serviceResponsibleEmployeeId = await resolveRef('employee', newData.serviceResponsibleEmployeeId) ?? null;
+  // МОЛ ВМ: пустой выбор => null (снятие), иначе история не фиксировала бы снятие МОЛ.
+  if ('materiallyResponsibleEmployeeId' in newData) newData.materiallyResponsibleEmployeeId = await resolveRef('employee', newData.materiallyResponsibleEmployeeId) ?? null;
   if ('serverRole' in newData) newData.serverRole = newData.serverRole || null;
   if ('provisionedOn' in newData) newData.provisionedOn = newData.provisionedOn || null;
   newData.updatedById = currentUser.userId;
