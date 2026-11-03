@@ -20,7 +20,7 @@ interface AuthState {
 
   bootstrap: () => Promise<void>;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  register: (email: string, password: string, fullName: string, joinOrganizationId?: string | null) => Promise<{ success: boolean; error?: string; pendingJoin?: boolean }>;
+  register: (email: string, password: string, fullName: string, joinOrganizationId?: string | null) => Promise<{ success: boolean; error?: string; pendingJoin?: boolean; pendingJoinOrganization?: string }>;
   logout: () => void;
   refreshUsers: () => Promise<void>;
   addUser: (data: { email: string; password: string; fullName: string; role: UserRole; isActive?: boolean; organizationId?: string | null }) => Promise<{ success: boolean; error?: string }>;
@@ -216,11 +216,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         '/auth/register',
         { email, password, fullName, joinOrganizationId: joinOrganizationId ?? null },
       );
-      // Заявка на вступление: пользователя НЕ авторизуем (токен не сохраняем) —
-      // до одобрения администратором системы показываем экран ожидания и выход.
+      // Регистрация НЕ входит в систему: бэкенд создаёт заявку на доступ,
+      // учётная запись неактивна до одобрения администратором системы.
+      // Токен не сохраняем — показываем экран ожидания (pendingJoin === true).
       if (res.joinRequest) {
         setInitialized(true);
-        return { success: true, pendingJoin: true };
+        return { success: true, pendingJoin: true, pendingJoinOrganization: res.joinRequest.organization };
       }
       setToken(res.token);
       syncThemeFromProfile(res.user.theme);

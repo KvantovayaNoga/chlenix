@@ -1046,6 +1046,15 @@ app.post('/api/auth/login', async (c) => {
   }
   // Понятная ошибка вместо «Неверный email или пароль» для заблокированной учётки (п.3)
   if (!user.isActive) {
+    // Отличаем новую регистрацию (заявка ещё не одобрена) от явной блокировки
+    // администратором — подсказка пользователю должна быть точной.
+    const hasPending = await prisma.joinRequest.findFirst({
+      where: { applicantId: user.id, status: 'pending' },
+      select: { id: true },
+    });
+    if (hasPending) {
+      return c.json({ error: 'Ваша заявка на доступ к системе ещё не одобрена администратором. Попробуйте войти позже.' }, 403);
+    }
     return c.json({ error: 'Пользователь заблокирован. Обратитесь к администратору.' }, 403);
   }
 
@@ -1102,29 +1111,73 @@ app.post('/api/auth/register', async (c) => {
 
   const passwordHash = await bcrypt.hash(password, 12);
 
+  // Учётная запись создаётся НЕактивной: пока заявка не одобрена
+  // администратором системы, вход в систему невозможен (login/authMiddleware
+  // отклоняют isActive=false). Первый пользователь (администратор) — активен сразу.
   const user = await prisma.user.create({
-    data: { email, password: passwordHash, fullName, role },
+    data: { email, password: passwordHash, fullName, role, isActive: role === 'admin' },
   });
 
-  if (joinOrg) {
+  let pendingJoinOrg: { id: string; shortName: string | null; name: string } | null = null;
+
+  if (role === 'admin') {
+    // Первый пользователь — администратор системы: вход разрешён сразу,
+    // организацию он создаст сам после входа. Заявка не нужна.
+    pendingJoinOrg = null;
+  } else if (joinOrg) {
+    // Заявка на вступление в существующую организацию.
+    pendingJoinOrg = joinOrg;
     await prisma.joinRequest.create({
       data: { applicantId: user.id, organizationId: joinOrg.id },
     });
+  } else {
+    // Регистрация без выбора организации: создаём заявку «на доступ в систему»
+    // (привязываем к первой организации системы, если она существует).
+    // Пока администратор не одобрит заявку — пользователь в систему не входит.
+    pendingJoinOrg = await prisma.organization.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, shortName: true, name: true },
+    });
+    if (pendingJoinOrg) {
+      await prisma.joinRequest.create({
+        data: { applicantId: user.id, organizationId: pendingJoinOrg.id },
+      });
+    }
+    // Если организаций в системе ещё нет — оставляем учётную запись активной,
+    // иначе никто не сможет войти и одобрить заявку (нет администратора).
+    if (!pendingJoinOrg) {
+      await prisma.user.update({ where: { id: user.id }, data: { isActive: true } });
+    }
   }
 
   await createHistoryEntry('user', user.id, fullName);
-  await writeAudit({ userId: user.id, fullName }, 'create', 'user', user.id, fullName, 'Зарегистрирован новый пользователь');
+  await writeAudit(
+    { userId: user.id, fullName },
+    'create',
+    'user',
+    user.id,
+    fullName,
+    pendingJoinOrg
+      ? `Зарегистрирован новый пользователь, создана заявка на доступ в организацию «${pendingJoinOrg.shortName || pendingJoinOrg.name}»`
+      : 'Зарегистрирован новый пользователь',
+  );
+
+  // Пользователь со статусом заявки НЕ получает токен — в систему он не входит
+  // до одобрения администратором (категория «Администрирование»).
+  if (pendingJoinOrg) {
+    return c.json({
+      token: null,
+      user: null,
+      joinRequest: { status: 'pending', organization: pendingJoinOrg.shortName || pendingJoinOrg.name },
+    });
+  }
 
   const token = await issueToken(user);
 
   return c.json({
     token,
     user: publicUser(user),
-    // Флаг для клиента: учётная запись создана, но доступ к организации
-    // появится только после одобрения заявки администратором системы.
-    joinRequest: joinOrg
-      ? { status: 'pending', organization: joinOrg.shortName || joinOrg.name }
-      : null,
+    joinRequest: null,
   });
 });
 
@@ -1648,7 +1701,14 @@ app.get('/api/public/organizations', async (c) => {
     orderBy: { name: 'asc' },
     select: { id: true, shortName: true, name: true },
   });
-  return c.json(orgs.map((o) => ({ id: o.id, shortName: o.shortName || o.name })));
+  // Есть ли в системе хотя бы одна активная учётная запись администратора —
+  // клиент использует этот флаг, чтобы понять, первый ли пользователь
+  // регистрируется (первый становится администратором и входит сразу).
+  const adminCount = await prisma.user.count({ where: { role: 'admin', isActive: true } });
+  return c.json({
+    organizations: orgs.map((o) => ({ id: o.id, shortName: o.shortName || o.name })),
+    hasAdmin: adminCount > 0,
+  });
 });
 
 app.get('/api/organizations/:id', authMiddleware, async (c) => {
@@ -3374,9 +3434,11 @@ app.post('/api/join-requests/:id/approve', authMiddleware, requireRole(['admin']
   if (request.status !== 'pending') return c.json({ error: 'Заявка уже обработана' }, 409);
 
   const [updated] = await prisma.$transaction([
+    // Одобрение заявки активирует учётную запись: до этого момента
+    // (регистрация) вход в систему был запрещён.
     prisma.user.update({
       where: { id: request.applicantId },
-      data: { organizationId: request.organizationId, role: newRole },
+      data: { organizationId: request.organizationId, role: newRole, isActive: true },
     }),
     prisma.joinRequest.update({
       where: { id: request.id },

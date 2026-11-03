@@ -23,11 +23,19 @@ export function RegisterPage() {
   const [joinMode, setJoinMode] = useState(true);
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [publicOrgs, setPublicOrgs] = useState<PublicOrg[]>([]);
+  // Есть ли в системе активный администратор (из публичного эндпоинта):
+  // если нет — регистрируется первый пользователь (будущий админ),
+  // он входит сразу; все остальные — только через заявку на доступ.
+  const [hasAdmin, setHasAdmin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [pendingJoin, setPendingJoin] = useState<{ organization: string } | null>(null);
-  const { register, users } = useAuthStore();
-  const isFirstUser = users.length === 0;
+  const { register } = useAuthStore();
+  // Первый пользователь — тот, после кого в системе ещё нет активного
+  // администратора (проверка на бэкенде: userCount === 0). Список /users
+  // недоступен без авторизации, поэтому опираемся на флаг hasAdmin из
+  // публичного эндпоинта и на отсутствие организаций.
+  const isFirstUser = !hasAdmin && publicOrgs.length === 0;
   // Выбор режима регистрации («Присоединиться» / «Создать») показываем только
   // когда в системе уже есть организации и это не первый пользователь.
   // Если организаций нет — пользователь после первого входа сам создаст
@@ -35,17 +43,18 @@ export function RegisterPage() {
   const showModeSelection = !isFirstUser && publicOrgs.length > 0;
   const navigate = useNavigate();
 
-  // Список организаций для выбора по краткому наименованию (публичный эндпоинт
-  // GET /api/public/organizations отдаёт только id + shortName).
+  // Публичный эндпоинт GET /api/public/organizations отдаёт список организаций
+  // (только id + shortName) и флаг hasAdmin — есть ли активный администратор.
   useEffect(() => {
     void (async () => {
       try {
-        const list = await api.get<PublicOrg[]>('/public/organizations');
-        setPublicOrgs(list);
+        const res = await api.get<{ organizations: PublicOrg[]; hasAdmin: boolean }>('/public/organizations');
+        setPublicOrgs(res.organizations ?? []);
+        setHasAdmin(!!res.hasAdmin);
         // Если организаций в системе нет — выбор «Присоединиться»/«Создать»
         // не показываем: пользователь после первого входа сам создаст
         // организацию, сразу на её создание редиректить не нужно.
-        if (list.length === 0) setJoinMode(false);
+        if ((res.organizations ?? []).length === 0) setJoinMode(false);
       } catch {
         setJoinMode(false);
         setError('Не удалось загрузить список организаций. Попробуйте позже.');
@@ -80,21 +89,19 @@ export function RegisterPage() {
     }
 
     const result = await register(formData.email, formData.password, formData.fullName, joinMode ? selectedOrgId : null);
-    if (result.success) {
-      if (result.pendingJoin) {
-        // Аккаунт создан, заявка на вступление отправлена администратору системы.
-        // Пользователь НЕ авторизован до одобрения заявки.
-        const org = publicOrgs.find((o) => o.id === selectedOrgId);
-        setPendingJoin({ organization: org?.shortName ?? 'выбранной организации' });
-        return;
-      }
-      // После регистрации НЕ редиректим на создание организации — пользователь
-      // попадёт в приложение, где при отсутствии организации сам увидит
-      // предложение её создать (DefaultAuthenticatedRedirect в App.tsx).
-      navigate('/dashboard');
-    } else {
+    if (!result.success) {
       setError(result.error || 'Ошибка регистрации');
+      return;
     }
+    if (result.pendingJoin) {
+      // Аккаунт создан, заявка на доступ отправлена администратору системы.
+      // Пользователь НЕ авторизован до одобрения заявки — экран ожидания.
+      const org = publicOrgs.find((o) => o.id === selectedOrgId);
+      setPendingJoin({ organization: result.pendingJoinOrganization ?? org?.shortName ?? 'организации' });
+      return;
+    }
+    // Первый пользователь (администратор системы): вход выполнен сразу.
+    navigate('/dashboard');
   };
 
   const handleChange = (field: string, value: string) => {
@@ -156,7 +163,9 @@ export function RegisterPage() {
             <ArrowRight className="w-4 h-4 text-indigo-400 mt-0.5 flex-shrink-0" />
             {showModeSelection
               ? 'Присоединитесь к существующей организации или создайте новую — карточку организации можно создать и позже.'
-              : 'После входа в систему вы сможете создать свою организацию и начать учёт активов.'}
+              : isFirstUser
+                ? 'После входа в систему вы сможете создать свою организацию и начать учёт активов.'
+                : 'После регистрации будет создана заявка на доступ. Войти в систему можно только после её одобрения администратором.'}
           </p>
           
           {error && (
