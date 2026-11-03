@@ -490,6 +490,10 @@ export function normalizeClusterPayload<T extends Record<string, any>>(
   out.inventoryNumber = null;
   out.brand = null;
   out.model = null;
+  // МОЛ — атрибут физической инвентарной карточки: кластер не является материальным
+  // объектом учёта (это совокупность другого оборудования и консоли управления),
+  // поэтому МОЛ у кластера не бывает. Гарантированно обнуляем при сохранении.
+  out.materiallyResponsibleEmployeeId = null;
   out.serverRole = 'cluster';
   out.clusterName = str(out.clusterName) || str(out.name);
   out.hypervisorName = str(out.hypervisorName);

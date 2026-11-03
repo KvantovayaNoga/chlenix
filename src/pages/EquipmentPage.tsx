@@ -291,7 +291,8 @@ export function EquipmentPage() {
                       <span className={`px-2 py-1 rounded text-xs font-medium ${condition.color}`}>{condition.label}</span>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600">{getEmployeeName(eq.assignedToEmployeeId)}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{eq.materiallyResponsibleEmployee ? `${eq.materiallyResponsibleEmployee.lastName} ${eq.materiallyResponsibleEmployee.firstName}` : eq.materiallyResponsibleEmployeeId ? getEmployeeName(eq.materiallyResponsibleEmployeeId) : '—'}</td>
+                    {/* МОЛ: у кластера (логическая сущность) МОЛ не бывает — показываем прочерк */}
+                    <td className="px-4 py-3 text-sm text-gray-600">{eq.serverRole === 'cluster' ? '—' : eq.materiallyResponsibleEmployee ? `${eq.materiallyResponsibleEmployee.lastName} ${eq.materiallyResponsibleEmployee.firstName}` : eq.materiallyResponsibleEmployeeId ? getEmployeeName(eq.materiallyResponsibleEmployeeId) : '—'}</td>
                     <td className="px-4 py-3">
                       <div className="text-xs text-gray-500">
                         <p>{new Date(eq.updatedAt).toLocaleDateString('ru-RU')}</p>
@@ -366,9 +367,14 @@ function EquipmentModal({
     }
   );
 
+  // Кластер — логическая сущность (совокупность оборудования и консоли управления):
+  // у него нет МОЛ, инвентарного и серийного номера. Поля скрываем и обнуляем.
+  const isClusterEdit = (equipment as any)?.serverRole === 'cluster';
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(formData);
+    // Кластер — логическая сущность: МОЛ/инвентарные поля ему не принадлежат
+    onSave(isClusterEdit ? { ...formData, materiallyResponsibleEmployeeId: null } : formData);
   };
 
   const handleChange = (field: string, value: string | null) => {
@@ -396,14 +402,17 @@ function EquipmentModal({
                 placeholder="Поиск сотрудника..."
               />
             </div>
-            <div className="md:col-span-2">
-              <EmployeeSearch
-                value={formData.materiallyResponsibleEmployeeId || null}
-                onChange={(id) => handleChange('materiallyResponsibleEmployeeId', id)}
-                label="МОЛ (материально ответственное лицо)"
-                placeholder="Сотрудник, на подотчёте которого числится оборудование..."
-              />
-            </div>
+            {/* МОЛ — только для физической техники: у кластера (логическая сущность) его не бывает */}
+            {!isClusterEdit && (
+              <div className="md:col-span-2">
+                <EmployeeSearch
+                  value={formData.materiallyResponsibleEmployeeId || null}
+                  onChange={(id) => handleChange('materiallyResponsibleEmployeeId', id)}
+                  label="МОЛ (материально ответственное лицо)"
+                  placeholder="Сотрудник, на подотчёте которого числится оборудование..."
+                />
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Категория *</label>
               <select value={formData.category || 'computer'} onChange={(e) => handleChange('category', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">

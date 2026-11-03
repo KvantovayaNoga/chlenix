@@ -117,8 +117,9 @@ export function EquipmentCardModal({ equipmentId, onClose }: { equipmentId: stri
             ) : (
               <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">Не закреплено</span>
             )}
-            {/* МОЛ — материально ответственное лицо, на подотчёте которого числится оборудование */}
-            {(() => {
+            {/* МОЛ — материально ответственное лицо, на подотчёте которого числится оборудование.
+                У кластера (логическая сущность) МОЛ не бывает — бейдж не показываем. */}
+            {!isCluster && (() => {
               const mol = (eq as any).materiallyResponsibleEmployee;
               const molName = mol
                 ? [mol.lastName, mol.firstName, mol.middleName].filter(Boolean).join(' ')

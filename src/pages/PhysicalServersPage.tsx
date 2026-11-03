@@ -163,7 +163,9 @@ export function PhysicalServersPage() {
                   );
                 })()}
                 <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Расположение:</span><span className="text-gray-800 dark:text-gray-200">{getLocationName(server)} {server.room && `, ${server.room}`}</span></div>
-                <div className="flex justify-between" title="Материально ответственное лицо — сотрудник, на подотчёте которого числится сервер"><span className="text-gray-500 dark:text-gray-400">МОЛ:</span><span className="text-gray-800 dark:text-gray-200">{(() => { const m: any = (server as any).materiallyResponsibleEmployee; if (m) return [m.lastName, m.firstName].filter(Boolean).join(' '); const e = employees.find(e => e.id === (server as any).materiallyResponsibleEmployeeId); return e ? `${e.lastName} ${e.firstName}` : '—'; })()}</span></div>
+                {!isCluster && (
+                  <div className="flex justify-between" title="Материально ответственное лицо — сотрудник, на подотчёте которого числится сервер"><span className="text-gray-500 dark:text-gray-400">МОЛ:</span><span className="text-gray-800 dark:text-gray-200">{(() => { const m: any = (server as any).materiallyResponsibleEmployee; if (m) return [m.lastName, m.firstName].filter(Boolean).join(' '); const e = employees.find(e => e.id === (server as any).materiallyResponsibleEmployeeId); return e ? `${e.lastName} ${e.firstName}` : '—'; })()}</span></div>
+                )}
                 {!isCluster && (
                   <div className="flex justify-between items-center">
                     <span className="text-gray-500 dark:text-gray-400">ВМ на сервере:</span>
@@ -508,12 +510,14 @@ function ServerModal({ server, onClose, onSave, branches, dataCenters, allEquipm
             label="Ответственный"
             placeholder="Поиск сотрудника..."
           />
-          <EmployeeSearch
-            value={formData.materiallyResponsibleEmployeeId || null}
-            onChange={(id) => setFormData(p => ({ ...p, materiallyResponsibleEmployeeId: id }))}
-            label="МОЛ (материально ответственное лицо)"
-            placeholder="Сотрудник, на подотчёте которого числится сервер..."
-          />
+          {!isClusterServer && (
+            <EmployeeSearch
+              value={formData.materiallyResponsibleEmployeeId || null}
+              onChange={(id) => setFormData(p => ({ ...p, materiallyResponsibleEmployeeId: id }))}
+              label="МОЛ (материально ответственное лицо)"
+              placeholder="Сотрудник, на подотчёте которого числится сервер..."
+            />
+          )}
           <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Примечания</label><textarea value={formData.notes} onChange={(e) => setFormData(p => ({ ...p, notes: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" rows={2} /></div>
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Отмена</button>
