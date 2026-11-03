@@ -1990,7 +1990,16 @@ app.post('/api/equipment', authMiddleware, requireRole([...EQUIPMENT_CREATE_ROLE
     return c.json({ error: 'Выберите филиал' }, 400);
   }
   const assignedToEmployeeId = await resolveRef('employee', data.assignedToEmployeeId);
-  const materiallyResponsibleEmployeeId = await resolveRef('employee', data.materiallyResponsibleEmployeeId);
+  // Кластер — логическая сущность (совокупность другого оборудования и консоли
+  // управления), не материальный объект учёта: МОЛ, инвентарный и серийный
+  // номера у него отсутствуют гарантированно на уровне API.
+  const materiallyResponsibleEmployeeId = data.serverRole === CLUSTER_ROLE
+    ? null
+    : await resolveRef('employee', data.materiallyResponsibleEmployeeId);
+  if (data.serverRole === CLUSTER_ROLE) {
+    data.serialNumber = null;
+    data.inventoryNumber = null;
+  }
 
   const duplicate = data.inventoryNumber ? await prisma.equipment.findUnique({ where: { inventoryNumber: data.inventoryNumber } }) : null;
   if (duplicate) {
@@ -2111,6 +2120,17 @@ app.put('/api/equipment/:id', authMiddleware, requireRole([...EQUIPMENT_MANAGE_R
   }
   if ('assignedToEmployeeId' in newData) newData.assignedToEmployeeId = await resolveRef('employee', newData.assignedToEmployeeId);
   if ('materiallyResponsibleEmployeeId' in newData) newData.materiallyResponsibleEmployeeId = await resolveRef('employee', newData.materiallyResponsibleEmployeeId);
+  // Кластер — логическая сущность: МОЛ/инвентарный/серийный номера ему не принадлежат.
+  // Итоговая роль (после применения PATCH) — cluster => принудительно обнуляем эти поля,
+  // включая снятие ранее ошибочно назначенного МОЛ.
+  {
+    const effectiveRole = 'serverRole' in newData ? (newData.serverRole || null) : old.serverRole;
+    if (effectiveRole === CLUSTER_ROLE) {
+      newData.materiallyResponsibleEmployeeId = null;
+      newData.serialNumber = null;
+      newData.inventoryNumber = null;
+    }
+  }
   if ('purchaseDate' in newData) newData.purchaseDate = normalizeDateField(newData.purchaseDate);
   if ('writeOffDate' in newData) newData.writeOffDate = normalizeDateField(newData.writeOffDate);
   if ('serverRole' in newData) newData.serverRole = newData.serverRole || null;

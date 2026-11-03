@@ -410,12 +410,17 @@ export function normalizeServerPayload<T extends Record<string, any>>(data: T, i
     if (out.storageCapacityGB === '' || out.storageCapacityGB == null) out.storageCapacityGB = null;
     else out.storageCapacityGB = Number(out.storageCapacityGB) || null;
   }
-  // Косяк 11: кластер — только агрегатор, ресурсы нулевые
+  // Косяк 11: кластер — только агрегатор, ресурсы нулевые.
+  // МОЛ/инвентарный/серийный номера — атрибуты физической инвентарной карточки:
+  // кластер не является материальным объектом учёта, поэтому у него их не бывает.
   if (out.serverRole === 'cluster') {
     out.cpuCores = null;
     out.ramGB = null;
     out.diskGB = null;
     out.parentClusterId = null; // кластер не может входить в другой кластер
+    out.materiallyResponsibleEmployeeId = null;
+    out.serialNumber = null;
+    out.inventoryNumber = null;
   }
   // Косяк 7: СХД без CPU/RAM (диск-ёмкость — в storageCapacityGB)
   if (out.serverRole === 'storage') {
