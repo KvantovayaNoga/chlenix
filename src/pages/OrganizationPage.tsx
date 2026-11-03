@@ -33,6 +33,80 @@ const inputCls =
   'w-full px-4 py-3 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none placeholder-gray-400 dark:placeholder-gray-500';
 const labelCls = 'block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1';
 
+// Скелетон карточки организации: показывается, пока данные из хранилища
+// ещё не подгружены после обновления страницы (F5), чтобы не мелькало
+// сообщение «У вас ещё нет организации». Структура повторяет реальную
+// карточку: шапка с логотипом/названиями/контактами, 4 плитки статистики,
+// блоки реквизитов и контактов.
+function SkeletonBox({ className = '' }: { className?: string }) {
+  return <div className={`animate-pulse rounded-lg bg-gray-200/80 dark:bg-gray-700/70 ${className}`} />;
+}
+
+function OrganizationSkeleton() {
+  const rows = [70, 55, 62, 48, 66];
+  return (
+    <div className="max-w-6xl mx-auto space-y-6 pb-10" aria-busy="true" aria-label="Загрузка карточки организации">
+      {/* Header card */}
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 opacity-30" />
+        <div className="p-6 md:p-8">
+          <div className="flex flex-col md:flex-row md:items-start gap-6">
+            <SkeletonBox className="w-20 h-20 !rounded-2xl flex-shrink-0" />
+            <div className="flex-1 min-w-0 space-y-3">
+              <div className="flex items-center gap-3">
+                <SkeletonBox className="h-8 w-64 max-w-full" />
+                <SkeletonBox className="h-6 w-16 !rounded-full" />
+              </div>
+              <SkeletonBox className="h-4 w-80 max-w-full" />
+              <div className="flex flex-wrap gap-x-6 gap-y-2 pt-2">
+                <SkeletonBox className="h-4 w-44" />
+                <SkeletonBox className="h-4 w-28" />
+                <SkeletonBox className="h-4 w-36" />
+              </div>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              <SkeletonBox className="h-9 w-32 !rounded-xl" />
+              <SkeletonBox className="h-9 w-24 !rounded-xl" />
+            </div>
+          </div>
+          {/* Quick stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="rounded-xl border border-gray-200 dark:border-gray-600/50 bg-gray-50 dark:bg-gray-700/50 p-4 space-y-2">
+                <SkeletonBox className="h-3 w-24" />
+                <SkeletonBox className="h-5 w-16" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Info cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {[0, 1, 2, 3].map((card) => (
+          <div key={card} className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-2 mb-4">
+              <SkeletonBox className="h-4 w-4 !rounded" />
+              <SkeletonBox className="h-4 w-40" />
+            </div>
+            <div className="space-y-3">
+              {rows.map((w, i) => (
+                <div key={i} className="flex justify-between items-center gap-4">
+                  <SkeletonBox className="h-4 w-32 flex-shrink-0" />
+                  <div
+                    className="h-4 rounded-lg animate-pulse bg-gray-200/80 dark:bg-gray-700/70"
+                    style={{ width: `${w}%`, animationDelay: `${card * 120 + i * 60}ms` }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EmptyOrganizationState({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 px-4">
@@ -162,6 +236,11 @@ export function OrganizationPage() {
   const { currentUser, canEditOrganization, isAdmin, canCreateOrganization } = useAuthStore();
   const { users } = useAuthStore();
   const { organizations, updateOrganization, deleteOrganization, employees, equipment, error: storeError } = useDataStore();
+  // Флаги загрузки данных: после обновления страницы (F5) организации и данные
+  // пользователя подгружаются асинхронно. Пока загрузка не завершена, вместо
+  // пустого состояния показываем скелетон карточки организации.
+  const { loaded: dataLoaded, loading: dataLoading } = useDataStore();
+  const { bootstrapping, initialized } = useAuthStore();
 
   const organization = currentUser?.organizationId
     ? organizations.find((o) => o.id === currentUser.organizationId)
@@ -173,6 +252,17 @@ export function OrganizationPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   if (!organization) {
+    // Данные ещё не подгрузились (стартап/обновление страницы F5) — не показываем
+    // «У вас ещё нет организации», рисуем фоновые поля по структуре карточки.
+    const isHydrating = bootstrapping || !initialized || dataLoading || !dataLoaded;
+    if (isHydrating) {
+      return <OrganizationSkeleton />;
+    }
+    // Пользователь состоит в организации, но её запись ещё не найдена —
+    // тоже ждём данные, а не пугаем пустым состоянием.
+    if (currentUser?.organizationId && organizations.length === 0) {
+      return <OrganizationSkeleton />;
+    }
     return canCreateOrganization()
       ? <EmptyOrganizationState onCreate={() => navigate('/organization/create')} />
       : (
@@ -180,7 +270,7 @@ export function OrganizationPage() {
         // (синхронно с бэкендом: POST /api/organizations — ORG_CREATE_ROLES = admin|HR)
         <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
           <Building2 className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
-          <h2 className="text-xl font-bold text-gray-700 dark:text-gray-200 mb-2">У вас ещё нет организации</h2>
+          <h2 className="text-xl font-bold text-gray-700 dark:text-gray-200 mb-2">Организация ещё не создана</h2>
           <p className="text-gray-500 dark:text-gray-400 max-w-md">
             Создание организаций доступно администратору системы и специалисту по кадрам.
             Обратитесь к ним, чтобы присоединиться к существующей организации.
