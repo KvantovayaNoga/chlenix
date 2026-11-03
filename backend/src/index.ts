@@ -292,6 +292,10 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
   purchaseDate: 'дата покупки',
   writeOffDate: 'дата списания',
   dataCenterId: 'ЦОД',
+  // Физические серверы (Equipment) и виртуальные машины (VirtualMachine):
+  // без этих подписей diff молча пропускал поля (TRACKED_KEYS строится из ключей).
+  locationType: 'тип размещения',
+  vmClusterId: 'кластер (виртуальный)',
 };
 
 // Человекочитаемые переводы значений enum-полей (в базе значения хранятся по-английски).
@@ -519,7 +523,11 @@ async function applyUpdate(opts: {
     if (!(key in opts.newData)) continue;
     // «Место размещения» обрабатывается ниже одной объединённой записью
     // (филиал ИЛИ ЦОД), пропускаем его ключи в обычном diff.
-    if (opts.entityType === 'equipment' && (key === 'branchId' || key === 'dataCenterId')) continue;
+    if (opts.entityType === 'equipment' && (key === 'branchId' || key === 'dataCenterId' || key === 'locationType')) continue;
+    // Кластер ВМ определяется автоматически по хост-серверу (vmClusterId —
+    // вычисляемое поле): отдельной записью в истории не нужен, изменение
+    // размещения и так фиксируется строкой «хост-сервер».
+    if (key === 'vmClusterId') continue;
     const nv = opts.newData[key];
     // null означает «значение сброшено» и должно попадать в diff;
     // undefined — поле не передавалось, пропускаем.
@@ -2818,6 +2826,12 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(SERVER_ROLES), 
   const old = await prisma.virtualMachine.findUnique({ where: { id } });
   if (!old) return c.json({ error: 'Not found' }, 404);
 
+  // Снимок кластера «до» (вычисляется по хост-серверу): чтобы история ВМ
+  // показывала и перемещение между кластерами, а не только смену хоста.
+  const clusterBefore = old.hostServerId
+    ? await prisma.equipment.findUnique({ where: { id: old.hostServerId }, select: { parentClusterId: true } })
+    : null;
+
   const newData: any = { ...parsed.data };
   if ('hostServerId' in newData) {
     newData.hostServerId = await resolveRef('equipment', newData.hostServerId);
@@ -2845,13 +2859,23 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(SERVER_ROLES), 
   const vm = await prisma.virtualMachine.update({ where: { id }, data: newData, include: vmInclude });
   await resolveVmClusterIds([vm]);
 
+  // Кластер ВМ — производное поле (родитель хост-сервера): добавляем в diff
+  // только при реальном перемещении между кластерами (applyUpdate пропускает
+  // его ключ, если значение не изменилось).
+  const clusterAfterId = vm.hostServerId
+    ? await prisma.equipment.findUnique({ where: { id: vm.hostServerId }, select: { parentClusterId: true } })
+    : null;
+  if ((clusterBefore?.parentClusterId ?? null) !== (clusterAfterId?.parentClusterId ?? null)) {
+    newData.vmClusterId = clusterAfterId?.parentClusterId ?? null;
+  }
+
   await applyUpdate({
     ctx: currentUser,
     ipAddress: c.req.header('x-forwarded-for'),
     entityType: 'virtualmachine',
     entityId: id,
     entityName: vm.name,
-    oldObj: old as any,
+    oldObj: { ...(old as any), vmClusterId: clusterBefore?.parentClusterId ?? null },
     newData,
   });
 
