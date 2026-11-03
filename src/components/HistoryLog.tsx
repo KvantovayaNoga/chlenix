@@ -98,14 +98,14 @@ export function HistoryLog({ history, title = 'История изменений
       return (
         <div className="font-mono text-xs space-y-1">
           {oldLines.map((line, idx) => (
-            <div key={`old-${idx}`} className="flex">
-              <span className="text-red-400 w-4 flex-shrink-0">-</span>
+            <div key={`old-${idx}`} className="flex items-center">
+              <span className="text-red-400 w-4 flex-shrink-0 text-center leading-none">-</span>
               <span className="text-red-300 bg-red-900/20 px-2 py-0.5 rounded flex-1">{line}</span>
             </div>
           ))}
           {newLines.map((line, idx) => (
-            <div key={`new-${idx}`} className="flex">
-              <span className="text-green-400 w-4 flex-shrink-0">+</span>
+            <div key={`new-${idx}`} className="flex items-center">
+              <span className="text-green-400 w-4 flex-shrink-0 text-center leading-none">+</span>
               <span className="text-green-300 bg-green-900/20 px-2 py-0.5 rounded flex-1">{line}</span>
             </div>
           ))}
@@ -116,12 +116,12 @@ export function HistoryLog({ history, title = 'История изменений
     // Для однострочных значений показываем старое и новое
     return (
       <div className="space-y-2">
-        <div className="flex items-start gap-2">
-          <span className="text-red-400 font-mono text-sm flex-shrink-0">-</span>
+        <div className="flex items-center gap-2">
+          <span className="text-red-400 font-mono text-sm flex-shrink-0 w-3 text-center leading-none">-</span>
           <span className="text-red-300 bg-red-900/20 px-2 py-1 rounded flex-1 break-all">{oldValue}</span>
         </div>
-        <div className="flex items-start gap-2">
-          <span className="text-green-400 font-mono text-sm flex-shrink-0">+</span>
+        <div className="flex items-center gap-2">
+          <span className="text-green-400 font-mono text-sm flex-shrink-0 w-3 text-center leading-none">+</span>
           <span className="text-green-300 bg-green-900/20 px-2 py-1 rounded flex-1 break-all">{newValue}</span>
         </div>
       </div>
