@@ -605,44 +605,10 @@ async function applyUpdate(opts: {
     }
   }
 
-  // Запись группы изменений в историю ОДНОЙ записью-заголовком + детализация:
-  //   главная запись: fieldName='изменения', newValue='Обновлено: поле1, поле2…';
-  //   детальные записи: по одному полю «было X → стало Y», тот же batchId.
-  // Фронтенд (HistoryLog) группирует по batchId: в списке виден только
-  // заголовок, детали раскрываются в модальном окне по клику.
+  // Запись группы изменений в историю ОДНОЙ записью-заголовком + детализация
+  // (см. writeHistoryBatch).
   if (items.length > 0) {
-    try {
-      const batchId = crypto.randomUUID();
-      const fieldNames = [...new Set(items.map((i) => i.field))];
-      const headline = fieldNames.map((f) => brief(f)).join(', ');
-      await prisma.historyRecord.create({
-        data: {
-          entityType: opts.entityType,
-          entityId: opts.entityId,
-          action: 'updated',
-          fieldName: 'изменения',
-          oldValue: null,
-          newValue: `Обновлено: ${headline} (${items.length})`,
-          changedBy: opts.ctx.fullName,
-          batchId,
-        },
-      });
-      await prisma.historyRecord.createMany({
-        data: items.map((i) => ({
-          entityType: opts.entityType,
-          entityId: opts.entityId,
-          action: 'updated',
-          fieldName: i.field,
-          oldValue: i.oldValue,
-          newValue: i.newValue,
-          changedBy: opts.ctx.fullName,
-          batchId,
-        })),
-      });
-    } catch (e) {
-      // Сбой записи истории не должен отменять уже сохранённое обновление.
-      console.error(`history write failed for ${opts.entityType}:`, e);
-    }
+    await writeHistoryBatch(opts.entityType, opts.entityId, opts.ctx.fullName, items);
   }
 
   await writeAudit(
@@ -654,6 +620,62 @@ async function applyUpdate(opts: {
     items.length > 0 ? `Обновлено: ${items.map((i) => i.summary).join('; ')}` : 'Обновлены данные',
     opts.ipAddress,
   );
+}
+
+// Пишет группу изменений одной записью-заголовком + детализацией:
+//   главная запись: fieldName='изменения', newValue='Обновлено: поле1, поле2…';
+//   детальные записи: по одному полю «было X → стало Y», тот же batchId.
+// Фронтенд (HistoryLog) группирует по batchId: в списке виден только
+// заголовок, детали раскрываются в модальном окне по клику.
+// Используется и applyUpdate, и отдельными маршрутами (организации
+// пользователя), чтобы весь журнал был в едином формате.
+async function writeHistoryBatch(
+  entityType: string,
+  entityId: string,
+  changedBy: string,
+  items: { field: string; oldValue?: string | null; newValue?: string | null }[],
+): Promise<void> {
+  if (items.length === 0) return;
+  // Краткая подпись для заголовка группы: до 30 символов, многострочные и
+  // длинные значения («добавлен: …») сокращаются до первого слова/строки.
+  const brief = (s: string) => {
+    const firstLine = s.split('\n')[0].trim();
+    const short = firstLine.split(' ')[0] || firstLine;
+    const pick = short.length <= 24 ? short : firstLine;
+    return pick.length > 30 ? pick.slice(0, 29) + '…' : pick;
+  };
+  try {
+    const batchId = crypto.randomUUID();
+    const fieldNames = [...new Set(items.map((i) => i.field))];
+    const headline = fieldNames.map((f) => brief(f)).join(', ');
+    await prisma.historyRecord.create({
+      data: {
+        entityType,
+        entityId,
+        action: 'updated',
+        fieldName: 'изменения',
+        oldValue: null,
+        newValue: `Обновлено: ${headline} (${items.length})`,
+        changedBy,
+        batchId,
+      },
+    });
+    await prisma.historyRecord.createMany({
+      data: items.map((i) => ({
+        entityType,
+        entityId,
+        action: 'updated',
+        fieldName: i.field,
+        oldValue: i.oldValue ?? null,
+        newValue: i.newValue ?? null,
+        changedBy,
+        batchId,
+      })),
+    });
+  } catch (e) {
+    // Сбой записи истории не должен отменять уже сохранённое обновление.
+    console.error(`history write failed for ${entityType}:`, e);
+  }
 }
 
 async function createHistoryEntry(entityType: string, entityId: string, changedBy: string, action = 'created', fieldName = 'создано') {
@@ -867,7 +889,7 @@ async function ensureMemberships(userId: string, organizationIds: Array<string |
 // прежние организации становятся его членствами.
 async function getHistoricalOrgIds(userId: string): Promise<string[]> {
   const rows = await prisma.historyRecord.findMany({
-    where: { entityType: 'user', entityId: userId, fieldName: 'организация' },
+    where: { entityType: 'user', entityId: userId, fieldName: { in: ['организация', 'организации'] } },
     select: { oldValue: true, newValue: true },
   });
   const orgs = await prisma.organization.findMany({ select: { id: true, name: true, shortName: true } });
@@ -1298,12 +1320,15 @@ app.put('/api/users/:id/organizations', authMiddleware, requireRole(['admin']), 
     oid ? (orgsById.get(oid)?.shortName || orgsById.get(oid)?.name || oid) : '—';
   const oldNames = existing.map(orgLabel).join(', ') || '—';
   const newNames = requested.map(orgLabel).join(', ') || '—';
-  await prisma.historyRecord.create({
-    data: {
-      entityType: 'user', entityId: id, action: 'updated', fieldName: 'организация',
-      oldValue: oldNames, newValue: newNames, changedBy: me.fullName,
-    },
-  });
+  // Одна запись-заголовок + детализация по полям (тот же формат, что и у
+  // applyUpdate): фронтенд группирует по batchId и раскрывает детали по клику.
+  {
+    const orgItems = [
+      { field: 'организации', oldValue: oldNames, newValue: newNames },
+      ...(orgChanged ? [{ field: 'активная организация', oldValue: orgLabel(target.organizationId ?? null), newValue: orgLabel(active) }] : []),
+    ];
+    await writeHistoryBatch('user', id, me.fullName, orgItems);
+  }
   await writeAudit(
     me, 'update', 'user', id, target.fullName,
     `Организации пользователя обновлены: ${newNames}${orgChanged ? `; перенос в «${orgLabel(active)}» — сессия сброшена` : ''}`,
@@ -3236,7 +3261,9 @@ app.post('/api/join-requests/:id/approve', authMiddleware, requireRole(['admin']
   // Одобрение заявки = вступление: фиксируем членство в организации
   await ensureMemberships(request.applicantId, [request.organizationId]);
 
-  await createHistoryEntry('user', updated.id, me.fullName, 'updated', 'вступление в организацию');
+  await writeHistoryBatch('user', updated.id, me.fullName, [
+    { field: 'вступление в организацию', newValue: `роль: ${JOIN_ROLE_LABELS[newRole]}` },
+  ]);
   await writeAudit(
     me, 'update', 'join_request', request.id, request.applicant.fullName,
     `Заявка одобрена: ${request.applicant.fullName} → организация «${request.organization.shortName || request.organization.name}», роль «${JOIN_ROLE_LABELS[newRole]}»`,
