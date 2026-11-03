@@ -101,9 +101,12 @@ export function EmployeeDetailPage() {
               <div className="flex items-start gap-3 text-gray-600 dark:text-gray-400">
                 <Building className="w-4 h-4 text-indigo-400 dark:text-indigo-500 mt-0.5 shrink-0" />
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-gray-700 dark:text-gray-200 truncate" title={activeOrg ? `Активная организация (последняя сессия): ${activeOrg.name}` : undefined}>
-                    {activeOrg ? orgLabel(activeOrg) : employee.userOrganization?.organizationName || 'Организация не указана'}
+                  <p className="font-medium text-gray-700 dark:text-gray-200 truncate" title={activeOrg ? `Активная организация (последняя сессия): ${activeOrg.name}` : 'Организация карточки сотрудника'}>
+                    {activeOrg ? orgLabel(activeOrg) : employee.userOrganization?.organizationName || (employee.organization?.shortName || employee.organization?.name) || 'Организация не указана'}
                   </p>
+                  {!employee.userId && employee.organizationId ? (
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Организация карточки: {employee.organization?.shortName || employee.organization?.name || employee.organizationId}</p>
+                  ) : null}
                   {userOrgs.length > 1 && (
                     <div className="flex flex-wrap gap-1 mt-1.5">
                       {userOrgs.map(o => (

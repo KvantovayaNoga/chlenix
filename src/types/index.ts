@@ -156,6 +156,10 @@ export interface Employee {
   middleName: string;
   positionId: string;
   departmentId: string;
+  // Организация карточки сотрудника (привязывается администратором/HR при
+  // создании/редактировании)
+  organizationId?: string | null;
+  organization?: { id: string; name: string; shortName?: string | null } | null;
   email: string;
   // Телефоны
   workPhone: string;

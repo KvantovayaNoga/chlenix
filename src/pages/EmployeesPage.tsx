@@ -3,7 +3,7 @@ import { useNavigate } from '../router';
 import { useDataStore } from '../store/dataStore';
 import { useAuthStore } from '../store/authStore';
 import { Search, Plus, UserCheck, UserX, Mail, Building, MapPin, X, Users, Phone, Filter, Save, Pencil, Cake, Link2 } from 'lucide-react';
-import type { Employee, User } from '../types';
+import type { Employee, User, Organization } from '../types';
 import { api } from '../api/client';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
 
@@ -229,9 +229,20 @@ export function EmployeesPage() {
 
 export function AddEmployeeModal({ onClose, onAdd, initial }: { onClose: () => void; onAdd: (data: any) => Promise<boolean> | boolean; initial?: Employee | null }) {
   const { departments, positions, branches } = useDataStore();
+  const { getUserRole } = useAuthStore();
   // п.1: список пользователей для привязки сотрудника к учётной записи
   const [users, setUsers] = useState<User[]>([]);
   useEffect(() => { api.get<User[]>('/users').then(setUsers).catch(() => setUsers([])); }, []);
+  // Привязка сотрудника к организации: доступна администратору и HR.
+  // Справочники (должность/отдел/филиал) отдаются сервером в скоупе активной
+  // организации, поэтому выбираем организацию из списка доступных пользователю.
+  const role = getUserRole();
+  const canPickOrg = role === 'admin' || role === 'hr_specialist';
+  const [orgs, setOrgs] = useState<Organization[]>([]);
+  useEffect(() => {
+    if (!canPickOrg) return;
+    api.get<Organization[]>('/organizations').then(setOrgs).catch(() => setOrgs([]));
+  }, [canPickOrg]);
   const [formData, setFormData] = useState(() => initial ? ({
     firstName: initial.firstName ?? '', lastName: initial.lastName ?? '', middleName: initial.middleName ?? '',
     positionId: initial.positionId ?? '', departmentId: initial.departmentId ?? '', email: initial.email ?? '',
@@ -239,11 +250,13 @@ export function AddEmployeeModal({ onClose, onAdd, initial }: { onClose: () => v
     hireDate: initial.hireDate ? initial.hireDate.slice(0, 10) : new Date().toISOString().split('T')[0],
     birthDate: initial.birthDate ? initial.birthDate.slice(0, 10) : '',
     userId: initial.userId ?? '',
+    organizationId: initial.organizationId ?? '',
     isEmployed: initial.isEmployed ?? true, branchId: initial.branchId ?? '', floor: initial.floor ?? '', room: initial.room ?? '', notes: initial.notes ?? '',
   }) : {
     firstName: '', lastName: '', middleName: '', positionId: '', departmentId: '', email: '',
     workPhone: '', internalPhone: '', personalPhone: '', hireDate: new Date().toISOString().split('T')[0],
     birthDate: '', userId: '',
+    organizationId: '',
     isEmployed: true, branchId: '', floor: '', room: '', notes: '',
   });
 
@@ -288,6 +301,19 @@ export function AddEmployeeModal({ onClose, onAdd, initial }: { onClose: () => v
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Должность<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><select value={formData.positionId} onChange={(e) => handleChange('positionId', e.target.value)} className={errCls('positionId')}><option value="">Выберите должность</option>{positions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>{errHint('positionId')}</div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Отдел<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><select value={formData.departmentId} onChange={(e) => handleChange('departmentId', e.target.value)} className={errCls('departmentId')}><option value="">Выберите отдел</option>{departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select>{errHint('departmentId')}</div>
           </div>
+          {/* Привязка сотрудника к организации — доступна администратору и HR */}
+          {canPickOrg && orgs.length > 0 ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"><Building className="w-3.5 h-3.5 inline mr-1 text-gray-400" />Организация</label>
+              <select value={formData.organizationId} onChange={(e) => handleChange('organizationId', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                <option value="">Текущая активная организация</option>
+                {orgs.map(o => <option key={o.id} value={o.id}>{o.shortName || o.name}</option>)}
+              </select>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{initial?.organizationId
+                ? `Сейчас: ${orgs.find(o => o.id === initial.organizationId)?.shortName || orgs.find(o => o.id === initial.organizationId)?.name || 'другая организация (вне списка доступных)'}. Выберите другую, чтобы перенести карточку.`
+                : 'Карточка будет создана в активной организации; выберите другую, если нужно.'}</p>
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-4">
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label><input type="email" value={formData.email} onChange={(e) => handleChange('email', e.target.value)} placeholder="ivan@example.ru" className={errCls('email')} />{errHint('email')}{!errors.email && formData.email && users.some(u => u.email.toLowerCase() === formData.email.trim().toLowerCase()) ? <p className="text-xs text-emerald-600 mt-1">Найдена учётная запись с таким e-mail — привяжется автоматически</p> : null}</div>
             <div>

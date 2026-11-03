@@ -1450,6 +1450,9 @@ const employeeSchema = z.object({
     z.coerce.date().nullable().optional(),
   ),
   userId: z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), z.string().uuid().nullable().optional()),
+  // Организация сотрудника — администратор и специалист по кадрам могут
+  // привязать карточку к любой организации через редактирование.
+  organizationId: z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), z.string().uuid().nullable().optional()),
   isEmployed: z.boolean().optional(),
   floor: z.string().optional().nullable(),
   room: z.string().optional().nullable(),
@@ -1473,6 +1476,9 @@ function publicEmployee(e: any): any {
     position: e.position ? { id: e.position.id, name: e.position.name } : undefined,
     department: e.department ? { id: e.department.id, name: e.department.name } : undefined,
     branch: e.branch ? { id: e.branch.id, name: e.branch.name } : undefined,
+    // Организация карточки сотрудника (для формы редактирования и отображения)
+    organizationId: e.organizationId ?? null,
+    organization: e.organization ? { id: e.organization.id, name: e.organization.name, shortName: e.organization.shortName ?? null } : undefined,
     equipment: Array.isArray(e.equipment) ? e.equipment.map(publicEquipmentBrief) : undefined,
   };
 }
@@ -1505,7 +1511,7 @@ function publicVM(vm: any): any {
   };
 }
 
-const employeeInclude = { position: true, department: true, branch: true, equipment: true, linkedUser: { select: { id: true, fullName: true, email: true } } } as const;
+const employeeInclude = { position: true, department: true, branch: true, equipment: true, organization: { select: { id: true, name: true, shortName: true } }, linkedUser: { select: { id: true, fullName: true, email: true } } } as const;
 
 // Столбец «Организация» в списке сотрудников: если сотрудник привязан к учётной
 // записи — актуальная организация из её последней сессии (users.organization_id).
@@ -1607,18 +1613,27 @@ app.post('/api/employees', authMiddleware, requireRole(EMPLOYEE_MANAGE_ROLES), a
   const data = parsed.data;
   const scope = await getUserOrgScope(currentUser.userId);
 
-  // Справочники должны принадлежать активной организации (или быть общими)
-  const positionId = await resolveRef('position', data.positionId, scope.orgId);
-  const departmentId = await resolveRef('department', data.departmentId, scope.orgId);
+  // Организация сотрудника: admin/hr_specialist могут явно указать любую
+  // существующую организацию; по умолчанию — активная организация автора.
+  let targetOrgId: string | null = scope.orgId;
+  if (data.organizationId) {
+    const org = await prisma.organization.findUnique({ where: { id: data.organizationId }, select: { id: true } });
+    if (!org) return c.json({ error: 'Выбранная организация не найдена' }, 400);
+    targetOrgId = org.id;
+  }
+
+  // Справочники должны принадлежать целевой организации (или быть общими)
+  const positionId = await resolveRef('position', data.positionId, targetOrgId);
+  const departmentId = await resolveRef('department', data.departmentId, targetOrgId);
   // Филиал необязателен: пустое/некорректное значение => null (сотрудник без филиала)
-  const branchId = await resolveRefOrNull('branch', data.branchId ?? undefined, scope.orgId) ?? null;
+  const branchId = await resolveRefOrNull('branch', data.branchId ?? undefined, targetOrgId) ?? null;
   if (!positionId || !departmentId) {
-    return c.json({ error: 'Справочники (должность/отдел) выбраны некорректно' }, 400);
+    return c.json({ error: 'Справочники (должность/отдел) выбраны некорректно для выбранной организации' }, 400);
   }
 
   const employee = await prisma.employee.create({
     data: {
-      organizationId: scope.orgId,
+      organizationId: targetOrgId,
       firstName: data.firstName,
       lastName: data.lastName,
       middleName: data.middleName ?? null,
@@ -1670,6 +1685,20 @@ app.put('/api/employees/:id', authMiddleware, requireRole(EMPLOYEE_MANAGE_ROLES)
   const newData: any = { ...parsed.data };
   if (newData.hireDate && !(newData.hireDate instanceof Date)) newData.hireDate = new Date(newData.hireDate);
   if ('birthDate' in newData && newData.birthDate && !(newData.birthDate instanceof Date)) newData.birthDate = new Date(newData.birthDate);
+  // п. привязка сотрудника к организации (admin / hr_specialist):
+  // проверяем существование; справочники подбираем под целевую организацию.
+  let targetOrgId: string | null = old.organizationId ?? scope.orgId;
+  if ('organizationId' in newData) {
+    if (newData.organizationId) {
+      const org = await prisma.organization.findUnique({ where: { id: newData.organizationId }, select: { id: true } });
+      if (!org) return c.json({ error: 'Выбранная организация не найдена' }, 400);
+      targetOrgId = org.id;
+    } else {
+      delete newData.organizationId; // пустое значение — оставляем текущую организацию
+    }
+  } else {
+    delete newData.organizationId;
+  }
   // п.1: проверка привязки пользователя (нельзя занять чужую; несуществующий => null)
   if ('userId' in newData && newData.userId) {
     const targetUser = await prisma.user.findUnique({ where: { id: newData.userId }, select: { id: true } });
@@ -1677,9 +1706,9 @@ app.put('/api/employees/:id', authMiddleware, requireRole(EMPLOYEE_MANAGE_ROLES)
     const takenBy = await prisma.employee.findFirst({ where: { userId: newData.userId, id: { not: id } }, select: { id: true, lastName: true, firstName: true } });
     if (takenBy) return c.json({ error: `Этот пользователь уже привязан к сотруднику ${takenBy.lastName} ${takenBy.firstName}` }, 400);
   }
-  if ('positionId' in newData) newData.positionId = await resolveRef('position', newData.positionId, scope.orgId) ?? old.positionId;
-  if ('departmentId' in newData) newData.departmentId = await resolveRef('department', newData.departmentId, scope.orgId) ?? old.departmentId;
-  if ('branchId' in newData) newData.branchId = await resolveRefOrNull('branch', newData.branchId ?? undefined, scope.orgId) ?? null;
+  if ('positionId' in newData) newData.positionId = await resolveRef('position', newData.positionId, targetOrgId) ?? old.positionId;
+  if ('departmentId' in newData) newData.departmentId = await resolveRef('department', newData.departmentId, targetOrgId) ?? old.departmentId;
+  if ('branchId' in newData) newData.branchId = await resolveRefOrNull('branch', newData.branchId ?? undefined, targetOrgId) ?? null;
   newData.updatedById = currentUser.userId;
 
   const employee = await prisma.employee.update({ where: { id }, data: newData, include: employeeInclude });
