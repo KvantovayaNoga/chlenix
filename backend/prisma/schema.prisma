@@ -44,6 +44,7 @@ model User {
   departments       Department[]       @relation("DepartmentUpdater")
   positions         Position[]         @relation("PositionUpdater")
   activityTypes     ActivityType[]     @relation("ActivityTypeUpdater")
+  customDirectories CustomDirectory[]  @relation("CustomDirectoryUpdater")
   branches          Branch[]           @relation("BranchUpdater")
   dataCenters       DataCenter[]       @relation("DataCenterUpdater")
   equipment         Equipment[]        @relation("EquipmentUpdater")
@@ -194,6 +195,44 @@ model ActivityType {
   @@index([organizationId])
   @@index([isMain])
   @@map("activity_types")
+}
+
+// ============================================================
+// Внутренние справочники (подкатегория «Справочники → Внутренние справочники»).
+// Администратор создаёт справочник («Виды деятельности», «Статусы» и т.п.)
+// и произвольные записи внутри него — справочники будут использоваться в
+// дальнейшем (привязка к карточкам сотрудников/оборудования и проч.).
+// Один справочник = набор записей (items).
+// ============================================================
+model CustomDirectory {
+  id             String   @id @default(uuid())
+  name           String   // Наименование справочника
+  description    String?
+  organizationId String?  @map("organization_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  updatedById    String?  @map("updated_by")
+
+  updatedBy User?            @relation("CustomDirectoryUpdater", fields: [updatedById], references: [id])
+  items     CustomDirectoryItem[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("custom_directories")
+}
+
+model CustomDirectoryItem {
+  id          String   @id @default(uuid())
+  directoryId String   @map("directory_id")
+  value       String   // Значение записи справочника
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  directory CustomDirectory @relation(fields: [directoryId], references: [id], onDelete: Cascade)
+
+  @@unique([directoryId, value])
+  @@index([directoryId])
+  @@map("custom_directory_items")
 }
 
 // Дата-центры (ЦОД): сторонние/облачные вычислительные мощности,

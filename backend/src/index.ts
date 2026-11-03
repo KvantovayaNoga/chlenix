@@ -179,9 +179,14 @@ const roleOf = (c: any): string => c.get('user')?.role ?? '';
  * - остальные      — только просмотр.
  * Справочник «Виды деятельности» (activityType): создание/удаление/редактирование
  * разрешены только администратору и специалисту по кадрам (решение от 2026-11).
+ * Внутренние справочники (customDirectory): создаются/редактируются/удаляются
+ * только администратором (решение от 2026-11); остальные роли — только просмотр.
  */
 function canEditDirectory(role: string, model: string): boolean {
   if (role === 'admin') return true;
+  // Внутренние справочники — эксклюзив администратора (иначе hr_specialist
+  // получил бы их через ветку «всё кроме ЦОД» ниже).
+  if (model === 'customDirectory') return false;
   if (role === 'hr_specialist') return model !== 'dataCenter';
   if (role === 'sysadmin') return model === 'dataCenter';
   return false;
@@ -3512,6 +3517,148 @@ app.delete('/api/activity-types/:id', authMiddleware, async (c) => {
 
   await prisma.activityType.delete({ where: { id } });
   await writeAudit(currentUser, 'delete', 'activityType', id, old.name, `Удалён справочник: вид деятельности «${old.okved} ${old.name}»`, c.req.header('x-forwarded-for'));
+  return c.json({ success: true });
+});
+
+// ============================================================
+// Внутренние справочники (подкатегория «Справочники → Внутренние справочники»)
+// ============================================================
+// Администратор может создавать во внутреннюю подкатегорию произвольные
+// справочники (наименование + набор записей) — они будут использоваться в
+// дальнейшем. Права на создание/удаление/редактирование — только у admin
+// (canEditDirectory(role, 'customDirectory')); остальные роли видят список
+// и используют значения в своих карточках.
+function publicCustomDirectory(d: any): any {
+  const { items, ...rest } = d;
+  return {
+    ...rest,
+    createdAt: isoDate(d.createdAt),
+    updatedAt: isoDate(d.updatedAt),
+    items: (items ?? [])
+      .slice()
+      .sort((a: any, b: any) => a.value.localeCompare(b.value))
+      .map((i: any) => ({ id: i.id, value: i.value, createdAt: isoDate(i.createdAt), updatedAt: isoDate(i.updatedAt) })),
+  };
+}
+
+async function customDirectoryScopeOrgId(c: any): Promise<string | null> {
+  const me = await prisma.user.findUnique({ where: { id: c.get('user').userId }, select: { organizationId: true } });
+  return me?.organizationId ?? null;
+}
+
+app.get('/api/custom-directories', authMiddleware, async (c) => {
+  // Скоуп по активной организации + старые глобальные записи (organizationId = null).
+  const orgId = await customDirectoryScopeOrgId(c);
+  const items: any[] = await prisma.customDirectory.findMany({
+    where: orgId ? { OR: [{ organizationId: orgId }, { organizationId: null }] } : {},
+    include: { items: true },
+    orderBy: { name: 'asc' },
+  });
+  return c.json(items.map(publicCustomDirectory));
+});
+
+app.post('/api/custom-directories', authMiddleware, async (c) => {
+  if (!canEditDirectory(roleOf(c), 'customDirectory')) return c.json({ error: 'Недостаточно прав' }, 403);
+  const parsed = z.object({
+    name: z.string().min(1),
+    description: z.string().nullable().optional(),
+    items: z.array(z.string().min(1)).optional().default([]),
+    organizationId: z.union([z.string().uuid(), z.null()]).optional(),
+  }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
+
+  const currentUser = c.get('user');
+  const orgId = (await customDirectoryScopeOrgId(c)) ?? parsed.data.organizationId ?? null;
+  const name = parsed.data.name.trim();
+  if (!name) return c.json({ error: 'Наименование справочника обязательно' }, 400);
+
+  const clashWhere: any = { name };
+  if (orgId) clashWhere.organizationId = orgId;
+  const exists = await prisma.customDirectory.findFirst({ where: clashWhere });
+  if (exists) return c.json({ error: `Внутренний справочник «${name}» уже существует` }, 409);
+
+  const values = [...new Set(parsed.data.items.map((v) => v.trim()).filter(Boolean))];
+  const item: any = await prisma.customDirectory.create({
+    data: {
+      name,
+      description: parsed.data.description?.trim() || null,
+      organizationId: orgId,
+      updatedById: currentUser.userId,
+      items: { create: values.map((value) => ({ value })) },
+    },
+    include: { items: true },
+  });
+
+  await createHistoryEntry('customDirectory', item.id, currentUser.fullName);
+  await writeAudit(currentUser, 'create', 'customDirectory', item.id, item.name, `Создан внутренний справочник: «${item.name}» (${values.length} записей)`, c.req.header('x-forwarded-for'));
+  return c.json(publicCustomDirectory(item), 201);
+});
+
+app.put('/api/custom-directories/:id', authMiddleware, async (c) => {
+  if (!canEditDirectory(roleOf(c), 'customDirectory')) return c.json({ error: 'Недостаточно прав' }, 403);
+  const { id } = c.req.param();
+  const parsed = z.object({
+    name: z.string().min(1).optional(),
+    description: z.string().nullable().optional(),
+    items: z.array(z.string().min(1)).optional(),
+  }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
+
+  const currentUser = c.get('user');
+  const old: any = await prisma.customDirectory.findUnique({ where: { id }, include: { items: true } });
+  if (!old) return c.json({ error: 'Not found' }, 404);
+
+  const newData: any = {};
+  if (parsed.data.name !== undefined) {
+    const name = parsed.data.name.trim();
+    if (!name) return c.json({ error: 'Наименование справочника обязательно' }, 400);
+    const clashWhere: any = { name, id: { not: id } };
+    if (old.organizationId) clashWhere.organizationId = old.organizationId;
+    const clash = await prisma.customDirectory.findFirst({ where: clashWhere });
+    if (clash) return c.json({ error: `Внутренний справочник «${name}» уже существует` }, 409);
+    newData.name = name;
+  }
+  if (parsed.data.description !== undefined) newData.description = parsed.data.description?.trim() || null;
+  newData.updatedById = currentUser.userId;
+
+  const values = parsed.data.items !== undefined
+    ? [...new Set(parsed.data.items.map((v) => v.trim()).filter(Boolean))]
+    : null;
+
+  const item: any = await prisma.$transaction(async (tx: any) => {
+    const updated: any = await tx.customDirectory.update({ where: { id }, data: newData });
+    if (values) {
+      // Полная замена набора записей справочника (значения уникальны внутри справочника)
+      await tx.customDirectoryItem.deleteMany({ where: { directoryId: id } });
+      if (values.length) await tx.customDirectoryItem.createMany({ data: values.map((value) => ({ directoryId: id, value })) });
+    }
+    return updated;
+  });
+
+  const withItems: any = await prisma.customDirectory.findUnique({ where: { id }, include: { items: true } });
+
+  await applyUpdate({
+    ctx: currentUser,
+    ipAddress: c.req.header('x-forwarded-for'),
+    entityType: 'customDirectory',
+    entityId: id,
+    entityName: withItems.name,
+    oldObj: old,
+    newData,
+  });
+  await writeAudit(currentUser, 'update', 'customDirectory', id, withItems.name, `Обновлён внутренний справочник: «${withItems.name}»`, c.req.header('x-forwarded-for'));
+  return c.json(publicCustomDirectory(withItems));
+});
+
+app.delete('/api/custom-directories/:id', authMiddleware, async (c) => {
+  if (!canEditDirectory(roleOf(c), 'customDirectory')) return c.json({ error: 'Недостаточно прав' }, 403);
+  const { id } = c.req.param();
+  const currentUser = c.get('user');
+  const old: any = await prisma.customDirectory.findUnique({ where: { id } });
+  if (!old) return c.json({ error: 'Not found' }, 404);
+
+  await prisma.customDirectory.delete({ where: { id } }); // items удаляются каскадно
+  await writeAudit(currentUser, 'delete', 'customDirectory', id, old.name, `Удалён внутренний справочник: «${old.name}»`, c.req.header('x-forwarded-for'));
   return c.json({ success: true });
 });
 

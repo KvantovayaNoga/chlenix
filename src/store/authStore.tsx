@@ -387,8 +387,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canEditDirectory: (model: string) => {
         // Имитация: sysadmin-обманка показывает редактирование только ЦОД,
         // hr_specialist-обманка — всё кроме ЦОД (админ при этом сохраняет полный доступ).
+        // Внутренние справочники (customDirectory) — эксклюзив администратора.
         const role = uiRole ?? '';
         if (role === 'admin') return true;
+        if (model === 'customDirectory') return false;
         if (role === 'hr_specialist') return model !== 'dataCenter';
         if (role === 'sysadmin') return model === 'dataCenter';
         return false;

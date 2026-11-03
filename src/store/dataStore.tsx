@@ -11,7 +11,7 @@ import { useAuthStore } from './authStore';
 import type {
   Employee, Equipment, VirtualMachine, Service, User,
   AuditLogEntry, Department, Position, Branch, DataCenter, Organization, DashboardStats,
-  ActivityType,
+  ActivityType, CustomDirectory,
 } from '../types';
 
 interface DataState {
@@ -19,6 +19,7 @@ interface DataState {
   departments: Department[];
   positions: Position[];
   activityTypes: ActivityType[];
+  customDirectories: CustomDirectory[];
   branches: Branch[];
   dataCenters: DataCenter[];
   employees: Employee[];
@@ -55,6 +56,12 @@ interface DataState {
   addActivityType: (data: Partial<ActivityType>) => Promise<boolean>;
   updateActivityType: (id: string, data: Partial<ActivityType>) => Promise<boolean>;
   deleteActivityType: (id: string) => Promise<boolean>;
+
+  // Внутренние справочники (подкатегория «Справочники → Внутренние справочники»):
+  // создание/редактирование/удаление — только администратор.
+  addCustomDirectory: (data: { name: string; description?: string | null; items?: string[] }) => Promise<boolean>;
+  updateCustomDirectory: (id: string, data: { name?: string; description?: string | null; items?: string[] }) => Promise<boolean>;
+  deleteCustomDirectory: (id: string) => Promise<boolean>;
 
   // Branches
   addBranch: (data: Partial<Branch>) => Promise<boolean>;
@@ -109,6 +116,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
+  const [customDirectories, setCustomDirectories] = useState<CustomDirectory[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [dataCenters, setDataCenters] = useState<DataCenter[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -127,8 +135,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   currentUserRef.current = currentUser;
 
   // Актуальные списки для «геттеров» без пересоздания контекста
-  const ref = useRef({ organizations, departments, positions, activityTypes, branches, dataCenters, employees, equipment, virtualMachines, services });
-  ref.current = { organizations, departments, positions, activityTypes, branches, dataCenters, employees, equipment, virtualMachines, services };
+  const ref = useRef({ organizations, departments, positions, activityTypes, customDirectories, branches, dataCenters, employees, equipment, virtualMachines, services });
+  ref.current = { organizations, departments, positions, activityTypes, customDirectories, branches, dataCenters, employees, equipment, virtualMachines, services };
 
   const loadPromiseRef = useRef<Promise<void> | null>(null);
   // Глобальный монотонный номер загрузки: любой ответ запроса, начатого раньше
@@ -189,11 +197,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     loadPromiseRef.current = (async () => {
       try {
-        const [orgs, deps, poss, acts, brs, dcs, emps, eq, vms, logs] = await Promise.all([
+        const [orgs, deps, poss, acts, cds, brs, dcs, emps, eq, vms, logs] = await Promise.all([
           api.get<Organization[]>('/organizations'),
           api.get<Department[]>('/departments'),
           api.get<Position[]>('/positions'),
           api.get<ActivityType[]>('/activity-types').catch(() => [] as ActivityType[]),
+          api.get<CustomDirectory[]>('/custom-directories').catch(() => [] as CustomDirectory[]),
           api.get<Branch[]>('/branches'),
           api.get<DataCenter[]>('/data-centers').catch(() => [] as DataCenter[]),
           api.get<Employee[]>('/employees'),
@@ -211,6 +220,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setDepartments(deps);
         setPositions(poss);
         setActivityTypes(acts);
+        setCustomDirectories(cds);
         setBranches(brs);
         setDataCenters(dcs);
         setEmployees(emps);
@@ -405,6 +415,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setActivityTypes((prev) => prev.filter((a) => a.id !== id));
   }), [run]);
 
+  // ---------- Внутренние справочники (подкатегория «Справочники») ----------
+  // Доступ на запись — только администратор (canEditDirectory(role,'customDirectory')).
+  const sortCustomDirectories = (list: CustomDirectory[]) =>
+    [...list].sort((a, b) => a.name.localeCompare(b.name));
+
+  const addCustomDirectory = useCallback((data: { name: string; description?: string | null; items?: string[] }) => run(async () => {
+    const item = await api.post<CustomDirectory>('/custom-directories', data);
+    setCustomDirectories((prev) => sortCustomDirectories([...prev.filter((d) => d.id !== item.id), item]));
+  }), [run]);
+  const updateCustomDirectory = useCallback((id: string, data: { name?: string; description?: string | null; items?: string[] }) => run(async () => {
+    const item = await api.put<CustomDirectory>(`/custom-directories/${id}`, data);
+    setCustomDirectories((prev) => sortCustomDirectories(prev.map((d) => (d.id === id ? item : d))));
+  }), [run]);
+  const deleteCustomDirectory = useCallback((id: string) => run(async () => {
+    await api.delete(`/custom-directories/${id}`);
+    setCustomDirectories((prev) => prev.filter((d) => d.id !== id));
+  }), [run]);
+
   const addBranch = useCallback((data: Partial<Branch>) => run(async () => {
     await loadAll();
     const item = await api.post<Branch>('/branches', data);
@@ -555,13 +583,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<DataState>(() => ({
-    organizations, departments, positions, activityTypes, branches, dataCenters, employees, equipment,
+    organizations, departments, positions, activityTypes, customDirectories, branches, dataCenters, employees, equipment,
     virtualMachines, services, auditLog, loaded, loading, error,
     loadAll, clearError, reloadVMs,
     addOrganization, updateOrganization, deleteOrganization, getOrganizationById, getCurrentUserOrganization,
     addDepartment, updateDepartment, deleteDepartment,
     addPosition, updatePosition, deletePosition,
     addActivityType, updateActivityType, deleteActivityType,
+    addCustomDirectory, updateCustomDirectory, deleteCustomDirectory,
     addBranch, updateBranch, deleteBranch,
     addDataCenter, updateDataCenter, deleteDataCenter,
     addEmployee, updateEmployee, deleteEmployee, getEmployeeById,
@@ -572,13 +601,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addService, updateService, deleteService, getServicesByVM,
     getDashboardStats,
   }), [
-    organizations, departments, positions, activityTypes, branches, dataCenters, employees, equipment,
+    organizations, departments, positions, activityTypes, customDirectories, branches, dataCenters, employees, equipment,
     virtualMachines, services, auditLog, loaded, loading, error,
     loadAll, clearError, reloadVMs,
     addOrganization, updateOrganization, deleteOrganization, getOrganizationById, getCurrentUserOrganization,
     addDepartment, updateDepartment, deleteDepartment,
     addPosition, updatePosition, deletePosition,
     addActivityType, updateActivityType, deleteActivityType,
+    addCustomDirectory, updateCustomDirectory, deleteCustomDirectory,
     addBranch, updateBranch, deleteBranch,
     addDataCenter, updateDataCenter, deleteDataCenter,
     addEmployee, updateEmployee, deleteEmployee, getEmployeeById,
@@ -603,6 +633,7 @@ const EMPTY_DATA_STATE: DataState = {
   departments: [],
   positions: [],
   activityTypes: [],
+  customDirectories: [],
   branches: [],
   dataCenters: [],
   employees: [],
@@ -630,6 +661,9 @@ const EMPTY_DATA_STATE: DataState = {
   addActivityType: asyncNoop as unknown as DataState['addActivityType'],
   updateActivityType: asyncNoop as unknown as DataState['updateActivityType'],
   deleteActivityType: asyncNoop as unknown as DataState['deleteActivityType'],
+  addCustomDirectory: asyncNoop as unknown as DataState['addCustomDirectory'],
+  updateCustomDirectory: asyncNoop as unknown as DataState['updateCustomDirectory'],
+  deleteCustomDirectory: asyncNoop as unknown as DataState['deleteCustomDirectory'],
   addBranch: asyncNoop as unknown as DataState['addBranch'],
   updateBranch: asyncNoop as unknown as DataState['updateBranch'],
   deleteBranch: asyncNoop as unknown as DataState['deleteBranch'],

@@ -141,6 +141,26 @@ export interface ActivityType {
   updatedBy: string | null;
 }
 
+// Внутренний справочник (подкатегория «Справочники → Внутренние справочники»).
+// Создаётся администратором; используется в дальнейшем. Один справочник =
+// наименование + набор записей (items).
+export interface CustomDirectoryItem {
+  id: string;
+  value: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomDirectory {
+  id: string;
+  name: string;
+  description: string | null;
+  items: CustomDirectoryItem[];
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
 // Справочник: филиалы
 export interface Branch {
   id: string;
