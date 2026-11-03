@@ -5,6 +5,8 @@ import { useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { HistoryLog } from '../components/HistoryLog';
+import { api } from '../api/client';
+import type { HistoryEntry } from '../types';
 import { ClusterForm, LocationSelect } from '../components/ClusterForm';
 import type { Equipment, ServerRole } from '../types';
 import { serverRoleLabels, hypervisorSuggestions, normalizeServerPayload, storageTypeLabels, storageProtocolLabels, roleHasResourceFields, formatGB } from '../utils/virtualization';
@@ -27,6 +29,23 @@ export function PhysicalServersPage() {
   const [showClusterForm, setShowClusterForm] = useState(false);
   const [editingCluster, setEditingCluster] = useState<Equipment | null>(null);
   const [viewingHistory, setViewingHistory] = useState<Equipment | null>(null);
+  // История изменений сервера/кластера подгружается с сервера при открытии
+  // (GET /equipment/:id/history) — по аналогии с категорией «Оборудование».
+  const [historyData, setHistoryData] = useState<HistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  async function openHistory(eq: Equipment) {
+    setViewingHistory(eq);
+    setHistoryLoading(true);
+    setHistoryData([]);
+    try {
+      setHistoryData(await api.get<HistoryEntry[]>(`/equipment/${eq.id}/history`));
+    } catch {
+      setHistoryData([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   // Серверы организации: категория «Сервер» или «СХД», либо любой единице
   // выставлена роль в системе виртуализации (хост/кластер/СХД/консоль управления).

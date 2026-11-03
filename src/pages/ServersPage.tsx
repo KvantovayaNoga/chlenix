@@ -4,15 +4,55 @@ import { api } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { useSearchParams } from '../router';
 import {
-  Cpu, Network, Globe, Plus, Edit, Trash2, X, Server, Activity, Search, Filter, Save,
+  Cpu, Network, Globe, Plus, Edit, Trash2, X, Server, Activity, Search, Filter, Save, History,
 } from 'lucide-react';
-import type { VirtualMachine, NetworkInterface, Service, ServerRole, Equipment } from '../types';
+import type { VirtualMachine, NetworkInterface, Service, ServerRole, Equipment, HistoryEntry } from '../types';
 import { serverRoleLabels, serverRoleOptions, hypervisorSuggestions, storageTypeLabels, storageProtocolLabels, roleHasResourceFields } from '../utils/virtualization';
 import { StorageField } from '../components/StorageField';
 import { DecimalInput } from '../components/DecimalInput';
 import { parsePortList } from '../types';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
+import { HistoryLog } from '../components/HistoryLog';
+
+// История изменений ВМ: подгружается с сервера (GET /virtual-machines/:id/history)
+// по клику на «История изменений» в карточке — по аналогии с оборудованием.
+export function VMHistorySection({ vmId, vmName }: { vmId: string; vmName: string }) {
+  const [historyData, setHistoryData] = useState<HistoryEntry[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      setHistoryData(await api.get<HistoryEntry[]>(`/virtual-machines/${vmId}/history`));
+    } catch {
+      setHistoryData([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (historyData === null && !loading) {
+    return (
+      <button onClick={load} className="text-sm text-indigo-400 hover:text-indigo-300 flex items-center gap-1">
+        <History className="w-4 h-4" />История изменений
+      </button>
+    );
+  }
+  return (
+    <div className="pt-4 border-t border-gray-700">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="font-semibold text-gray-200 flex items-center gap-2"><History className="w-5 h-5" />История изменений: {vmName}</h3>
+        {!loading && <button onClick={() => setHistoryData(null)} className="text-xs text-gray-400 hover:text-gray-300">Свернуть</button>}
+      </div>
+      {loading ? (
+        <p className="text-sm text-gray-400">Загрузка истории…</p>
+      ) : (
+        <HistoryLog history={historyData ?? []} title="История изменений ВМ" />
+      )}
+    </div>
+  );
+}
 
 const vmStatusLabels = {
   running: { label: 'Запущена', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
@@ -298,6 +338,8 @@ export function ServersPage() {
                     {canManageServers() && (
                       <button onClick={() => setEditingVM(vm)} className="text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30"><Edit className="w-4 h-4" /></button>
                     )}
+                    {/* История изменений ВМ доступна всем, кто видит карточку (как и просмотр самой ВМ по клику) */}
+                    <button onClick={() => setSelectedVM(vm)} className="text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30" title="История изменений"><History className="w-4 h-4" /></button>
                     {/* Удаление ВМ на бэкенде разрешено admin и sysadmin (SERVER_ROLES) */}
                     {canManageServers() && (
                       <button onClick={() => { if (confirm('Удалить ВМ?')) deleteVM(vm.id); }} className="text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30"><Trash2 className="w-4 h-4" /></button>
@@ -548,6 +590,10 @@ export function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, servic
             <p>Создано: {new Date(vm.createdAt).toLocaleString('ru-RU')}</p>
             <p>Обновлено: {new Date(vm.updatedAt).toLocaleString('ru-RU')} • {getUserName(vm.updatedBy)}</p>
           </div>
+
+          {/* История изменений ВМ (GET /virtual-machines/:id/history) — по аналогии
+              с категорией «Оборудование»: группировка по сохранениям, детали по клику. */}
+          <VMHistorySection vmId={vm.id} vmName={vm.name} />
         </div>
       </div>
     </div>
