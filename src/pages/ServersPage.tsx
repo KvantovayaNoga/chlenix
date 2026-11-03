@@ -550,6 +550,7 @@ export function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, servic
           </div>
         </div>
       </div>
+    </div>
 
       {/* Вложенные модалки (используются, когда вызывающая страница не передала
           собственные обработчики — например, блок «Последние ВМ» на странице «Обзор») */}

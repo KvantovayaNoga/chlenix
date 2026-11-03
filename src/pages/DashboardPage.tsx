@@ -6,9 +6,9 @@ import { Users, Monitor, AlertTriangle, CheckCircle, XCircle, Server, TrendingUp
 
 export function DashboardPage() {
   const {
-    getDashboardStats, virtualMachines, equipment, employees, departments, services, users,
+    getDashboardStats, virtualMachines, equipment, employees, departments, services,
   } = useDataStore();
-  const { canManageServers, isAdmin, currentUser } = useAuthStore();
+  const { canManageServers, isAdmin, currentUser, users } = useAuthStore();
   // Клик по ВМ в блоке «Последние виртуальные машины» открывает ту же модалку,
   // что и в категории «Виртуальные машины». Снимок на момент открытия, актуальная
   // версия резолвится из стора (см. ServersPage).
