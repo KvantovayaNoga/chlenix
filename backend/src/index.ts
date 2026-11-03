@@ -247,11 +247,9 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
   responsibleEmployeeId: 'ответственный (инфраструктура)',
   serviceResponsibleEmployeeId: 'ответственный (сервисы)',
   materiallyResponsibleEmployeeId: 'МОЛ (мат. ответственное лицо)',
-  // «Место размещения» оборудования: заполнен ровно один из двух ключей
-  // (branchId ИЛИ dataCenterId). Пишем в историю одной строкой с названием,
-  // а не двумя записями («филиал: было X → стало —» + «ЦОД: было — → стало Y»).
-  branchId: 'место размещения',
-  dataCenterId: 'место размещения',
+  // Примечание: для оборудования branchId/dataCenterId объединяются в одну
+  // запись «место размещения» (см. locationLabel в applyUpdate); здесь
+  // остаются базовые подписи для остальных моделей (сотрудник, ЦОД и т.п.).
   owner: 'владелец/эксплуатирующая организация',
   birthDate: 'дата рождения',
   userId: 'привязанный пользователь',
@@ -401,7 +399,8 @@ const TRACKED_KEYS = Object.keys(HISTORY_FIELD_LABELS);
 // Ссылочные поля (внешние ключи): в историю пишем человекочитаемые значения —
 // ФИО сотрудников, названия филиалов/ЦОД/отделов/должностей/организаций, а не uuid.
 type RefModel = 'employee' | 'branch' | 'dataCenter' | 'department' | 'position' | 'organization' | 'equipment';
-const REF_FIELD_MODELS: Record<string, RefModel | RefModel[]> = {
+// Примечание: 'user' добавлен union-ом ниже, чтобы поддерживать userId в карточке сотрудника.
+const REF_FIELD_MODELS: Record<string, RefModel | 'user' | (RefModel | 'user')[]> = {
   assignedToEmployeeId: 'employee',
   materiallyResponsibleEmployeeId: 'employee',
   responsibleEmployeeId: 'employee',
