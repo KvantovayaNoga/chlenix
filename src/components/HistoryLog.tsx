@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, History, User, Calendar, X } from 'lucide-react';
 import { api } from '../api/client';
+import { onDataChanged } from '../store/dataStore';
 
 export interface HistoryEntry {
   id: string;
@@ -26,6 +27,15 @@ interface HistoryLogProps {
   collapsedCount?: number;
   /** Вызывается при клике на блок «История изменений» — открывает модалку полной истории. */
   onOpenFull?: () => void;
+  /** Вызывается при закрытии модалки полной истории. */
+  onCloseFull?: () => void;
+  /**
+   * Управляемое состояние модалки полной истории. Нужно для случаев, когда
+   * история рендерится внутри другого модального окна (вложенная модалка
+   * не работает корректно) — родитель сам хранит флаг и рендерит модалку
+   * через <FullHistoryModal>.
+   */
+  controlledFull?: boolean;
 }
 
 // Группа в списке истории: одна строка на сохранение. Заголовок — запись с
@@ -40,6 +50,62 @@ interface HistoryGroup {
 
 // Специальный маркер: в selectedGroup означает «открыта модалка полной истории».
 const FULL_SENTINEL: HistoryGroup = { key: '__full__', head: {} as HistoryEntry, details: [] };
+
+const GROUP_FIELD = 'изменения';
+
+const actionText = (action: HistoryEntry['action']) => {
+  switch (action) {
+    case 'created': return { text: 'Создано', color: 'text-green-400', bgColor: 'bg-green-900/20' };
+    case 'updated': return { text: 'Обновлено', color: 'text-blue-400', bgColor: 'bg-blue-900/20' };
+    case 'assigned': return { text: 'Закреплено', color: 'text-indigo-400', bgColor: 'bg-indigo-900/20' };
+    case 'unassigned': return { text: 'Откреплено', color: 'text-orange-400', bgColor: 'bg-orange-900/20' };
+    case 'deleted': return { text: 'Удалено', color: 'text-red-400', bgColor: 'bg-red-900/20' };
+  }
+};
+
+const renderDiff = (oldValue: string, newValue: string) => {
+  // Простое сравнение строк
+  if (oldValue === newValue) {
+    return <span className="text-gray-500 dark:text-gray-400">Без изменений</span>;
+  }
+
+  // Если значения многострочные, показываем diff по строкам
+  const oldLines = oldValue.split('\n');
+  const newLines = newValue.split('\n');
+
+  if (oldLines.length > 1 || newLines.length > 1) {
+    return (
+      <div className="font-mono text-xs space-y-1">
+        {oldLines.map((line, idx) => (
+          <div key={`old-${idx}`} className="flex items-center">
+            <span className="text-red-400 w-4 flex-shrink-0 text-center leading-none">-</span>
+            <span className="text-red-300 bg-red-900/20 px-2 py-0.5 rounded flex-1">{line}</span>
+          </div>
+        ))}
+        {newLines.map((line, idx) => (
+          <div key={`new-${idx}`} className="flex items-center">
+            <span className="text-green-400 w-4 flex-shrink-0 text-center leading-none">+</span>
+            <span className="text-green-300 bg-green-900/20 px-2 py-0.5 rounded flex-1">{line}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Для однострочных значений показываем старое и новое
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-red-400 font-mono text-sm flex-shrink-0 w-3 text-center leading-none">-</span>
+        <span className="text-red-300 bg-red-900/20 px-2 py-1 rounded flex-1 break-all">{oldValue}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-green-400 font-mono text-sm flex-shrink-0 w-3 text-center leading-none">+</span>
+        <span className="text-green-300 bg-green-900/20 px-2 py-1 rounded flex-1 break-all">{newValue}</span>
+      </div>
+    </div>
+  );
+};
 
 /**
  * Хук актуальной истории изменений сущности. Загружает историю с сервера
@@ -68,24 +134,25 @@ export function useEntityHistory(path: string | null, revision?: number): { hist
 
   useEffect(() => {
     if (!path) return;
-    const onFocus = () => {
+    const refetch = () => {
       const id = ++reqIdRef.current;
       api.get<HistoryEntry[]>(`${path}${path.includes('?') ? '&' : '?'}_t=${Date.now()}`)
         .then((h) => { if (id === reqIdRef.current) setHistory(h); })
         .catch(() => {});
     };
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) onFocus(); });
+    window.addEventListener('focus', refetch);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) refetch(); });
+    // Мгновенное обновление ВЕЗДЕ после любой успешной мутации данных
+    // (сохранение в любой карточке поднимает событие data-changed в сторе).
+    const unsubscribe = onDataChanged(refetch);
     return () => {
-      window.removeEventListener('focus', onFocus);
-      // visibilitychange-слушатель остаётся на время жизни модуля — лёгкий и идемпотентный.
+      window.removeEventListener('focus', refetch);
+      unsubscribe();
     };
   }, [path]);
 
   return { history, loading };
 }
-
-const GROUP_FIELD = 'изменения';
 
 function groupHistory(history: HistoryEntry[]): HistoryGroup[] {
   const byBatch = new Map<string, HistoryEntry[]>();
@@ -115,11 +182,17 @@ function groupHistory(history: HistoryEntry[]): HistoryGroup[] {
   return groups.sort((a, b) => b.head.changedAt.localeCompare(a.head.changedAt));
 }
 
-export function HistoryLog({ history, title = 'История изменений', entityKey, collapsedCount = 3, onOpenFull }: HistoryLogProps) {
+export function HistoryLog({ history, title = 'История изменений', entityKey, collapsedCount = 3, onOpenFull, onCloseFull, controlledFull }: HistoryLogProps) {
   const [selectedGroup, setSelectedGroup] = useState<HistoryGroup | null>(null);
+  // Внешнее управление модалкой полной истории (используется страницами,
+  // которые рендерят историю внутри модальных окон и не могут вложить модалку).
+  const [internalFullOpen, setInternalFullOpen] = useState(false);
+  const fullOpen = controlledFull !== undefined ? controlledFull : internalFullOpen;
+  const openFull = () => { controlledFull === undefined && setInternalFullOpen(true); onOpenFull?.(); };
+  const closeFull = () => { controlledFull === undefined && setInternalFullOpen(false); onCloseFull?.(); };
   // При переключении между карточками (смена entityKey) закрываем модалку,
   // чтобы не показывать детали истории другой сущности.
-  useEffect(() => { setSelectedGroup(null); }, [entityKey]);
+  useEffect(() => { setSelectedGroup(null); setInternalFullOpen(false); }, [entityKey]);
   const groups = useMemo(() => groupHistory(history), [history]);
 
   if (history.length === 0) {
@@ -134,148 +207,27 @@ export function HistoryLog({ history, title = 'История изменений
     );
   }
 
-  const getActionText = (action: HistoryEntry['action']) => {
-    switch (action) {
-      case 'created': return { text: 'Создано', color: 'text-green-400', bgColor: 'bg-green-900/20' };
-      case 'updated': return { text: 'Обновлено', color: 'text-blue-400', bgColor: 'bg-blue-900/20' };
-      case 'assigned': return { text: 'Закреплено', color: 'text-indigo-400', bgColor: 'bg-indigo-900/20' };
-      case 'unassigned': return { text: 'Откреплено', color: 'text-orange-400', bgColor: 'bg-orange-900/20' };
-      case 'deleted': return { text: 'Удалено', color: 'text-red-400', bgColor: 'bg-red-900/20' };
-    }
-  };
-
-  const renderDiff = (oldValue: string, newValue: string) => {
-    // Простое сравнение строк
-    if (oldValue === newValue) {
-      return <span className="text-gray-500 dark:text-gray-400">Без изменений</span>;
-    }
-
-    // Если значения многострочные, показываем diff по строкам
-    const oldLines = oldValue.split('\n');
-    const newLines = newValue.split('\n');
-
-    if (oldLines.length > 1 || newLines.length > 1) {
-      return (
-        <div className="font-mono text-xs space-y-1">
-          {oldLines.map((line, idx) => (
-            <div key={`old-${idx}`} className="flex items-center">
-              <span className="text-red-400 w-4 flex-shrink-0 text-center leading-none">-</span>
-              <span className="text-red-300 bg-red-900/20 px-2 py-0.5 rounded flex-1">{line}</span>
-            </div>
-          ))}
-          {newLines.map((line, idx) => (
-            <div key={`new-${idx}`} className="flex items-center">
-              <span className="text-green-400 w-4 flex-shrink-0 text-center leading-none">+</span>
-              <span className="text-green-300 bg-green-900/20 px-2 py-0.5 rounded flex-1">{line}</span>
-            </div>
-          ))}
-        </div>
-      );
-    }
-
-    // Для однострочных значений показываем старое и новое
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <span className="text-red-400 font-mono text-sm flex-shrink-0 w-3 text-center leading-none">-</span>
-          <span className="text-red-300 bg-red-900/20 px-2 py-1 rounded flex-1 break-all">{oldValue}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-green-400 font-mono text-sm flex-shrink-0 w-3 text-center leading-none">+</span>
-          <span className="text-green-300 bg-green-900/20 px-2 py-1 rounded flex-1 break-all">{newValue}</span>
-        </div>
-      </div>
-    );
-  };
-
   const visibleGroups = groups.slice(0, collapsedCount);
   const hiddenCount = groups.length - visibleGroups.length;
 
-  // Модалка ПОЛНОЙ истории: сверху вниз, самое последнее изменение — вверху.
-  const fullModal = (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => { setSelectedGroup(null); onOpenFull?.(); }}>
-      <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col border border-gray-200 dark:border-gray-700 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-            <History className="w-6 h-6" />
-            {title} — полностью
-          </h2>
-          <button onClick={() => { setSelectedGroup(null); onOpenFull?.(); }} className="p-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-        <div className="p-6 overflow-y-auto space-y-3">
-          {groups.map((g) => {
-            const act = getActionText(g.head.action);
-            return (
-              <div key={g.key} className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <User className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{g.head.changedBy}</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                    <Calendar className="w-3 h-3" />
-                    {new Date(g.head.changedAt).toLocaleString('ru-RU')}
-                  </div>
-                </div>
-                <div className="text-sm mb-2">
-                  <span className={`font-medium ${act.color}`}>{act.text}</span>
-                  {g.head.fieldName === GROUP_FIELD && g.head.newValue ? (
-                    <span className="text-gray-600 dark:text-gray-300">
-                      {g.head.newValue.startsWith('Обновлено:') ? `: ${g.head.newValue.slice('Обновлено:'.length).trim()}` : `: ${g.head.newValue}`}
-                    </span>
-                  ) : (
-                    g.head.fieldName && <span className="text-gray-600 dark:text-gray-300">: {g.head.fieldName}</span>
-                  )}
-                </div>
-                {/* Детализация по полям для групповых сохранений */}
-                {g.details.length > 0 && (
-                  <div className="space-y-3 mt-2">
-                    {g.details.map((d) => (
-                      <div key={d.id} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
-                        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">{d.fieldName}</p>
-                        {d.oldValue !== null && d.oldValue !== undefined && d.newValue !== null && d.newValue !== undefined ? (
-                          renderDiff(d.oldValue, d.newValue)
-                        ) : (
-                          <p className="text-gray-700 dark:text-gray-300 text-sm">{d.newValue ?? d.oldValue}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {/* Одиночная запись без группы (старые данные / создание / закрепление) */}
-                {g.details.length === 0 && g.head.fieldName !== GROUP_FIELD && g.head.oldValue && g.head.newValue && (
-                  <div className="mt-2 text-xs">{renderDiff(g.head.oldValue, g.head.newValue)}</div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-
   // Если открыта модалка полной истории (детали конкретной записи не выбраны) — показываем её.
-  if (onOpenFull && selectedGroup === FULL_SENTINEL) {
-    return fullModal;
+  if (fullOpen && selectedGroup === FULL_SENTINEL) {
+    return <FullHistoryModal groups={groups} title={title} onClose={closeFull} />;
   }
 
   return (
     <>
       <div
-        className={`bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700 ${onOpenFull ? 'cursor-pointer ring-1 ring-transparent hover:ring-indigo-300/60 dark:hover:ring-indigo-600/40 transition' : ''}`}
-        onClick={onOpenFull ? () => setSelectedGroup(FULL_SENTINEL) : undefined}
-        role={onOpenFull ? 'button' : undefined}
-        title={onOpenFull ? 'Открыть полную историю изменений' : undefined}
+        className={`bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer ring-1 ring-transparent hover:ring-indigo-300/60 dark:hover:ring-indigo-600/40 transition`}
+        onClick={() => { setSelectedGroup(FULL_SENTINEL); openFull(); }}
+        role="button"
+        title="Открыть полную историю изменений"
       >
         <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4 flex items-center justify-between gap-2">
           <span className="flex items-center gap-2"><History className="w-5 h-5" />{title}</span>
-          {onOpenFull && (
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400">
-              <ChevronDown className="w-4 h-4" />Показать все ({groups.length})
-            </span>
-          )}
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400">
+            <ChevronDown className="w-4 h-4" />Показать все ({groups.length})
+          </span>
         </h3>
         <div className="space-y-3">
           {visibleGroups.map((group) => {
@@ -334,7 +286,7 @@ export function HistoryLog({ history, title = 'История изменений
         {hiddenCount > 0 && (
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); setSelectedGroup(FULL_SENTINEL); }}
+            onClick={(e) => { e.stopPropagation(); setSelectedGroup(FULL_SENTINEL); openFull(); }}
             className="mt-3 w-full flex items-center justify-center gap-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 rounded-lg py-2 transition-colors"
           >
             <ChevronDown className="w-4 h-4" />
