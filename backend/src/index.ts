@@ -296,6 +296,40 @@ function displayValue(v: unknown): string {
 // Вычисляет diff по белому списку отслеживаемых полей и пишет историю + аудит
 const TRACKED_KEYS = Object.keys(HISTORY_FIELD_LABELS);
 
+// Ссылочные поля (внешние ключи): в историю пишем человекочитаемые значения —
+// ФИО сотрудников, названия филиалов/ЦОД/отделов/должностей/организаций, а не uuid.
+const REF_FIELD_MODELS: Record<string, 'employee' | 'branch' | 'dataCenter' | 'department' | 'position' | 'organization' | 'equipment'> = {
+  assignedToEmployeeId: 'employee',
+  materiallyResponsibleEmployeeId: 'employee',
+  responsibleEmployeeId: 'employee',
+  serviceResponsibleEmployeeId: 'employee',
+  branchId: 'branch',
+  dataCenterId: 'dataCenter',
+  departmentId: 'department',
+  positionId: 'position',
+  organizationId: 'organization',
+  parentClusterId: 'equipment',
+};
+
+async function historyDisplayValue(key: string, value: any): Promise<string> {
+  if (value === null || value === undefined || value === '') return '—';
+  const model = REF_FIELD_MODELS[key];
+  if (model && typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+    try {
+      const rec: any = await (prisma as any)[model].findUnique({ where: { id: value } });
+      if (rec) {
+        if (model === 'employee') {
+          const fio = [rec.lastName, rec.firstName, rec.middleName].filter(Boolean).join(' ');
+          return fio || rec.name || 'сотрудник (удалён)';
+        }
+        return rec.name || rec.shortName || '—';
+      }
+      return 'удалённая запись';
+    } catch { /* если запись недоступна — покажем как есть */ }
+  }
+  return displayValue(value);
+}
+
 async function applyUpdate(opts: {
   ctx: Ctx;
   ipAddress?: string | null;
@@ -309,19 +343,30 @@ async function applyUpdate(opts: {
   for (const key of TRACKED_KEYS) {
     if (!(key in opts.newData)) continue;
     const nv = opts.newData[key];
+    // null означает «значение сброшено» и должно попадать в diff;
+    // undefined — поле не передавалось, пропускаем.
     if (nv === undefined) continue;
     const ov = opts.oldObj[key];
-    const norm = (v: any) => (v instanceof Date ? v.toISOString() : v === undefined ? null : v);
-    if (String(norm(ov)) !== String(norm(nv))) {
-      changes.push(`${HISTORY_FIELD_LABELS[key]}: "${displayValue(ov)}" → "${displayValue(nv)}"`);
+    // Нормализация: даты сравниваем по ISO, пустые строки и null приравниваем
+    // друг к другу (иначе назначение/снятие МОЛ не детектировалось из-за
+    // рассинхронизации '' / null).
+    const norm = (v: any) => {
+      if (v instanceof Date) return v.toISOString();
+      if (v === undefined || v === null || v === '') return '';
+      return String(v);
+    };
+    if (norm(ov) !== norm(nv)) {
+      const oldLabel = await historyDisplayValue(key, ov);
+      const newLabel = await historyDisplayValue(key, nv);
+      changes.push(`${HISTORY_FIELD_LABELS[key]}: "${oldLabel}" → "${newLabel}"`);
       await prisma.historyRecord.create({
         data: {
           entityType: opts.entityType,
           entityId: opts.entityId,
           action: 'updated',
           fieldName: HISTORY_FIELD_LABELS[key],
-          oldValue: displayValue(ov),
-          newValue: displayValue(nv),
+          oldValue: oldLabel,
+          newValue: newLabel,
           changedBy: opts.ctx.fullName,
         },
       });

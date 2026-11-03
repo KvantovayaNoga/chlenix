@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { useDataStore } from '../store/dataStore';
+import { api } from '../api/client';
+import type { HistoryEntry } from '../types';
 import { HistoryLog } from '../components/HistoryLog';
 import {
   Building2,
@@ -332,12 +334,26 @@ export function OrganizationPage() {
             <h3 className="flex items-center gap-2 text-sm font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-4">
               <CalendarDays className="w-4 h-4" /> История изменений карточки
             </h3>
-            <HistoryLog history={organization.history || []} />
+            <OrganizationHistory orgId={organization.id} />
           </div>
         </>
       )}
     </div>
   );
+}
+
+// История изменений организации подгружается с сервера (GET /organizations/:id/history)
+function OrganizationHistory({ orgId }: { orgId: string }) {
+  const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api.get<HistoryEntry[]>(`/organizations/${orgId}/history`)
+      .then((h) => { if (alive) setEntries(h); })
+      .catch(() => { if (alive) setEntries([]); });
+    return () => { alive = false; };
+  }, [orgId]);
+  if (entries === null) return <p className="text-gray-500 dark:text-gray-400 text-sm">Загрузка истории…</p>;
+  return <HistoryLog history={entries} />;
 }
 
 function EditOrganizationForm({

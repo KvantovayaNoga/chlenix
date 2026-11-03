@@ -5,7 +5,8 @@ import {
   Search, Plus, Monitor, Server, Armchair, MousePointerClick, Network, Phone, Package,
   X, Edit, Trash2, Cpu, Clock, User, History, Filter, Save, HardDrive,
 } from 'lucide-react';
-import type { Equipment, EquipmentCategory } from '../types';
+import type { Equipment, EquipmentCategory, HistoryEntry } from '../types';
+import { api } from '../api/client';
 import { HistoryLog } from '../components/HistoryLog';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
@@ -42,6 +43,23 @@ export function EquipmentPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
   const [viewingHistory, setViewingHistory] = useState<Equipment | null>(null);
+  const [historyData, setHistoryData] = useState<HistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // История изменений подгружается с сервера при открытии (GET /equipment/:id/history)
+  async function openHistory(eq: Equipment) {
+    setViewingHistory(eq);
+    setHistoryLoading(true);
+    setHistoryData([]);
+    try {
+      const history = await api.get<HistoryEntry[]>(`/equipment/${eq.id}/history`);
+      setHistoryData(history);
+    } catch {
+      setHistoryData([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
   const [showFilterManager, setShowFilterManager] = useState(false);
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>(() => {
     const saved = localStorage.getItem('equipment-filters');
@@ -301,7 +319,7 @@ export function EquipmentPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button onClick={(e) => { e.stopPropagation(); setViewingHistory(eq); }} className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 p-1" title="История изменений"><History className="w-4 h-4" /></button>
+                        <button onClick={(e) => { e.stopPropagation(); openHistory(eq); }} className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 p-1" title="История изменений"><History className="w-4 h-4" /></button>
                         {canManageEmployees() && (
                           <button onClick={(e) => { e.stopPropagation(); setEditingEquipment(eq); }} className="text-gray-400 hover:text-indigo-600 p-1" title="Редактировать"><Edit className="w-4 h-4" /></button>
                         )}
@@ -342,7 +360,11 @@ export function EquipmentPage() {
               </button>
             </div>
             <div className="p-6">
-              <HistoryLog history={viewingHistory.history || []} />
+              {historyLoading ? (
+                <p className="text-gray-500 dark:text-gray-400 text-sm">Загрузка истории…</p>
+              ) : (
+                <HistoryLog history={historyData} />
+              )}
             </div>
           </div>
         </div>
