@@ -247,7 +247,7 @@ export function EmployeeDetailPage() {
       {showOrgModal && employee?.userId && (
         <UserOrganizationsModal
           userId={employee.userId}
-          userFullName={employee.linkedUser?.fullName || employee.fullName || ''}
+          userFullName={employee.linkedUser?.fullName || [employee.lastName, employee.firstName, employee.middleName].filter(Boolean).join(' ')}
           currentOrgs={userOrgs}
           onClose={() => setShowOrgModal(false)}
           onSaved={(orgs) => { setUserOrgs(orgs); setShowOrgModal(false); }}

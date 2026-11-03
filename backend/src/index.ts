@@ -960,6 +960,7 @@ app.put('/api/users/:id', authMiddleware, async (c) => {
   if (!target) return c.json({ error: 'Not found' }, 404);
 
   const updateData: any = {};
+  let orgChangedByPatch = false; // перенос между организациями → разлогин всех сессий
   if (typeof body.fullName === 'string' && body.fullName.trim().length >= 2) updateData.fullName = body.fullName.trim();
   if (typeof body.email === 'string' && z.string().email().safeParse(body.email).success) {
     if (body.email !== target.email) {
@@ -996,6 +997,14 @@ app.put('/api/users/:id', authMiddleware, async (c) => {
           : null;
         updateData.organizationId = foundOrg ? foundOrg.id : target.organizationId;
       }
+      // Перенос в другую организацию через обычное редактирование пользователя:
+      // гасим все активные сессии (разлогин), при следующем входе пользователь
+      // попадёт уже в новую актуальную организацию. Членство фиксируем в
+      // таблице user_organizations.
+      if (updateData.organizationId !== (target.organizationId ?? null)) {
+        updateData.tokenVersion = (target.tokenVersion ?? 0) + 1;
+        orgChangedByPatch = true;
+      }
     }
   }
   if (typeof body.password === 'string' && body.password.length >= 6) {
@@ -1008,6 +1017,11 @@ app.put('/api/users/:id', authMiddleware, async (c) => {
 
   updateData.updatedById = currentUser.userId;
   const user = await prisma.user.update({ where: { id }, data: updateData });
+
+  // Перенесли в другую организацию — фиксируем членство в новой (мультиорганизационность)
+  if (orgChangedByPatch) {
+    await ensureMemberships(user.id, [user.organizationId]);
+  }
 
   // История: без значения пароля
   const safeOld: Record<string, any> = { ...target };
