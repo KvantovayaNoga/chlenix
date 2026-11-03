@@ -91,7 +91,20 @@ const authMiddleware = async (c: any, next: any) => {
   try {
     const token = authHeader.split(' ')[1];
     const { payload } = await jwtVerify(token, JWT_SECRET);
-    c.set('user', payload as any);
+    // Принудительный разлогин при переносе в другую организацию: токен несёт
+    // версию (tv), актуальная версия хранится в БД. Если пользователь был
+    // перемещён администратором (или исключён из организации) — tv не совпадёт,
+    // все старые сессии гаснут, и при следующем входе он попадёт в новую организацию.
+    const tv = Number((payload as any).tv ?? 0);
+    const account = await prisma.user.findUnique({
+      where: { id: (payload as any).userId },
+      select: { tokenVersion: true, isActive: true, organizationId: true },
+    });
+    if (!account || !account.isActive || account.tokenVersion !== tv) {
+      return c.json({ error: 'Сессия недействительна. Войдите заново.' }, 401);
+    }
+    // Активная организация всегда берётся из БД — актуальная из последней сессии
+    c.set('user', { ...(payload as any), organizationId: account.organizationId ?? null });
     await next();
   } catch {
     return c.json({ error: 'Invalid token' }, 401);
@@ -349,9 +362,15 @@ async function getUserOrgScope(userId: string): Promise<{ orgId: string | null; 
   return { orgId: u?.organizationId ?? null, role: u?.role ?? 'viewer' };
 }
 
-// Где может работать пользователь: собственные организации + (для админа) все организации системы.
+// Где может работать пользователь: организации, участником которых он является
+// (таблица user_organizations) + активная организация из последней сессии
+// (users.organization_id) + (для админа) все организации системы.
 async function getAccessibleOrgs(userId: string): Promise<Array<{ id: string; name: string; isOwn: boolean; shortName?: string; legalAddress?: string; phone?: string; inn?: string; directorName?: string }>> {
   const me = await prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true, role: true } });
+  const memberOrgIds = await getUserOrgIds(userId);
+  // Активная организация (последняя сессия) всегда доступна, даже если запись
+  // членства ещё не создана (например, у данных, созданных до миграции).
+  if (me?.organizationId && !memberOrgIds.includes(me.organizationId)) memberOrgIds.push(me.organizationId);
   // Краткие реквизиты нужны для карточек на странице «Сменить организацию»
   const all = await prisma.organization.findMany({
     orderBy: { createdAt: 'asc' },
@@ -367,8 +386,8 @@ async function getAccessibleOrgs(userId: string): Promise<Array<{ id: string; na
     inn: o.inn ?? '',
     directorName: o.directorName ?? '',
   });
-  if (me?.role === 'admin') return all.map((o) => brief(o, o.id === me.organizationId));
-  return all.filter((o) => o.id === me?.organizationId).map((o) => brief(o, true));
+  if (me?.role === 'admin') return all.map((o) => brief(o, o.id === me.organizationId || memberOrgIds.includes(o.id)));
+  return all.filter((o) => memberOrgIds.includes(o.id)).map((o) => brief(o, o.id === me?.organizationId));
 }
 
 // Приводит дату (Date | ISO-строка) к ISO-формату для ответов API
@@ -423,6 +442,22 @@ const registerSchema = z.object({
   joinOrganizationId: z.string().uuid().optional().nullable(),
 });
 
+async function getUserOrgIds(userId: string): Promise<string[]> {
+  const rows = await prisma.userOrganization.findMany({ where: { userId }, select: { organizationId: true } });
+  return rows.map((r) => r.organizationId);
+}
+
+// Гарантирует наличие записи членства пользователя в организации.
+// Используется при создании организации, одобрении заявки и явном назначении админом.
+async function ensureMembership(userId: string, organizationId: string): Promise<void> {
+  if (!userId || !organizationId) return;
+  await prisma.userOrganization.upsert({
+    where: { userId_organizationId: { userId, organizationId } },
+    create: { userId, organizationId },
+    update: {},
+  }).catch(() => {});
+}
+
 function publicUser(u: any) {
   return {
     id: u.id,
@@ -445,6 +480,8 @@ async function issueToken(user: any) {
     role: user.role,
     fullName: user.fullName,
     organizationId: user.organizationId ?? null,
+    // Версия токена: инвалидация старых сессий при переносе между организациями
+    tv: user.tokenVersion ?? 0,
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()

@@ -23,12 +23,19 @@ model User {
   isActive       Boolean  @default(true) @map("is_active")
   avatar         String?  @db.Text
   theme          String   @default("system")
+  // Активная организация — та, где пользователь был в последней сессии
+  // (последнее переключение/вход). Определяет скоуп данных при следующем входе.
   organizationId String?  @map("organization_id")
+  // Версия токена: инкрементируется при переносе пользователя в другую
+  // организацию — все ранее выданные JWT становятся недействительными
+  // (принудительный разлогин), и при следующем входе он попадёт в новую организацию.
+  tokenVersion   Int      @default(0) @map("token_version")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   // Связи
   organization      Organization?      @relation(fields: [organizationId], references: [id])
+  memberships       UserOrganization[]
   updatedByUser     User?              @relation("UserUpdater", fields: [updatedById], references: [id])
   updatedById       String?            @map("updated_by")
   updatedUsers      User[]             @relation("UserUpdater")
@@ -73,6 +80,28 @@ model JoinRequest {
   @@index([status])
   @@index([applicantId])
   @@map("join_requests")
+}
+
+// ============================================================
+// Членство пользователя в организациях (мультиорганизационность)
+// Один пользователь может состоять сразу в нескольких организациях.
+// Активная организация (users.organization_id) — та, где он был в
+// последней сессии; при переносе администратором она меняется, а все
+// выданные JWT инвалидируются через users.token_version (разлогин).
+// ============================================================
+model UserOrganization {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  organizationId String   @map("organization_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("user_organizations")
 }
 
 enum JoinRequestStatus {
@@ -538,6 +567,7 @@ model Organization {
   updatedById          String?  @map("updated_by")
 
   users           User[]
+  memberships     UserOrganization[]
   joinRequests    JoinRequest[]
   employees       Employee[]
   equipment       Equipment[]
