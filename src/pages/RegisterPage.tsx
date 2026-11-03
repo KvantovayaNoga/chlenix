@@ -15,11 +15,12 @@ export function RegisterPage() {
     email: '',
     password: '',
     confirmPassword: '',
-    createOrganization: true,
+    createOrganization: false,
   });
   // Чекбоксы «Присоединиться…» (слева) и «Создать организацию…» (справа) —
-  // взаимоисключающие: выбор одного снимает другой.
-  const [joinMode, setJoinMode] = useState(false);
+  // взаимоисключающие: выбор одного снимает другой. По умолчанию выбрана
+  // опция «Присоединиться к организации» (если в системе есть организации).
+  const [joinMode, setJoinMode] = useState(true);
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [publicOrgs, setPublicOrgs] = useState<PublicOrg[]>([]);
   const [showPassword, setShowPassword] = useState(false);
@@ -27,22 +28,37 @@ export function RegisterPage() {
   const [pendingJoin, setPendingJoin] = useState<{ organization: string } | null>(null);
   const { register, users } = useAuthStore();
   const isFirstUser = users.length === 0;
+  // Выбор режима регистрации («Присоединиться» / «Создать») показываем только
+  // когда в системе уже есть организации и это не первый пользователь.
+  // Если организаций нет — пользователь после первого входа сам создаст
+  // организацию, без навязывания выбора и редиректа на её создание.
+  const showModeSelection = !isFirstUser && publicOrgs.length > 0;
   const navigate = useNavigate();
 
   // Список организаций для выбора по краткому наименованию (публичный эндпоинт
   // GET /api/public/organizations отдаёт только id + shortName).
   useEffect(() => {
-    if (!joinMode || publicOrgs.length > 0) return;
     void (async () => {
       try {
         const list = await api.get<PublicOrg[]>('/public/organizations');
         setPublicOrgs(list);
+        // Если организаций в системе нет — выбор «Присоединиться»/«Создать»
+        // не показываем: пользователь после первого входа сам создаст
+        // организацию, сразу на её создание редиректить не нужно.
+        if (list.length === 0) setJoinMode(false);
       } catch {
+        setJoinMode(false);
         setError('Не удалось загрузить список организаций. Попробуйте позже.');
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [joinMode]);
+  }, []);
+
+  useEffect(() => {
+    // Первый пользователь — администратор системы: присоединяться не к чему,
+    // режим «Присоединиться» снимаем автоматически.
+    if (isFirstUser) setJoinMode(false);
+  }, [isFirstUser]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,7 +74,7 @@ export function RegisterPage() {
       return;
     }
 
-    if (joinMode && !selectedOrgId) {
+    if (joinMode && publicOrgs.length > 0 && !selectedOrgId) {
       setError('Выберите организацию, к которой хотите присоединиться');
       return;
     }
@@ -72,8 +88,10 @@ export function RegisterPage() {
         setPendingJoin({ organization: org?.shortName ?? 'выбранной организации' });
         return;
       }
-      // После регистрации сразу предлагаем создать организацию
-      navigate(formData.createOrganization ? '/organization/create' : '/dashboard');
+      // После регистрации НЕ редиректим на создание организации — пользователь
+      // попадёт в приложение, где при отсутствии организации сам увидит
+      // предложение её создать (DefaultAuthenticatedRedirect в App.tsx).
+      navigate('/dashboard');
     } else {
       setError(result.error || 'Ошибка регистрации');
     }
@@ -136,7 +154,9 @@ export function RegisterPage() {
           )}
           <p className="text-gray-600 dark:text-gray-400 text-sm mb-6 flex items-start gap-2">
             <ArrowRight className="w-4 h-4 text-indigo-400 mt-0.5 flex-shrink-0" />
-            После регистрации вы сможете создать свою организацию и начать учёт активов.
+            {showModeSelection
+              ? 'Присоединитесь к существующей организации или создайте новую — карточку организации можно создать и позже.'
+              : 'После входа в систему вы сможете создать свою организацию и начать учёт активов.'}
           </p>
           
           {error && (
@@ -220,7 +240,9 @@ export function RegisterPage() {
             </button>
 
             {/* Чекбоксы режима: слева — присоединиться к существующей,
-                справа — создать организацию после регистрации (взаимоисключающие) */}
+                справа — создать организацию после регистрации (взаимоисключающие).
+                Показываются только если в системе есть организации. */}
+            {showModeSelection && (
             <div className="grid grid-cols-2 gap-3 mt-4">
               <label
                 className={`flex flex-col gap-1.5 p-3 border rounded-xl cursor-pointer transition-colors ${
@@ -276,33 +298,30 @@ export function RegisterPage() {
                 </span>
               </label>
             </div>
+            )}
 
             {/* Список организаций для выбора (только краткие наименования) */}
-            {joinMode && (
+            {showModeSelection && joinMode && (
               <div className="mt-3 p-3 bg-gray-700/50 border border-gray-600 rounded-xl">
                 <p className="text-xs font-medium text-gray-300 mb-2">Выберите организацию:</p>
-                {publicOrgs.length === 0 ? (
-                  <p className="text-sm text-gray-400 py-2">Организаций в системе пока нет.</p>
-                ) : (
-                  <div className="max-h-40 overflow-y-auto space-y-1">
-                    {publicOrgs.map((org) => (
-                      <label
-                        key={org.id}
-                        className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${
-                          selectedOrgId === org.id ? 'bg-indigo-600/30 text-indigo-200' : 'hover:bg-gray-600/50 text-gray-300'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedOrgId === org.id}
-                          onChange={(e) => setSelectedOrgId(e.target.checked ? org.id : null)}
-                          className="w-4 h-4 accent-indigo-500"
-                        />
-                        <span className="text-sm">{org.shortName}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
+                <div className="max-h-40 overflow-y-auto space-y-1">
+                  {publicOrgs.map((org) => (
+                    <label
+                      key={org.id}
+                      className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${
+                        selectedOrgId === org.id ? 'bg-indigo-600/30 text-indigo-200' : 'hover:bg-gray-600/50 text-gray-300'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedOrgId === org.id}
+                        onChange={(e) => setSelectedOrgId(e.target.checked ? org.id : null)}
+                        className="w-4 h-4 accent-indigo-500"
+                      />
+                      <span className="text-sm">{org.shortName}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
             )}
           </form>
