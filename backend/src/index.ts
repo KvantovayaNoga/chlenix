@@ -269,6 +269,7 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
   phone: 'телефон',
   website: 'сайт',
   directorName: 'руководитель',
+  directorPosition: 'должность руководителя',
   bankName: 'банк',
   checkingAccount: 'расчётный счёт',
   correspondentAccount: 'корр. счёт',
@@ -1663,6 +1664,7 @@ const organizationSchema = z.object({
   email: z.string().email().nullable().optional().or(z.literal('')),
   website: orgText,
   directorName: orgText,
+  directorPosition: orgText,   // Должность руководителя (отдельное поле)
   accountantName: orgText,     // устаревшее поле (главный бухгалтер берётся из штатного расписания)
   bankName: orgText,
   checkingAccount: orgText,
@@ -1755,6 +1757,7 @@ app.post('/api/organizations', authMiddleware, requireRole(ORG_CREATE_ROLES), as
       email: typeof parsed.data.email === 'string' && parsed.data.email ? parsed.data.email : null,
       website: parsed.data.website ?? null,
       directorName: parsed.data.directorName ?? null,
+      directorPosition: parsed.data.directorPosition ?? null,
       accountantName: parsed.data.accountantName ?? null,
       bankName: parsed.data.bankName ?? null,
       checkingAccount: parsed.data.checkingAccount ?? null,

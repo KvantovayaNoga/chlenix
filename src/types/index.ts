@@ -88,6 +88,7 @@ export interface Organization {
   email: string;                // Email
   website: string;              // Сайт
   directorName: string;         // Руководитель (ФИО)
+  directorPosition: string;     // Должность руководителя (отображается под ФИО в карточке)
   /** @deprecated Главный бухгалтер больше не указывается в карточке организации —
    * он определяется по штатному расписанию (должность среди сотрудников). */
   accountantName?: string;

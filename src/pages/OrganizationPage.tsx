@@ -310,7 +310,18 @@ export function OrganizationPage() {
             </InfoCard>
 
             <InfoCard icon={Crown} title="Руководство">
-              <InfoRow label="Руководитель" value={organization.directorName} />
+              {/* Должность руководителя отображается под ФИО */}
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:gap-4 py-1">
+                <span className="text-sm text-gray-500 dark:text-gray-400 flex-shrink-0">Руководитель</span>
+                <span className="flex flex-col sm:items-end">
+                  <span className={`text-sm font-medium ${organization.directorName?.trim() ? 'text-gray-800 dark:text-gray-200' : 'text-gray-600 italic'}`}>
+                    {organization.directorName?.trim() || 'не указан'}
+                  </span>
+                  {organization.directorPosition?.trim() && (
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{organization.directorPosition.trim()}</span>
+                  )}
+                </span>
+              </div>
             </InfoCard>
 
             <InfoCard icon={Landmark} title="Банковские реквизиты">
@@ -451,8 +462,12 @@ function EditOrganizationForm({
           <input type="text" value={form.industry} onChange={(e) => handleChange('industry', e.target.value)} className={inputCls} />
         </div>
         <div>
-          <label className={labelCls}>Руководитель</label>
-          <input type="text" value={form.directorName} onChange={(e) => handleChange('directorName', e.target.value)} className={inputCls} />
+          <label className={labelCls}>Руководитель (ФИО)</label>
+          <input type="text" value={form.directorName} onChange={(e) => handleChange('directorName', e.target.value)} placeholder="Иванов И. И." className={inputCls} />
+        </div>
+        <div>
+          <label className={labelCls}>Должность руководителя</label>
+          <input type="text" value={form.directorPosition ?? ''} onChange={(e) => handleChange('directorPosition', e.target.value)} placeholder="Директор" className={inputCls} />
         </div>
         <div>
           <label className={labelCls}>Наименование банка</label>

@@ -553,6 +553,7 @@ model Organization {
   email                String?
   website              String?
   directorName         String?  @map("director_name")
+  directorPosition     String?  @map("director_position")
   accountantName       String?  @map("accountant_name")
   bankName             String?  @map("bank_name")
   checkingAccount      String?  @map("checking_account")

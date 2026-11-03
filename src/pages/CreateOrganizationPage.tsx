@@ -24,6 +24,10 @@ export function CreateOrganizationPage() {
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  // Чекбокс «Фактический адрес совпадает с юридическим» — по умолчанию активен.
+  // Пока он включён, отдельное поле фактического адреса не показывается,
+  // и при сохранении фактический адрес копируется из юридического.
+  const [actualSameAsLegal, setActualSameAsLegal] = useState(true);
 
   const [form, setForm] = useState({
     name: '',
@@ -43,6 +47,7 @@ export function CreateOrganizationPage() {
     email: '',
     website: '',
     directorName: '',
+    directorPosition: '',
     bankName: '',
     checkingAccount: '',
     correspondentAccount: '',
@@ -91,6 +96,11 @@ export function CreateOrganizationPage() {
       setError('Укажите юридический адрес');
       return;
     }
+    // Фактический адрес обязателен, только если он не совпадает с юридическим
+    if (!actualSameAsLegal && form.actualAddress.trim().length < 5) {
+      setError('Укажите фактический адрес (или отметьте совпадение с юридическим)');
+      return;
+    }
 
     const finalLegalForm = (form.legalForm === 'Другое…' ? form.legalFormCustom : form.legalForm).trim();
 
@@ -105,13 +115,15 @@ export function CreateOrganizationPage() {
         kpp: form.kpp.trim(),
         ogrn: form.ogrn.trim(),
         legalAddress: form.legalAddress.trim(),
-        actualAddress: form.actualAddress.trim(),
+        // При активном чекбоксе фактический адрес совпадает с юридическим
+        actualAddress: actualSameAsLegal ? form.legalAddress.trim() : form.actualAddress.trim(),
         postalCode: form.postalCode.trim(),
         city: form.city.trim(),
         phone: form.phone.trim(),
         email: form.email.trim(),
         website: form.website.trim(),
         directorName: form.directorName.trim(),
+        directorPosition: form.directorPosition.trim(),
         bankName: form.bankName.trim(),
         checkingAccount: form.checkingAccount.trim(),
         correspondentAccount: form.correspondentAccount.trim(),
@@ -339,15 +351,34 @@ export function CreateOrganizationPage() {
                 />
               </div>
               <div className="md:col-span-2">
-                <label className={labelCls}>Фактический адрес</label>
-                <input
-                  type="text"
-                  value={form.actualAddress}
-                  onChange={(e) => handleChange('actualAddress', e.target.value)}
-                  className={inputCls}
-                  placeholder="Если отличается от юридического"
-                />
+                {/* Чекбокс «Фактический адрес совпадает с юридическим» — по умолчанию активен.
+                    При деактивации появляется поле ввода фактического адреса. */}
+                <label className="flex items-center gap-2 cursor-pointer select-none text-sm font-medium text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={actualSameAsLegal}
+                    onChange={(e) => {
+                      setActualSameAsLegal(e.target.checked);
+                      // При возврате к «совпадает» очищаем введённый фактический адрес
+                      if (e.target.checked) handleChange('actualAddress', '');
+                    }}
+                    className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 bg-white dark:bg-gray-700 focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  Фактический адрес совпадает с юридическим
+                </label>
               </div>
+              {!actualSameAsLegal && (
+                <div className="md:col-span-2">
+                  <label className={labelCls}>Фактический адрес<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
+                  <input
+                    type="text"
+                    value={form.actualAddress}
+                    onChange={(e) => handleChange('actualAddress', e.target.value)}
+                    className={inputCls}
+                    placeholder="Отличается от юридического"
+                  />
+                </div>
+              )}
               <div>
                 <label className={labelCls}>Контактный телефон</label>
                 <input
@@ -398,14 +429,24 @@ export function CreateOrganizationPage() {
               <Building2 className="w-5 h-5" /> Руководство и банковские реквизиты
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="md:col-span-2">
-                <label className={labelCls}>Руководитель (ФИО / должность)</label>
+              <div>
+                <label className={labelCls}>Руководитель (ФИО)</label>
                 <input
                   type="text"
                   value={form.directorName}
                   onChange={(e) => handleChange('directorName', e.target.value)}
                   className={inputCls}
-                  placeholder="Директор Иванов И. И."
+                  placeholder="Иванов И. И."
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Должность руководителя</label>
+                <input
+                  type="text"
+                  value={form.directorPosition}
+                  onChange={(e) => handleChange('directorPosition', e.target.value)}
+                  className={inputCls}
+                  placeholder="Директор"
                 />
               </div>
               {/* Главный бухгалтер убран из карточки организации: он определяется
