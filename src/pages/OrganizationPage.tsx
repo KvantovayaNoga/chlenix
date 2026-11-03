@@ -24,6 +24,7 @@ import {
   BadgeCheck,
   Briefcase,
   CalendarDays,
+  ExternalLink,
 } from 'lucide-react';
 import type { Organization, OrganizationLegalForm } from '../types';
 
@@ -68,15 +69,91 @@ function InfoCard({ icon: Icon, title, children }: { icon: any; title: string; c
   );
 }
 
-function InfoRow({ label, value }: { label: string; value?: string | number | null }) {
+function InfoRow({ label, value, action }: { label: string; value?: string | number | null; action?: React.ReactNode }) {
   const empty = value === undefined || value === null || String(value).trim() === '';
   return (
     <div className="flex flex-col sm:flex-row sm:justify-between sm:gap-4 py-1">
       <span className="text-sm text-gray-500 dark:text-gray-400 flex-shrink-0">{label}</span>
       <span className={`text-sm font-medium sm:text-right ${empty ? 'text-gray-600 italic' : 'text-gray-800 dark:text-gray-200'}`}>
         {empty ? 'не указан' : String(value)}
+        {action}
       </span>
     </div>
+  );
+}
+
+// Нормализация URL сайта: если пользователь ввёл адрес без протокола — добавляем https://
+function normalizeWebsiteUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
+// Действие-ссылка рядом со значением поля (открыть карту / написать письмо и т.п.)
+const iconLinkCls =
+  'ml-2 inline-flex items-center justify-center w-7 h-7 rounded-lg align-middle ' +
+  'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/10 transition-colors';
+
+function AddressMapAction({ address }: { address: string }) {
+  // Открывает страницу Яндекса с поиском внесённых данных
+  const yandexMapsUrl = `https://yandex.ru/maps/?text=${encodeURIComponent(address.trim())}`;
+  return (
+    <a
+      href={yandexMapsUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Показать адрес на Яндекс Картах"
+      aria-label="Показать адрес на Яндекс Картах"
+      className={iconLinkCls}
+    >
+      <ExternalLink className="w-4 h-4" />
+    </a>
+  );
+}
+
+function PhoneCallAction({ phone }: { phone: string }) {
+  // tel:-ссылка вызывает функцию набора на устройстве
+  const telHref = `tel:${phone.replace(/[^\d+]/g, '')}`;
+  return (
+    <a
+      href={telHref}
+      title="Позвонить"
+      aria-label="Позвонить"
+      className={iconLinkCls}
+    >
+      <Phone className="w-4 h-4" />
+    </a>
+  );
+}
+
+function EmailAction({ email }: { email: string }) {
+  // mailto:-ссылка открывает почту (функция «написать»)
+  return (
+    <a
+      href={`mailto:${email.trim()}`}
+      title="Написать письмо"
+      aria-label="Написать письмо"
+      className={iconLinkCls}
+    >
+      <Mail className="w-4 h-4" />
+    </a>
+  );
+}
+
+function WebsiteAction({ website }: { website: string }) {
+  // Гиперссылка на указанный сайт (открывается в новой вкладке)
+  return (
+    <a
+      href={normalizeWebsiteUrl(website)}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Перейти на сайт"
+      aria-label="Перейти на сайт"
+      className={`${iconLinkCls} !ml-1`}
+    >
+      <ExternalLink className="w-4 h-4" />
+    </a>
   );
 }
 
@@ -146,29 +223,53 @@ export function OrganizationPage() {
                 <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">{organization.name}</p>
               )}
               <div className="flex flex-wrap gap-x-6 gap-y-2 mt-4 text-sm text-gray-500 dark:text-gray-400">
+                {/* Юридический адрес: клик открывает Яндекс с поиском внесённых данных */}
                 {(organization.city || organization.legalAddress) && (
-                  <span className="flex items-center gap-1.5">
+                  <a
+                    href={`https://yandex.ru/maps/?text=${encodeURIComponent([organization.postalCode, organization.city, organization.legalAddress].filter(Boolean).join(', ').trim())}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Показать адрес на Яндекс Картах"
+                    className="flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                  >
                     <MapPin className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                     {[organization.postalCode, organization.city, organization.legalAddress].filter(Boolean).join(', ')}
-                  </span>
+                  </a>
                 )}
+                {/* Телефон: tel:-ссылка вызывает функцию набора */}
                 {organization.phone && (
-                  <span className="flex items-center gap-1.5">
+                  <a
+                    href={`tel:${organization.phone.replace(/[^\d+]/g, '')}`}
+                    title="Позвонить"
+                    className="flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                  >
                     <Phone className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                     {organization.phone}
-                  </span>
+                  </a>
                 )}
+                {/* Эл. почта: mailto:-ссылка открывает письмо */}
                 {organization.email && (
-                  <span className="flex items-center gap-1.5">
+                  <a
+                    href={`mailto:${organization.email.trim()}`}
+                    title="Написать письмо"
+                    className="flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                  >
                     <Mail className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                     {organization.email}
-                  </span>
+                  </a>
                 )}
+                {/* Сайт: гиперссылка на указанный сайт */}
                 {organization.website && (
-                  <span className="flex items-center gap-1.5">
+                  <a
+                    href={normalizeWebsiteUrl(organization.website)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Перейти на сайт"
+                    className="flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors underline-offset-2 hover:underline"
+                  >
                     <Globe className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                     {organization.website}
-                  </span>
+                  </a>
                 )}
               </div>
             </div>
@@ -308,11 +409,35 @@ export function OrganizationPage() {
             <InfoCard icon={MapPin} title="Адрес и контакты">
               <InfoRow label="Почтовый индекс" value={organization.postalCode} />
               <InfoRow label="Город" value={organization.city} />
-              <InfoRow label="Юридический адрес" value={organization.legalAddress} />
-              <InfoRow label="Фактический адрес" value={organization.actualAddress} />
-              <InfoRow label="Телефон" value={organization.phone} />
-              <InfoRow label="Email" value={organization.email} />
-              <InfoRow label="Сайт" value={organization.website} />
+              {/* Юридический адрес: клик по иконке открывает Яндекс с поиском внесённых данных */}
+              <InfoRow
+                label="Юридический адрес"
+                value={organization.legalAddress}
+                action={organization.legalAddress?.trim() ? <AddressMapAction address={[organization.postalCode, organization.city, organization.legalAddress].filter(Boolean).join(', ')} /> : undefined}
+              />
+              <InfoRow
+                label="Фактический адрес"
+                value={organization.actualAddress}
+                action={organization.actualAddress?.trim() ? <AddressMapAction address={organization.actualAddress} /> : undefined}
+              />
+              {/* Телефон: tel:-ссылка вызывает функцию набора */}
+              <InfoRow
+                label="Телефон"
+                value={organization.phone}
+                action={organization.phone?.trim() ? <PhoneCallAction phone={organization.phone} /> : undefined}
+              />
+              {/* Email: mailto:-ссылка открывает письмо */}
+              <InfoRow
+                label="Email"
+                value={organization.email}
+                action={organization.email?.trim() ? <EmailAction email={organization.email} /> : undefined}
+              />
+              {/* Сайт: гиперссылка на указанный сайт */}
+              <InfoRow
+                label="Сайт"
+                value={organization.website}
+                action={organization.website?.trim() ? <WebsiteAction website={organization.website} /> : undefined}
+              />
             </InfoCard>
 
             <InfoCard icon={Crown} title="Руководство">
