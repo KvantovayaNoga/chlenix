@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { Shield, ShieldCheck, Eye, X, CheckCircle, XCircle, Edit, Trash2, Plus, Search, Filter, History, Save, UserCog, ServerCog } from 'lucide-react';
-import type { User, UserRole, HistoryEntry } from '../types';
+import type { User, UserRole } from '../types';
 import { ROLE_LABELS } from '../types';
-import { api } from '../api/client';
-import { HistoryLog } from '../components/HistoryLog';
+import { HistoryLog, useEntityHistory } from '../components/HistoryLog';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
 
 const roleLabels: Record<UserRole, string> = ROLE_LABELS;
@@ -30,8 +29,6 @@ export function UsersPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [viewingHistory, setViewingHistory] = useState<User | null>(null);
-  const [historyData, setHistoryData] = useState<HistoryEntry[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
@@ -222,11 +219,7 @@ export function UsersPage() {
               </button>
             </div>
             <div className="p-6">
-              {historyLoading ? (
-                <p className="text-sm text-gray-500 dark:text-gray-400">Загрузка истории…</p>
-              ) : (
-                <HistoryLog history={historyData} />
-              )}
+              <UserHistoryModalBody userId={viewingHistory.id} />
             </div>
           </div>
         </div>
@@ -238,17 +231,10 @@ export function UsersPage() {
     return currentUser?.role === 'admin' || user.id === currentUser?.id;
   }
 
-  async function openHistory(user: User) {
+  // История пользователя подгружается через useEntityHistory и мгновенно
+  // обновляется после любого сохранения — без перезагрузки страницы.
+  function openHistory(user: User) {
     setViewingHistory(user);
-    setHistoryLoading(true);
-    try {
-      const history = await api.get<HistoryEntry[]>(`/users/${user.id}/history`);
-      setHistoryData(history);
-    } catch {
-      setHistoryData([]);
-    } finally {
-      setHistoryLoading(false);
-    }
   }
 }
 
@@ -286,4 +272,13 @@ function UserModal({ user, onClose, onSave }: any) {
       </div>
     </div>
   );
+}
+
+// Тело модалки истории пользователя: актуальная история через useEntityHistory.
+function UserHistoryModalBody({ userId }: { userId: string }) {
+  const { history, loading } = useEntityHistory(`/users/${userId}/history`);
+  if (loading && history.length === 0) {
+    return <p className="text-sm text-gray-500 dark:text-gray-400">Загрузка истории…</p>;
+  }
+  return <HistoryLog history={history} entityKey={`user:${userId}`} />;
 }

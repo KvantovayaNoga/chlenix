@@ -5,9 +5,9 @@ import {
   Search, Plus, Monitor, Server, Armchair, MousePointerClick, Network, Phone, Package,
   X, Edit, Trash2, Cpu, Clock, User, History, Filter, Save, HardDrive,
 } from 'lucide-react';
-import type { Equipment, EquipmentCategory, HistoryEntry } from '../types';
+import type { Equipment, EquipmentCategory } from '../types';
 import { api } from '../api/client';
-import { HistoryLog } from '../components/HistoryLog';
+import { HistoryLog, useEntityHistory } from '../components/HistoryLog';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
 import { serverRoleVisual } from '../components/ServerRoleIcon';
@@ -45,22 +45,11 @@ export function EquipmentPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
   const [viewingHistory, setViewingHistory] = useState<Equipment | null>(null);
-  const [historyData, setHistoryData] = useState<HistoryEntry[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
 
   // История изменений подгружается с сервера при открытии (GET /equipment/:id/history)
-  async function openHistory(eq: Equipment) {
+  // и мгновенно обновляется ВЕЗДЕ после любого сохранения (useEntityHistory).
+  function openHistory(eq: Equipment) {
     setViewingHistory(eq);
-    setHistoryLoading(true);
-    setHistoryData([]);
-    try {
-      const history = await api.get<HistoryEntry[]>(`/equipment/${eq.id}/history`);
-      setHistoryData(history);
-    } catch {
-      setHistoryData([]);
-    } finally {
-      setHistoryLoading(false);
-    }
   }
   const [showFilterManager, setShowFilterManager] = useState(false);
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>(() => {
@@ -362,11 +351,7 @@ export function EquipmentPage() {
               </button>
             </div>
             <div className="p-6">
-              {historyLoading ? (
-                <p className="text-gray-500 dark:text-gray-400 text-sm">Загрузка истории…</p>
-              ) : (
-                <HistoryLog history={historyData} />
-              )}
+              <EquipmentHistoryModalBody eqId={viewingHistory.id} />
             </div>
           </div>
         </div>
@@ -529,4 +514,14 @@ export function EquipmentModalWrapper({ equipment, onClose }: { equipment: Equip
       }}
     />
   );
+}
+
+// Тело модалки истории оборудования: актуальная история через useEntityHistory —
+// обновляется мгновенно после любого сохранения, без перезагрузки страницы.
+function EquipmentHistoryModalBody({ eqId }: { eqId: string }) {
+  const { history, loading } = useEntityHistory(`/equipment/${eqId}/history`);
+  if (loading && history.length === 0) {
+    return <p className="text-gray-500 dark:text-gray-400 text-sm">Загрузка истории…</p>;
+  }
+  return <HistoryLog history={history} entityKey={`eq:${eqId}`} />;
 }

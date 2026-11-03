@@ -53,7 +53,7 @@ const FULL_SENTINEL: HistoryGroup = { key: '__full__', head: {} as HistoryEntry,
 
 const GROUP_FIELD = 'изменения';
 
-const actionText = (action: HistoryEntry['action']) => {
+export const getActionText = (action: HistoryEntry['action']) => {
   switch (action) {
     case 'created': return { text: 'Создано', color: 'text-green-400', bgColor: 'bg-green-900/20' };
     case 'updated': return { text: 'Обновлено', color: 'text-blue-400', bgColor: 'bg-blue-900/20' };
@@ -385,5 +385,101 @@ export function HistoryLog({ history, title = 'История изменений
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * Модалка ПОЛНОЙ истории изменений: все группы (одно сохранение = одна строка)
+ * сверху вниз, от самых свежих к старым. Клик по строке раскрывает детализацию
+ * «было → стало» по каждому полю. Используется HistoryLog внутри и может
+ * рендериться страницами напрямую (например, когда история показывается
+ * внутри другой модалки и вложить модалку нельзя).
+ */
+export function FullHistoryModal({ groups: groupsProp, history, title = 'История изменений', onClose }: {
+  groups?: HistoryGroup[];
+  history?: HistoryEntry[];
+  title?: string;
+  onClose: () => void;
+}) {
+  const allGroups = useMemo(() => groupsProp ?? groupHistory(history ?? []), [groupsProp, history]);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70] p-4" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col border border-gray-200 dark:border-gray-700 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+            <History className="w-6 h-6" />
+            {title}
+            <span className="text-sm font-normal text-gray-500 dark:text-gray-400">({allGroups.length})</span>
+          </h2>
+          <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" title="Закрыть">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+        <div className="overflow-y-auto p-5 space-y-3">
+          {allGroups.length === 0 && (
+            <p className="text-gray-500 dark:text-gray-400 text-sm">История изменений пуста</p>
+          )}
+          {allGroups.map((group) => {
+            const entry = group.head;
+            const action = getActionText(entry.action);
+            const isGroup = entry.fieldName === GROUP_FIELD;
+            const expanded = expandedKey === group.key;
+            return (
+              <div
+                key={group.key}
+                className={`bg-gray-50 dark:bg-gray-700/60 rounded-lg border transition-colors ${expanded ? 'border-indigo-300 dark:border-indigo-600' : 'border-gray-200 dark:border-gray-600'} cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/60`}
+                onClick={() => setExpandedKey(expanded ? null : group.key)}
+              >
+                <div className="p-4">
+                  <div className="flex items-start justify-between mb-1.5 gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <User className="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0" />
+                      <span className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{entry.changedBy}</span>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${action.color} ${action.bgColor}`}>{action.text}</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
+                      <Calendar className="w-3 h-3" />
+                      {new Date(entry.changedAt).toLocaleString('ru-RU')}
+                    </div>
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-300 break-all">
+                    {isGroup
+                      ? (entry.newValue?.startsWith('Обновлено:') ? entry.newValue : `${entry.newValue ?? entry.fieldName ?? ''}`)
+                      : (entry.fieldName ? `${entry.fieldName}: ${entry.newValue ?? ''}` : (entry.newValue ?? ''))}
+                  </div>
+                  {(group.details.length > 0 || (!isGroup && entry.oldValue && entry.newValue)) && (
+                    <div className="mt-1.5 flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400">
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                      {expanded ? 'Скрыть детали' : `Показать детали${group.details.length > 1 ? ` (${group.details.length})` : ''}`}
+                    </div>
+                  )}
+                </div>
+                {expanded && (
+                  <div className="px-4 pb-4 space-y-3 border-t border-gray-200 dark:border-gray-600 pt-3">
+                    {group.details.length > 0 ? (
+                      group.details.map((d) => (
+                        <div key={d.id} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+                          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">{d.fieldName}</p>
+                          {d.oldValue != null && d.newValue != null
+                            ? renderDiff(d.oldValue, d.newValue)
+                            : <p className="text-gray-700 dark:text-gray-300 text-sm">{d.newValue ?? d.oldValue}</p>}
+                        </div>
+                      ))
+                    ) : !isGroup && entry.oldValue && entry.newValue ? (
+                      renderDiff(entry.oldValue, entry.newValue)
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }

@@ -3,8 +3,7 @@ import { useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { useDataStore } from '../store/dataStore';
 import { api } from '../api/client';
-import type { HistoryEntry } from '../types';
-import { HistoryLog } from '../components/HistoryLog';
+import { HistoryLog, useEntityHistory } from '../components/HistoryLog';
 import {
   Building2,
   Pencil,
@@ -575,17 +574,11 @@ export function OrganizationPage() {
 }
 
 // История изменений организации подгружается с сервера (GET /organizations/:id/history)
+// через useEntityHistory и мгновенно обновляется после любого сохранения.
 function OrganizationHistory({ orgId }: { orgId: string }) {
-  const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
-  useEffect(() => {
-    let alive = true;
-    api.get<HistoryEntry[]>(`/organizations/${orgId}/history`)
-      .then((h) => { if (alive) setEntries(h); })
-      .catch(() => { if (alive) setEntries([]); });
-    return () => { alive = false; };
-  }, [orgId]);
-  if (entries === null) return <p className="text-gray-500 dark:text-gray-400 text-sm">Загрузка истории…</p>;
-  return <HistoryLog history={entries} />;
+  const { history, loading } = useEntityHistory(`/organizations/${orgId}/history`);
+  if (loading && history.length === 0) return <p className="text-gray-500 dark:text-gray-400 text-sm">Загрузка истории…</p>;
+  return <HistoryLog history={history} entityKey={`org:${orgId}`} />;
 }
 
 function EditOrganizationForm({

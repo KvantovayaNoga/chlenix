@@ -4,9 +4,7 @@ import { useState } from 'react';
 import { useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { EmployeeSearch } from '../components/EmployeeSearch';
-import { HistoryLog } from '../components/HistoryLog';
-import { api } from '../api/client';
-import type { HistoryEntry } from '../types';
+import { HistoryLog, useEntityHistory } from '../components/HistoryLog';
 import { ClusterForm, LocationSelect } from '../components/ClusterForm';
 import type { Equipment, ServerRole } from '../types';
 import { serverRoleLabels, hypervisorSuggestions, normalizeServerPayload, storageTypeLabels, storageProtocolLabels, roleHasResourceFields, formatGB } from '../utils/virtualization';
@@ -31,21 +29,10 @@ export function PhysicalServersPage() {
   const [editingCluster, setEditingCluster] = useState<Equipment | null>(null);
   const [viewingHistory, setViewingHistory] = useState<Equipment | null>(null);
   // История изменений сервера/кластера подгружается с сервера при открытии
-  // (GET /equipment/:id/history) — по аналогии с категорией «Оборудование».
-  const [historyData, setHistoryData] = useState<HistoryEntry[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-
-  async function openHistory(eq: Equipment) {
+  // (GET /equipment/:id/history) и мгновенно обновляется после любого
+  // сохранения (useEntityHistory) — по аналогии с категорией «Оборудование».
+  function openHistory(eq: Equipment) {
     setViewingHistory(eq);
-    setHistoryLoading(true);
-    setHistoryData([]);
-    try {
-      setHistoryData(await api.get<HistoryEntry[]>(`/equipment/${eq.id}/history`));
-    } catch {
-      setHistoryData([]);
-    } finally {
-      setHistoryLoading(false);
-    }
   }
 
   // Серверы организации: категория «Сервер» или «СХД», либо любой единице
@@ -245,11 +232,7 @@ export function PhysicalServersPage() {
               </button>
             </div>
             <div className="p-6">
-              {historyLoading ? (
-                <p className="text-gray-500 dark:text-gray-400 text-sm">Загрузка истории…</p>
-              ) : (
-                <HistoryLog history={historyData} />
-              )}
+              <ServerHistoryModalBody eqId={viewingHistory.id} />
             </div>
           </div>
         </div>
@@ -580,4 +563,13 @@ function ServerModal({ server, onClose, onSave, branches, dataCenters, allEquipm
       </div>
     </div>
   );
+}
+
+// Тело модалки истории сервера/кластера: актуальная история через useEntityHistory.
+function ServerHistoryModalBody({ eqId }: { eqId: string }) {
+  const { history, loading } = useEntityHistory(`/equipment/${eqId}/history`);
+  if (loading && history.length === 0) {
+    return <p className="text-gray-500 dark:text-gray-400 text-sm">Загрузка истории…</p>;
+  }
+  return <HistoryLog history={history} entityKey={`srv:${eqId}`} />;
 }

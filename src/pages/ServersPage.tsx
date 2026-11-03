@@ -6,35 +6,25 @@ import { useSearchParams } from '../router';
 import {
   Cpu, Network, Globe, Plus, Edit, Trash2, X, Server, Activity, Search, Filter, Save, History,
 } from 'lucide-react';
-import type { VirtualMachine, NetworkInterface, Service, ServerRole, Equipment, HistoryEntry } from '../types';
+import type { VirtualMachine, NetworkInterface, Service, ServerRole, Equipment } from '../types';
 import { serverRoleLabels, serverRoleOptions, hypervisorSuggestions, storageTypeLabels, storageProtocolLabels, roleHasResourceFields } from '../utils/virtualization';
 import { StorageField } from '../components/StorageField';
 import { DecimalInput } from '../components/DecimalInput';
 import { parsePortList } from '../types';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
-import { HistoryLog } from '../components/HistoryLog';
+import { HistoryLog, useEntityHistory } from '../components/HistoryLog';
 
 // История изменений ВМ: подгружается с сервера (GET /virtual-machines/:id/history)
-// по клику на «История изменений» в карточке — по аналогии с оборудованием.
+// через useEntityHistory и мгновенно обновляется после любого сохранения —
+// без перезагрузки страницы и перехода между разделами.
 export function VMHistorySection({ vmId, vmName }: { vmId: string; vmName: string }) {
-  const [historyData, setHistoryData] = useState<HistoryEntry[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const { history, loading } = useEntityHistory(expanded ? `/virtual-machines/${vmId}/history` : null);
 
-  async function load() {
-    setLoading(true);
-    try {
-      setHistoryData(await api.get<HistoryEntry[]>(`/virtual-machines/${vmId}/history`));
-    } catch {
-      setHistoryData([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (historyData === null && !loading) {
+  if (!expanded) {
     return (
-      <button onClick={load} className="text-sm text-indigo-400 hover:text-indigo-300 flex items-center gap-1">
+      <button onClick={() => setExpanded(true)} className="text-sm text-indigo-400 hover:text-indigo-300 flex items-center gap-1">
         <History className="w-4 h-4" />История изменений
       </button>
     );
@@ -43,12 +33,12 @@ export function VMHistorySection({ vmId, vmName }: { vmId: string; vmName: strin
     <div className="pt-4 border-t border-gray-700">
       <div className="flex items-center justify-between mb-2">
         <h3 className="font-semibold text-gray-200 flex items-center gap-2"><History className="w-5 h-5" />История изменений: {vmName}</h3>
-        {!loading && <button onClick={() => setHistoryData(null)} className="text-xs text-gray-400 hover:text-gray-300">Свернуть</button>}
+        <button onClick={() => setExpanded(false)} className="text-xs text-gray-400 hover:text-gray-300">Свернуть</button>
       </div>
-      {loading ? (
+      {loading && history.length === 0 ? (
         <p className="text-sm text-gray-400">Загрузка истории…</p>
       ) : (
-        <HistoryLog history={historyData ?? []} title="История изменений ВМ" />
+        <HistoryLog history={history} title="История изменений ВМ" entityKey={`vm:${vmId}`} />
       )}
     </div>
   );
