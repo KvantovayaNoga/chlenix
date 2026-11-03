@@ -182,6 +182,15 @@ export function PhysicalServersPage() {
                   );
                 })()}
                 <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400">Расположение:</span><span className="text-gray-800 dark:text-gray-200">{getLocationName(server)} {server.room && `, ${server.room}`}</span></div>
+                {/* История изменений сервера/кластера — по аналогии с «Оборудованием»:
+                    одна запись на сохранение + детализация по полям в модальном окне. */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); openHistory(server); }}
+                  className="mt-1 flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                  title={`История изменений: ${server.name}`}
+                >
+                  <History className="w-3.5 h-3.5" />История изменений
+                </button>
                 {!isCluster && (
                   <div className="flex justify-between" title="Материально ответственное лицо — сотрудник, на подотчёте которого числится сервер"><span className="text-gray-500 dark:text-gray-400">МОЛ:</span><span className="text-gray-800 dark:text-gray-200">{(() => { const m: any = (server as any).materiallyResponsibleEmployee; if (m) return [m.lastName, m.firstName].filter(Boolean).join(' '); const e = employees.find(e => e.id === (server as any).materiallyResponsibleEmployeeId); return e ? `${e.lastName} ${e.firstName}` : '—'; })()}</span></div>
                 )}
@@ -219,6 +228,30 @@ export function PhysicalServersPage() {
           cluster={editingCluster}
           onClose={() => { setShowClusterForm(false); setEditingCluster(null); }}
         />
+      )}
+
+      {/* Модалка истории изменений сервера/кластера — как в EquipmentPage */}
+      {viewingHistory && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setViewingHistory(null)}>
+          <div className="bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-700" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-6 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
+              <h2 className="text-xl font-bold text-gray-200 flex items-center gap-2">
+                <History className="w-6 h-6" />
+                История изменений: {viewingHistory.name}
+              </h2>
+              <button onClick={() => setViewingHistory(null)} className="text-gray-400 hover:text-gray-300">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              {historyLoading ? (
+                <p className="text-gray-500 dark:text-gray-400 text-sm">Загрузка истории…</p>
+              ) : (
+                <HistoryLog history={historyData} />
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

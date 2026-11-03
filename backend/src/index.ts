@@ -528,6 +528,9 @@ async function applyUpdate(opts: {
     // вычисляемое поле): отдельной записью в истории не нужен, изменение
     // размещения и так фиксируется строкой «хост-сервер».
     if (key === 'vmClusterId') continue;
+    // locationType — производное от branchId/dataCenterId поле: отдельной
+    // записью не нужен, размещение и так фиксируется строкой «место размещения».
+    if (key === 'locationType') continue;
     const nv = opts.newData[key];
     // null означает «значение сброшено» и должно попадать в diff;
     // undefined — поле не передавалось, пропускаем.
@@ -592,6 +595,29 @@ async function applyUpdate(opts: {
   // запросом (applyClusterMembers), мимо diff по полям. Если состав передавался
   // явно — сравниваем его со старым и дописываем в историю понятные строки
   // «добавлен/исключён» с названиями оборудования (без uuid).
+  if (opts.entityType === 'equipment' && opts.clusterMembersBefore === undefined
+      && 'parentClusterId' in opts.newData) {
+    // Отвязка/привязка через карточку самого члена кластера (поле «кластер
+    // (родитель)»): фиксируем событие и в истории кластера, иначе изменение
+    // состава было бы видно только в истории сервера, а не кластера.
+    const beforeCid = opts.oldObj.parentClusterId ?? null;
+    const afterCid = opts.newData.parentClusterId ?? null;
+    if (!same(beforeCid, afterCid)) {
+      const selfName = await historyDisplayValue('parentClusterId', opts.entityId);
+      if (afterCid) {
+        await writeHistoryBatch('equipment', String(afterCid), opts.ctx.fullName, [{
+          field: 'состав кластера', oldValue: '—', newValue: `добавлен: ${selfName}`,
+          summary: `состав кластера: "—" → "добавлен: ${selfName}"`,
+        }]);
+      }
+      if (beforeCid) {
+        await writeHistoryBatch('equipment', String(beforeCid), opts.ctx.fullName, [{
+          field: 'состав кластера', oldValue: `исключён: ${selfName}`, newValue: '—',
+          summary: `состав кластера: "исключён: ${selfName}" → "—"`,
+        }]);
+      }
+    }
+  }
   if (opts.entityType === 'equipment' && Array.isArray(opts.clusterMembersBefore)) {
     const beforeIds = opts.clusterMembersBefore;
     const afterIds = opts.clusterMembersAfter ?? [];
@@ -2865,8 +2891,30 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(SERVER_ROLES), 
   const clusterAfterId = vm.hostServerId
     ? await prisma.equipment.findUnique({ where: { id: vm.hostServerId }, select: { parentClusterId: true } })
     : null;
+  const extraChanges: { field: string; oldValue: string; newValue: string; summary: string }[] = [];
   if ((clusterBefore?.parentClusterId ?? null) !== (clusterAfterId?.parentClusterId ?? null)) {
-    newData.vmClusterId = clusterAfterId?.parentClusterId ?? null;
+    const hostName = await historyDisplayValue('hostServerId', vm.hostServerId);
+    const beforeLabel = clusterBefore?.parentClusterId
+      ? await historyDisplayValue('parentClusterId', clusterBefore.parentClusterId) : '—';
+    const afterLabel = clusterAfterId?.parentClusterId
+      ? await historyDisplayValue('parentClusterId', clusterAfterId.parentClusterId) : '—';
+    // Строка «кластер: X → Y» — про клики внутри ВМ (переезд на хост вне кластера).
+    recordChange(extraChanges, 'кластер (виртуальный)', beforeLabel, afterLabel);
+    // И событие в истории самого кластера («добавлен/исключён ВМ …») — чтобы
+    // перемещение ВМ было видно и со стороны кластеров.
+    const selfLabel = `ВМ ${vm.name}`;
+    if (clusterAfterId?.parentClusterId) {
+      await writeHistoryBatch('equipment', clusterAfterId.parentClusterId, currentUser.fullName, [{
+        field: 'состав кластера', oldValue: '—', newValue: `добавлен: ${selfLabel}`,
+        summary: `состав кластера: "—" → "добавлен: ${selfLabel}"`,
+      }]);
+    }
+    if (clusterBefore?.parentClusterId && clusterBefore.parentClusterId !== clusterAfterId?.parentClusterId) {
+      await writeHistoryBatch('equipment', clusterBefore.parentClusterId, currentUser.fullName, [{
+        field: 'состав кластера', oldValue: `исключён: ${selfLabel}`, newValue: '—',
+        summary: `состав кластера: "исключён: ${selfLabel}" → "—"`,
+      }]);
+    }
   }
 
   await applyUpdate({
@@ -2875,8 +2923,9 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(SERVER_ROLES), 
     entityType: 'virtualmachine',
     entityId: id,
     entityName: vm.name,
-    oldObj: { ...(old as any), vmClusterId: clusterBefore?.parentClusterId ?? null },
+    oldObj: old as any,
     newData,
+    extraChanges,
   });
 
   return c.json(publicVM(vm));
