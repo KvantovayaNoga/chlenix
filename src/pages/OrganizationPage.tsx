@@ -3,7 +3,7 @@ import { useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { useDataStore } from '../store/dataStore';
 import { api } from '../api/client';
-import { HistoryLog, useEntityHistory } from '../components/HistoryLog';
+import { HistoryLog, FullHistoryModal, useEntityHistory } from '../components/HistoryLog';
 import {
   Building2,
   Pencil,
@@ -22,7 +22,6 @@ import {
   Wallet,
   BadgeCheck,
   Briefcase,
-  CalendarDays,
   ExternalLink,
 } from 'lucide-react';
 import type { Organization, OrganizationLegalForm } from '../types';
@@ -561,12 +560,10 @@ export function OrganizationPage() {
             </div>
           )}
 
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-gray-200 dark:border-gray-700">
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-4">
-              <CalendarDays className="w-4 h-4" /> История изменений карточки
-            </h3>
-            <OrganizationHistory orgId={organization.id} />
-          </div>
+          {/* Блок «История изменений»: сам компонент HistoryLog полностью
+              кликабелен и открывает модалку полной истории — дополнительная
+              обёртка с заголовком не нужна. */}
+          <OrganizationHistory orgId={organization.id} />
         </>
       )}
     </div>
@@ -575,10 +572,27 @@ export function OrganizationPage() {
 
 // История изменений организации подгружается с сервера (GET /organizations/:id/history)
 // через useEntityHistory и мгновенно обновляется после любого сохранения.
+// Блок полностью кликабелен: клик открывает модалку ПОЛНОЙ истории (сверху вниз).
 function OrganizationHistory({ orgId }: { orgId: string }) {
   const { history, loading } = useEntityHistory(`/organizations/${orgId}/history`);
+  const [fullOpen, setFullOpen] = useState(false);
   if (loading && history.length === 0) return <p className="text-gray-500 dark:text-gray-400 text-sm">Загрузка истории…</p>;
-  return <HistoryLog history={history} entityKey={`org:${orgId}`} />;
+  return (
+    <>
+      <HistoryLog
+        history={history}
+        entityKey={`org:${orgId}`}
+        controlledFull={fullOpen}
+        onOpenFull={() => setFullOpen(true)}
+        onCloseFull={() => setFullOpen(false)}
+      />
+      {/* Модалка полной истории рендерится здесь, чтобы гарантированно
+          перекрывать контент страницы (z-index поверх всех блоков). */}
+      {fullOpen && (
+        <FullHistoryModal history={history} onClose={() => setFullOpen(false)} />
+      )}
+    </>
+  );
 }
 
 function EditOrganizationForm({

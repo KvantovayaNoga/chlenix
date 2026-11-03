@@ -13,34 +13,38 @@ import { DecimalInput } from '../components/DecimalInput';
 import { parsePortList } from '../types';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
-import { HistoryLog, useEntityHistory } from '../components/HistoryLog';
+import { FullHistoryModal, useEntityHistory } from '../components/HistoryLog';
 
 // История изменений ВМ: подгружается с сервера (GET /virtual-machines/:id/history)
 // через useEntityHistory и мгновенно обновляется после любого сохранения —
 // без перезагрузки страницы и перехода между разделами.
 export function VMHistorySection({ vmId, vmName }: { vmId: string; vmName: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const { history, loading } = useEntityHistory(expanded ? `/virtual-machines/${vmId}/history` : null);
+  const [fullOpen, setFullOpen] = useState(false);
+  const { history, loading } = useEntityHistory(fullOpen ? `/virtual-machines/${vmId}/history` : null);
 
-  if (!expanded) {
-    return (
-      <button onClick={() => setExpanded(true)} className="text-sm text-indigo-400 hover:text-indigo-300 flex items-center gap-1">
+  return (
+    <>
+      {/* Кликабельный блок «История изменений» — открывает модалку полной истории */}
+      <button
+        onClick={() => setFullOpen(true)}
+        className="text-sm text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+        title="Открыть полную историю изменений"
+      >
         <History className="w-4 h-4" />История изменений
       </button>
-    );
-  }
-  return (
-    <div className="pt-4 border-t border-gray-700">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="font-semibold text-gray-200 flex items-center gap-2"><History className="w-5 h-5" />История изменений: {vmName}</h3>
-        <button onClick={() => setExpanded(false)} className="text-xs text-gray-400 hover:text-gray-300">Свернуть</button>
-      </div>
-      {loading && history.length === 0 ? (
-        <p className="text-sm text-gray-400">Загрузка истории…</p>
-      ) : (
-        <HistoryLog history={history} title="История изменений ВМ" entityKey={`vm:${vmId}`} />
+      {fullOpen && (
+        <FullHistoryModal
+          // Пока история грузится — groups пустой список; после загрузки
+          // useEntityHistory модалка мгновенно перерисуется с полными данными.
+          history={history}
+          title={`История изменений: ${vmName}`}
+          onClose={() => setFullOpen(false)}
+        />
       )}
-    </div>
+      {loading && history.length === 0 && fullOpen && (
+        <p className="sr-only">Загрузка истории…</p>
+      )}
+    </>
   );
 }
 

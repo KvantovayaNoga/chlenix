@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import type { Equipment, EquipmentCategory } from '../types';
 import { api } from '../api/client';
-import { HistoryLog, useEntityHistory } from '../components/HistoryLog';
+import { FullHistoryModal, useEntityHistory } from '../components/HistoryLog';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
 import { serverRoleVisual } from '../components/ServerRoleIcon';
@@ -48,6 +48,7 @@ export function EquipmentPage() {
 
   // История изменений подгружается с сервера при открытии (GET /equipment/:id/history)
   // и мгновенно обновляется ВЕЗДЕ после любого сохранения (useEntityHistory).
+  const { history: fullHistory } = useEntityHistory(viewingHistory ? `/equipment/${viewingHistory.id}/history` : null);
   function openHistory(eq: Equipment) {
     setViewingHistory(eq);
   }
@@ -338,23 +339,14 @@ export function EquipmentPage() {
         />
       )}
 
+      {/* Модалка ПОЛНОЙ истории изменений оборудования: сверху вниз,
+          самые свежие записи вверху. */}
       {viewingHistory && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-700" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-6 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
-              <h2 className="text-xl font-bold text-gray-200 flex items-center gap-2">
-                <History className="w-6 h-6" />
-                История изменений: {viewingHistory.name}
-              </h2>
-              <button onClick={() => setViewingHistory(null)} className="text-gray-400 hover:text-gray-300">
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="p-6">
-              <EquipmentHistoryModalBody eqId={viewingHistory.id} />
-            </div>
-          </div>
-        </div>
+        <FullHistoryModal
+          history={fullHistory}
+          title={`История изменений: ${viewingHistory.name}`}
+          onClose={() => setViewingHistory(null)}
+        />
       )}
     </div>
   );
@@ -516,12 +508,3 @@ export function EquipmentModalWrapper({ equipment, onClose }: { equipment: Equip
   );
 }
 
-// Тело модалки истории оборудования: актуальная история через useEntityHistory —
-// обновляется мгновенно после любого сохранения, без перезагрузки страницы.
-function EquipmentHistoryModalBody({ eqId }: { eqId: string }) {
-  const { history, loading } = useEntityHistory(`/equipment/${eqId}/history`);
-  if (loading && history.length === 0) {
-    return <p className="text-gray-500 dark:text-gray-400 text-sm">Загрузка истории…</p>;
-  }
-  return <HistoryLog history={history} entityKey={`eq:${eqId}`} />;
-}

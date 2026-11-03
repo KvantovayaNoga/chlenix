@@ -23,7 +23,11 @@ interface HistoryLogProps {
    * для сброса раскрытого состояния модалки при переключении между карточками.
    */
   entityKey?: string;
-  /** Количество записей в свёрнутом («общем») виде. По умолчанию — 3. */
+  /**
+   * Количество записей в свёрнутом («общем») виде. По умолчанию — 3.
+   * Значение, переданное извне, ограничивается сверху тремя: по требованию UI
+   * везде показывается не более 3 последних изменений.
+   */
   collapsedCount?: number;
   /** Вызывается при клике на блок «История изменений» — открывает модалку полной истории. */
   onOpenFull?: () => void;
@@ -194,6 +198,8 @@ export function HistoryLog({ history, title = 'История изменений
   // чтобы не показывать детали истории другой сущности.
   useEffect(() => { setSelectedGroup(null); setInternalFullOpen(false); }, [entityKey]);
   const groups = useMemo(() => groupHistory(history), [history]);
+  // Страховка от «уезжающих» лишних записей: в общем виде — строго не более 3.
+  const effectiveCollapsedCount = Math.min(collapsedCount ?? 3, 3);
 
   if (history.length === 0) {
     return (
@@ -207,7 +213,7 @@ export function HistoryLog({ history, title = 'История изменений
     );
   }
 
-  const visibleGroups = groups.slice(0, collapsedCount);
+  const visibleGroups = groups.slice(0, effectiveCollapsedCount);
   const hiddenCount = groups.length - visibleGroups.length;
 
   // Если открыта модалка полной истории (детали конкретной записи не выбраны) — показываем её.

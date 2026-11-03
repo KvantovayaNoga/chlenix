@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/authStore';
 import { Shield, ShieldCheck, Eye, X, CheckCircle, XCircle, Edit, Trash2, Plus, Search, Filter, History, Save, UserCog, ServerCog } from 'lucide-react';
 import type { User, UserRole } from '../types';
 import { ROLE_LABELS } from '../types';
-import { HistoryLog, useEntityHistory } from '../components/HistoryLog';
+import { FullHistoryModal, useEntityHistory } from '../components/HistoryLog';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
 
 const roleLabels: Record<UserRole, string> = ROLE_LABELS;
@@ -33,7 +33,10 @@ export function UsersPage() {
   const [filterRole, setFilterRole] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [showFilterManager, setShowFilterManager] = useState(false);
-  const [savedFilters, setSavedFilters] = useState<SavedFilter[]>(() => {
+  // Полная история выбранного пользователя подгружается через useEntityHistory
+  // и мгновенно обновляется после любого сохранения — без перезагрузки страницы.
+  const { history: fullHistory } = useEntityHistory(viewingHistory ? `/users/${viewingHistory.id}/history` : null);
+    const [savedFilters, setSavedFilters] = useState<SavedFilter[]>(() => {
     const saved = localStorage.getItem('users-filters');
     return saved ? JSON.parse(saved) : [];
   });
@@ -206,23 +209,14 @@ export function UsersPage() {
           (роль, блокировка) сразу видны на странице без перезагрузки */}
       {editingUser && <UserModal user={editingUser} onClose={() => setEditingUser(null)} onSave={async (data) => { const res = await updateUser(editingUser.id, data); if (res.success) await refreshUsers(); setEditingUser(null); }} />}
       
+      {/* Модалка ПОЛНОЙ истории изменений пользователя: сверху вниз,
+          самые свежие записи вверху. */}
       {viewingHistory && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-700" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-6 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
-              <h2 className="text-xl font-bold text-gray-200 flex items-center gap-2">
-                <History className="w-6 h-6" />
-                История изменений: {viewingHistory.fullName}
-              </h2>
-              <button onClick={() => setViewingHistory(null)} className="text-gray-400 hover:text-gray-300">
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="p-6">
-              <UserHistoryModalBody userId={viewingHistory.id} />
-            </div>
-          </div>
-        </div>
+        <FullHistoryModal
+          history={fullHistory}
+          title={`История изменений: ${viewingHistory.fullName}`}
+          onClose={() => setViewingHistory(null)}
+        />
       )}
     </div>
   );
@@ -274,11 +268,3 @@ function UserModal({ user, onClose, onSave }: any) {
   );
 }
 
-// Тело модалки истории пользователя: актуальная история через useEntityHistory.
-function UserHistoryModalBody({ userId }: { userId: string }) {
-  const { history, loading } = useEntityHistory(`/users/${userId}/history`);
-  if (loading && history.length === 0) {
-    return <p className="text-sm text-gray-500 dark:text-gray-400">Загрузка истории…</p>;
-  }
-  return <HistoryLog history={history} entityKey={`user:${userId}`} />;
-}
