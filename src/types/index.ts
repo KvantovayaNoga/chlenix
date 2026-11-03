@@ -245,7 +245,10 @@ export interface Equipment {
   model: string;
   purchaseDate: string;
   writeOffDate: string | null;
-  condition: 'new' | 'good' | 'satisfactory' | 'needs_repair' | 'written_off';
+  /** Статусная модель оборудования (в UI — «Статус»), см. src/utils/equipmentStatus.ts */
+  condition: 'exploitation' | 'exploitation_restricted' | 'reserve' | 'repair' | 'removed_from_register' | 'lost_stolen' | 'unfit' | 'for_writeoff';
+  /** Дефект или причина ограничений; обязателен при статусе exploitation_restricted */
+  defectNote?: string | null;
   assignedToEmployeeId: string | null;
   /** ФИО сотрудника, закреплённого за оборудованием (сервер отдаёт вложенный объект) */
   assignedToEmployee?: { id: string; firstName: string; lastName: string; middleName?: string } | null;

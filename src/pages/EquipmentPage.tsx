@@ -11,6 +11,7 @@ import { HistoryLog } from '../components/HistoryLog';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
 import { serverRoleVisual } from '../components/ServerRoleIcon';
+import { statusLabels, DEFAULT_EQUIPMENT_STATUS, statusRequiresDefect } from '../utils/equipmentStatus';
 
 const categoryLabels: Record<EquipmentCategory, string> = {
   computer: 'Компьютеры', monitor: 'Мониторы', peripheral: 'Периферия', furniture: 'Мебель',
@@ -23,13 +24,14 @@ const categoryIcons: Record<EquipmentCategory, React.ElementType> = {
   server: Server, storage: HardDrive, virtual_machine: Cpu, network: Network, phone: Phone, other: Package,
 };
 
-const conditionLabels = {
-  new: { label: 'Новое', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
-  good: { label: 'Хорошее', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
-  satisfactory: { label: 'Удовл.', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' },
-  needs_repair: { label: 'Ремонт', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
-  written_off: { label: 'Списано', color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' },
-};
+// Статусная модель оборудования — общий справочник src/utils/equipmentStatus.ts
+// (в UI поле «Состояние» переименовано в «Статус»).
+
+/** Только актуальные статусы (для фильтров и форм; старые значения истории не предлагаются). */
+const ACTIVE_STATUS_KEYS = ['exploitation', 'exploitation_restricted', 'reserve', 'repair', 'removed_from_register', 'lost_stolen', 'unfit', 'for_writeoff'] as const;
+const activeStatusLabels: Record<string, { label: string; color: string }> = Object.fromEntries(
+  ACTIVE_STATUS_KEYS.map((k) => [k, statusLabels[k]]),
+);
 
 export function EquipmentPage() {
   const { equipment, employees, branches, addEquipment, updateEquipment, deleteEquipment } = useDataStore();
@@ -227,8 +229,8 @@ export function EquipmentPage() {
             ))}
           </select>
           <select value={filterCondition} onChange={(e) => setFilterCondition(e.target.value)} className="px-4 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">
-            <option value="">Все состояния</option>
-            {Object.entries(conditionLabels).map(([key, { label }]) => (
+            <option value="">Все статусы</option>
+            {Object.entries(activeStatusLabels).map(([key, { label }]) => (
               <option key={key} value={key}>{label}</option>
             ))}
           </select>
@@ -287,7 +289,7 @@ export function EquipmentPage() {
                   ? `${roleVisual.bg} p-2 rounded-lg`
                   : 'bg-indigo-50 dark:bg-indigo-900/30 p-2 rounded-lg';
                 const iconColorClass = roleVisual ? roleVisual.color : 'text-indigo-600 dark:text-indigo-400';
-                const condition = conditionLabels[eq.condition];
+                const condition = statusLabels[eq.condition] ?? { label: eq.condition, color: 'bg-gray-100 text-gray-600' };
                 return (
                   <tr
                     key={eq.id}
@@ -385,7 +387,7 @@ function EquipmentModal({
     equipment || {
       name: '', category: 'computer', serialNumber: '', inventoryNumber: '',
       brand: '', model: '', purchaseDate: new Date().toISOString().split('T')[0], writeOffDate: null,
-      condition: 'good', assignedToEmployeeId: null, materiallyResponsibleEmployeeId: null, branchId: '', floor: '', room: '', notes: '',
+      condition: DEFAULT_EQUIPMENT_STATUS, defectNote: '', assignedToEmployeeId: null, materiallyResponsibleEmployeeId: null, branchId: '', floor: '', room: '', notes: '',
     }
   );
 

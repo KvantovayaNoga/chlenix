@@ -218,7 +218,8 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
   inventoryNumber: 'инвентарный номер',
   brand: 'бренд',
   model: 'модель',
-  condition: 'состояние',
+  condition: 'статус',
+  defectNote: 'дефект/причина ограничений',
   category: 'категория',
   floor: 'этаж',
   room: 'кабинет',
@@ -300,8 +301,18 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
 
 // Человекочитаемые переводы значений enum-полей (в базе значения хранятся по-английски).
 const VALUE_TRANSLATIONS: Record<string, Record<string, string>> = {
-  // Синхронно с enum Condition (prisma) и подписями в EquipmentCardModal.
+  // Синхронно с enum Condition (prisma) и statusLabels на фронтенде
+  // (src/utils/equipmentStatus.ts). Старые значения оставлены для чтения
+  // истории, записанной до миграции 20261104_equipment_status_model.
   condition: {
+    exploitation: 'эксплуатация',
+    exploitation_restricted: 'эксплуатация с ограничениями',
+    reserve: 'резерв',
+    repair: 'ремонт',
+    removed_from_register: 'снято с учета',
+    lost_stolen: 'утерян/украдено',
+    unfit: 'непригодно к эксплуатации',
+    for_writeoff: 'для списания',
     new: 'новый',
     good: 'хорошее',
     satisfactory: 'удовлетворительное',
@@ -2175,7 +2186,10 @@ const equipmentSchema = z.object({
   model: strOrEmpty(z.string()),
   purchaseDate: z.preprocess((v) => (emptyToNull(v) === null ? undefined : v), z.coerce.date().optional().nullable()),
   writeOffDate: z.preprocess((v) => (emptyToNull(v) === null ? undefined : v), z.coerce.date().optional().nullable()),
-  condition: z.enum(['new', 'good', 'satisfactory', 'needs_repair', 'written_off']).optional(),
+  condition: z.enum(['exploitation', 'exploitation_restricted', 'reserve', 'repair', 'removed_from_register', 'lost_stolen', 'unfit', 'for_writeoff']).optional(),
+  // Дефект/причина ограничений: обязателен при статусе «Эксплуатация с ограничениями»
+  // (проверка обязательности — на уровне маршрутов create/update, см. defectRequiredError).
+  defectNote: strOrEmpty(z.string()),
   assignedToEmployeeId: strOrEmpty(z.string()),
   // МОЛ (материально ответственное лицо) — сотрудник, на подотчёте которого
   // числится это оборудование
@@ -2205,6 +2219,15 @@ const equipmentSchema = z.object({
 });
 
 const equipmentInclude = { assignedToEmployee: true, materiallyResponsibleEmployee: true, branch: true, dataCenter: true } as const;
+
+// Статусная модель оборудования: «Эксплуатация с ограничениями» требует указать
+// дефект или причину ограничений (defectNote). Возвращает текст ошибки либо null.
+function defectRequiredError(condition: string | null | undefined, defectNote: string | null | undefined): string | null {
+  if (condition === 'exploitation_restricted' && !String(defectNote ?? '').trim()) {
+    return 'Для статуса «Эксплуатация с ограничениями» укажите дефект или причину ограничений';
+  }
+  return null;
+}
 
 // ============================================================
 // Серверы виртуализации: роли, кластеры и проверки целостности
@@ -2372,6 +2395,12 @@ app.post('/api/equipment', authMiddleware, requireRole([...EQUIPMENT_CREATE_ROLE
     if (!data.inventoryNumber?.trim()) return c.json({ error: 'Укажите инвентарный номер' }, 400);
   }
 
+  // Статус «Эксплуатация с ограничениями» требует указать дефект/причину ограничений.
+  {
+    const defectErr = defectRequiredError(data.condition ?? 'exploitation', data.defectNote);
+    if (defectErr) return c.json({ error: defectErr }, 400);
+  }
+
   // Место размещения: филиал ИЛИ ЦОД. В ЦОД (арендованные/облачные мощности)
   // может размещаться любая инфраструктурная техника: и кластеры, и физические
   // серверы (хосты, СХД, консоли управления), поэтому роль здесь не ограничиваем.
@@ -2431,7 +2460,8 @@ app.post('/api/equipment', authMiddleware, requireRole([...EQUIPMENT_CREATE_ROLE
       inventoryNumber: data.inventoryNumber ?? null,
       brand: data.brand ?? null,
       model: data.model ?? null,
-      condition: data.condition ?? 'good',
+      condition: data.condition ?? 'exploitation',
+      defectNote: data.defectNote ?? null,
       floor: data.floor ?? null,
       room: data.room ?? null,
       serverRole: data.serverRole ?? null,
@@ -2503,6 +2533,14 @@ app.put('/api/equipment/:id', authMiddleware, requireRole([...EQUIPMENT_MANAGE_R
   }
 
   const newData: any = { ...parsed.data };
+  // Статус «Эксплуатация с ограничениями» требует дефект/причину ограничений.
+  // Учитываем, что PATCH может менять только одно из двух полей.
+  if ('condition' in newData || 'defectNote' in newData) {
+    const effectiveCondition = 'condition' in newData ? newData.condition : old.condition;
+    const effectiveDefect = 'defectNote' in newData ? newData.defectNote : old.defectNote;
+    const defectErr = defectRequiredError(effectiveCondition, effectiveDefect);
+    if (defectErr) return c.json({ error: defectErr }, 400);
+  }
   // Место размещения (филиал/ЦОД): нормализуем пустые строки в null и синхронизируем locationType.
   // Значения undefined означают «поле не передавалось» — старое размещение сохраняется.
   if ('branchId' in newData || 'dataCenterId' in newData) {
