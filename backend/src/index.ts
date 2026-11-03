@@ -330,6 +330,14 @@ async function historyDisplayValue(key: string, value: any): Promise<string> {
   return displayValue(value);
 }
 
+// Поля с бинарными/большими данными (data-URL аватара/логотипа): в историю
+// пишем только факт изменения («Загружен/изменён/удалён аватар»), сами base64
+// хеши в diff не попадают.
+const MEDIA_FIELDS: Record<string, string> = {
+  avatar: 'аватар',
+  logo: 'логотип',
+};
+
 async function applyUpdate(opts: {
   ctx: Ctx;
   ipAddress?: string | null;
@@ -356,6 +364,28 @@ async function applyUpdate(opts: {
       return String(v);
     };
     if (norm(ov) !== norm(nv)) {
+      // Медиа-поля (аватар/логотип): без содержимого — только человекочитаемый факт.
+      const mediaLabel = MEDIA_FIELDS[key];
+      if (mediaLabel) {
+        const hadOld = norm(ov) !== '';
+        const hasNew = norm(nv) !== '';
+        const verb = !hadOld && hasNew ? `Загружен ${mediaLabel}`
+          : hadOld && !hasNew ? `Удалён ${mediaLabel}`
+            : `Изменён ${mediaLabel}`;
+        changes.push(verb);
+        await prisma.historyRecord.create({
+          data: {
+            entityType: opts.entityType,
+            entityId: opts.entityId,
+            action: 'updated',
+            fieldName: mediaLabel,
+            oldValue: hadOld ? 'присутствовал' : '—',
+            newValue: hasNew ? 'присутствует' : '—',
+            changedBy: opts.ctx.fullName,
+          },
+        });
+        continue;
+      }
       const oldLabel = await historyDisplayValue(key, ov);
       const newLabel = await historyDisplayValue(key, nv);
       changes.push(`${HISTORY_FIELD_LABELS[key]}: "${oldLabel}" → "${newLabel}"`);
@@ -1036,7 +1066,7 @@ app.get('/api/users/:id/history', authMiddleware, async (c) => {
   }
   const history = await prisma.historyRecord.findMany({
     where: { entityType: 'user', entityId: id },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: 'desc' },
   });
   return c.json(history.map(publicHistory));
 });
@@ -1297,7 +1327,7 @@ app.get('/api/organizations/:id', authMiddleware, async (c) => {
 app.get('/api/organizations/:id/history', authMiddleware, async (c) => {
   const history = await prisma.historyRecord.findMany({
     where: { entityType: 'organization', entityId: c.req.param('id') },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: 'desc' },
   });
   return c.json(history.map(publicHistory));
 });
@@ -1622,7 +1652,7 @@ app.get('/api/employees/:id', authMiddleware, async (c) => {
 app.get('/api/employees/:id/history', authMiddleware, async (c) => {
   const history = await prisma.historyRecord.findMany({
     where: { entityType: 'employee', entityId: c.req.param('id') },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: 'desc' },
   });
   return c.json(history.map(publicHistory));
 });
@@ -1985,7 +2015,7 @@ app.get('/api/equipment/:id', authMiddleware, async (c) => {
 app.get('/api/equipment/:id/history', authMiddleware, async (c) => {
   const history = await prisma.historyRecord.findMany({
     where: { entityType: 'equipment', entityId: c.req.param('id') },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: 'desc' },
   });
   return c.json(history.map(publicHistory));
 });
@@ -2411,7 +2441,7 @@ app.get('/api/virtual-machines/:id', authMiddleware, async (c) => {
 app.get('/api/virtual-machines/:id/history', authMiddleware, async (c) => {
   const history = await prisma.historyRecord.findMany({
     where: { entityType: 'virtualmachine', entityId: c.req.param('id') },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: 'desc' },
   });
   return c.json(history.map(publicHistory));
 });
