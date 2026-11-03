@@ -18,6 +18,8 @@ export function EmployeesPage() {
   const { employees, addEmployee, updateEmployee, departments, positions, branches, error } = useDataStore();
   const { canManageEmployees } = useAuthStore();
   const navigate = useNavigate();
+  // Данные учётных записей (для столбца «Организация»): id пользователя -> организации
+  const [userOrgsMap, setUserOrgsMap] = useState<Map<string, User>>(new Map());
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDepartment, setFilterDepartment] = useState('');
   const [filterPosition, setFilterPosition] = useState('');
@@ -34,6 +36,14 @@ export function EmployeesPage() {
   useEffect(() => {
     localStorage.setItem('employees-filters', JSON.stringify(savedFilters));
   }, [savedFilters]);
+
+  // Столбец «Организация»: подтягиваем учётные записи (актуальная организация
+  // из последней сессии + все организации пользователя)
+  useEffect(() => {
+    api.get<User[]>('/users').then((list) => {
+      setUserOrgsMap(new Map(list.map((u) => [u.id, u])));
+    }).catch(() => {});
+  }, []);
 
   const currentFilters = { searchQuery, filterDepartment, filterPosition, filterBranch, filterStatus };
 
@@ -65,6 +75,16 @@ export function EmployeesPage() {
   const getPosName = (id: string) => positions.find(p => p.id === id)?.name || '—';
   const getDeptName = (id: string) => departments.find(d => d.id === id)?.name || '—';
   const getBranchName = (id: string) => branches.find(b => b.id === id)?.name || '—';
+
+  // Организация сотрудника: актуальная (из последней сессии привязанной учётной записи)
+  const getEmpOrg = (emp: Employee): { name: string | null; total: number } => {
+    const acc = emp.userId ? userOrgsMap.get(emp.userId) : undefined;
+    if (!acc) return { name: emp.userOrganization?.organizationName ?? null, total: 0 };
+    return {
+      name: acc.organizationName || emp.userOrganization?.organizationName || null,
+      total: acc.organizations?.length ?? 0,
+    };
+  };
 
   const filteredEmployees = employees.filter(emp => {
     const matchesSearch = `${emp.lastName} ${emp.firstName} ${emp.middleName} ${getPosName(emp.positionId)} ${emp.email}`.toLowerCase().includes(searchQuery.toLowerCase());
@@ -178,7 +198,13 @@ export function EmployeesPage() {
               </div>
             </div>
             <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
-              <div className="flex items-center gap-2"><Building className="w-4 h-4 text-gray-400 dark:text-gray-500" /><span>{getDeptName(employee.departmentId)}</span></div>
+              {(() => { const org = getEmpOrg(employee); return (
+                <div className="flex items-center gap-2" title={org.total > 1 ? `Всего организаций: ${org.total}` : undefined}>
+                  <Building className="w-4 h-4 text-indigo-400 dark:text-indigo-500 shrink-0" />
+                  <span className="truncate">{org.name || 'Организация не указана'}</span>
+                  {org.total > 1 && <span className="text-xs px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 shrink-0">+{org.total - 1}</span>}
+                </div>
+              ); })()}
               <div className="flex items-center gap-2"><Mail className="w-4 h-4 text-gray-400 dark:text-gray-500" /><span>{employee.email}</span></div>
               <div className="flex items-center gap-2"><Phone className="w-4 h-4 text-gray-400 dark:text-gray-500" /><span>{employee.workPhone} {employee.internalPhone && `(вн. ${employee.internalPhone})`}</span></div>
               <div className="flex items-center gap-2"><MapPin className="w-4 h-4 text-gray-400 dark:text-gray-500" /><span>{getBranchName(employee.branchId)}{employee.room && `, каб. ${employee.room}`}</span></div>

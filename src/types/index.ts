@@ -35,7 +35,9 @@ export interface User {
   createdAt: string;
   updatedAt: string;
   isActive: boolean;
-  organizationId?: string | null; // Активная организация пользователя
+  organizationId?: string | null; // Активная организация пользователя (последняя сессия)
+  organizationName?: string | null; // Название актуальной организации
+  organizations?: UserOrganizationRef[]; // Все организации, в которых состоит пользователь
   accessibleOrganizations?: Array<{
     id: string;
     name: string;
@@ -47,6 +49,15 @@ export interface User {
     inn?: string;
     directorName?: string;
   }>; // Где может работать пользователь
+}
+
+// Организация пользователя (членство в мультиорганизационной модели)
+export interface UserOrganizationRef {
+  id: string;
+  name: string;
+  shortName?: string | null;
+  inn?: string;
+  isActive: boolean; // Актуальная — где пользователь был в последней сессии
 }
 
 // Организация (создаётся пользователем после регистрации)
@@ -149,6 +160,11 @@ export interface Employee {
   avatar?: string | null;      // автосинхронизируется с аватаром привязанного пользователя
   userId?: string | null;      // привязка учётной записи пользователя (авто — по e-mail)
   linkedUser?: { id: string; fullName: string; email: string } | null;
+  // Столбец «Организация»: актуальная организация привязанной учётной записи
+  // (где пользователь был в последней сессии)
+  userOrganization?: { organizationId: string | null; organizationName: string | null } | null;
+  // Карточка: все организации привязанной учётной записи
+  userOrganizations?: UserOrganizationRef[];
   isEmployed: boolean;
   // Рабочее место
   branchId: string | null;      // филиал необязателен

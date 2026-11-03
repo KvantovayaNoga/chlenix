@@ -1383,12 +1383,36 @@ function publicVM(vm: any): any {
 
 const employeeInclude = { position: true, department: true, branch: true, equipment: true, linkedUser: { select: { id: true, fullName: true, email: true } } } as const;
 
+// Столбец «Организация» в списке сотрудников: если сотрудник привязан к учётной
+// записи — актуальная организация из её последней сессии (users.organization_id).
+async function attachEmployeeOrgs(list: any[]) {
+  const userIds = [...new Set(list.map((e: any) => e.userId).filter(Boolean))] as string[];
+  const byUser = new Map<string, { organizationId: string | null; organizationName: string | null }>();
+  if (userIds.length) {
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: {
+        id: true, organizationId: true,
+        memberships: { include: { organization: { select: { name: true, shortName: true } } } },
+      },
+    });
+    for (const u of users as any[]) {
+      const m = u.memberships?.find((x: any) => x.organizationId === u.organizationId)?.organization;
+      byUser.set(u.id, {
+        organizationId: u.organizationId ?? null,
+        organizationName: m ? (m.shortName || m.name) : null,
+      });
+    }
+  }
+  return list.map((e: any) => ({ ...e, userOrganization: e.userId ? (byUser.get(e.userId) ?? null) : null }));
+}
+
 app.get('/api/employees', authMiddleware, async (c) => {
   const scope = await getUserOrgScope(c.get('user').userId);
   const where: any = {};
   if (scope.orgId) where.organizationId = scope.orgId; else where.organizationId = null;
   const employees = await prisma.employee.findMany({ where, include: employeeInclude, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }] });
-  return c.json(employees.map(publicEmployee));
+  return c.json(await attachEmployeeOrgs(employees.map(publicEmployee)));
 });
 
 app.get('/api/employees/:id', authMiddleware, async (c) => {
@@ -1399,7 +1423,20 @@ app.get('/api/employees/:id', authMiddleware, async (c) => {
   if (employee.organizationId && employee.organizationId !== scope.orgId && scope.role !== 'admin') {
     return c.json({ error: 'Нет доступа к этой организации' }, 403);
   }
-  return c.json(publicEmployee(employee));
+  // Карточка сотрудника: все организации привязанной учётной записи
+  // (активная — где пользователь был в последний раз)
+  const [enriched] = await attachEmployeeOrgs([publicEmployee(employee)]);
+  if (employee.userId) {
+    const acc = await prisma.user.findUnique({
+      where: { id: employee.userId },
+      include: { memberships: { include: { organization: true } } },
+    });
+    if (acc) {
+      const full = await withUserOrgs(acc, dedupeOrgs(acc));
+      (enriched as any).userOrganizations = full.organizations;
+    }
+  }
+  return c.json(enriched);
 });
 
 app.get('/api/employees/:id/history', authMiddleware, async (c) => {
