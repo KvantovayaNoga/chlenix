@@ -53,7 +53,6 @@ export function CreateOrganizationPage() {
     correspondentAccount: '',
     bik: '',
     taxSystem: taxSystems[0],
-    industry: '',
     employeeCount: '',
     foundedDate: '',
     notes: '',
@@ -129,7 +128,6 @@ export function CreateOrganizationPage() {
         correspondentAccount: form.correspondentAccount.trim(),
         bik: form.bik.trim(),
         taxSystem: form.taxSystem,
-        industry: form.industry.trim(),
         employeeCount: form.employeeCount ? Number(form.employeeCount) : null,
         foundedDate: form.foundedDate,
         logo: undefined,
@@ -227,16 +225,6 @@ export function CreateOrganizationPage() {
                   onChange={(e) => handleChange('shortName', e.target.value)}
                   className={inputCls}
                   placeholder="ООО «Ромашка»"
-                />
-              </div>
-              <div>
-                <label className={labelCls}>Отрасль / вид деятельности</label>
-                <input
-                  type="text"
-                  value={form.industry}
-                  onChange={(e) => handleChange('industry', e.target.value)}
-                  className={inputCls}
-                  placeholder="IT, производство, торговля…"
                 />
               </div>
               <div>

@@ -11,12 +11,14 @@ import { useAuthStore } from './authStore';
 import type {
   Employee, Equipment, VirtualMachine, Service, User,
   AuditLogEntry, Department, Position, Branch, DataCenter, Organization, DashboardStats,
+  ActivityType,
 } from '../types';
 
 interface DataState {
   organizations: Organization[];
   departments: Department[];
   positions: Position[];
+  activityTypes: ActivityType[];
   branches: Branch[];
   dataCenters: DataCenter[];
   employees: Employee[];
@@ -48,6 +50,11 @@ interface DataState {
   addPosition: (data: Partial<Position>) => Promise<boolean>;
   updatePosition: (id: string, data: Partial<Position>) => Promise<boolean>;
   deletePosition: (id: string) => Promise<boolean>;
+
+  // Activity types (Виды деятельности, ОКВЭД)
+  addActivityType: (data: Partial<ActivityType>) => Promise<boolean>;
+  updateActivityType: (id: string, data: Partial<ActivityType>) => Promise<boolean>;
+  deleteActivityType: (id: string) => Promise<boolean>;
 
   // Branches
   addBranch: (data: Partial<Branch>) => Promise<boolean>;
@@ -101,6 +108,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
+  const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [dataCenters, setDataCenters] = useState<DataCenter[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -119,8 +127,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   currentUserRef.current = currentUser;
 
   // Актуальные списки для «геттеров» без пересоздания контекста
-  const ref = useRef({ organizations, departments, positions, branches, dataCenters, employees, equipment, virtualMachines, services });
-  ref.current = { organizations, departments, positions, branches, dataCenters, employees, equipment, virtualMachines, services };
+  const ref = useRef({ organizations, departments, positions, activityTypes, branches, dataCenters, employees, equipment, virtualMachines, services });
+  ref.current = { organizations, departments, positions, activityTypes, branches, dataCenters, employees, equipment, virtualMachines, services };
 
   const loadPromiseRef = useRef<Promise<void> | null>(null);
   // Глобальный монотонный номер загрузки: любой ответ запроса, начатого раньше
@@ -181,10 +189,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     loadPromiseRef.current = (async () => {
       try {
-        const [orgs, deps, poss, brs, dcs, emps, eq, vms, logs] = await Promise.all([
+        const [orgs, deps, poss, acts, brs, dcs, emps, eq, vms, logs] = await Promise.all([
           api.get<Organization[]>('/organizations'),
           api.get<Department[]>('/departments'),
           api.get<Position[]>('/positions'),
+          api.get<ActivityType[]>('/activity-types').catch(() => [] as ActivityType[]),
           api.get<Branch[]>('/branches'),
           api.get<DataCenter[]>('/data-centers').catch(() => [] as DataCenter[]),
           api.get<Employee[]>('/employees'),
@@ -201,6 +210,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setOrganizations(orgs);
         setDepartments(deps);
         setPositions(poss);
+        setActivityTypes(acts);
         setBranches(brs);
         setDataCenters(dcs);
         setEmployees(emps);
@@ -374,6 +384,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setPositions((prev) => prev.filter((p) => p.id !== id));
   }), [run]);
 
+  // ---------- Виды деятельности (ОКВЭД) ----------
+  // Сортировка повторяет серверную: основной вид — всегда на первом месте.
+  const sortActivityTypes = (list: ActivityType[]) =>
+    [...list].sort((a, b) => (Number(b.isMain) - Number(a.isMain)) || a.name.localeCompare(b.name));
+
+  const addActivityType = useCallback((data: Partial<ActivityType>) => run(async () => {
+    await loadAll();
+    const item = await api.post<ActivityType>('/activity-types', data);
+    // Основной вид может быть только один: сервер снимает флаг с прежнего,
+    // локальный список синхронизируется перезагрузкой в начале операции.
+    setActivityTypes((prev) => sortActivityTypes([...prev.filter((a) => a.id !== item.id), item]));
+  }), [run, loadAll]);
+  const updateActivityType = useCallback((id: string, data: Partial<ActivityType>) => run(async () => {
+    const item = await api.put<ActivityType>(`/activity-types/${id}`, data);
+    setActivityTypes((prev) => sortActivityTypes(prev.map((a) => (a.id === id ? item : a))));
+  }), [run]);
+  const deleteActivityType = useCallback((id: string) => run(async () => {
+    await api.delete(`/activity-types/${id}`);
+    setActivityTypes((prev) => prev.filter((a) => a.id !== id));
+  }), [run]);
+
   const addBranch = useCallback((data: Partial<Branch>) => run(async () => {
     await loadAll();
     const item = await api.post<Branch>('/branches', data);
@@ -524,12 +555,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<DataState>(() => ({
-    organizations, departments, positions, branches, dataCenters, employees, equipment,
+    organizations, departments, positions, activityTypes, branches, dataCenters, employees, equipment,
     virtualMachines, services, auditLog, loaded, loading, error,
     loadAll, clearError, reloadVMs,
     addOrganization, updateOrganization, deleteOrganization, getOrganizationById, getCurrentUserOrganization,
     addDepartment, updateDepartment, deleteDepartment,
     addPosition, updatePosition, deletePosition,
+    addActivityType, updateActivityType, deleteActivityType,
     addBranch, updateBranch, deleteBranch,
     addDataCenter, updateDataCenter, deleteDataCenter,
     addEmployee, updateEmployee, deleteEmployee, getEmployeeById,
@@ -540,12 +572,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addService, updateService, deleteService, getServicesByVM,
     getDashboardStats,
   }), [
-    organizations, departments, positions, branches, dataCenters, employees, equipment,
+    organizations, departments, positions, activityTypes, branches, dataCenters, employees, equipment,
     virtualMachines, services, auditLog, loaded, loading, error,
     loadAll, clearError, reloadVMs,
     addOrganization, updateOrganization, deleteOrganization, getOrganizationById, getCurrentUserOrganization,
     addDepartment, updateDepartment, deleteDepartment,
     addPosition, updatePosition, deletePosition,
+    addActivityType, updateActivityType, deleteActivityType,
     addBranch, updateBranch, deleteBranch,
     addDataCenter, updateDataCenter, deleteDataCenter,
     addEmployee, updateEmployee, deleteEmployee, getEmployeeById,
@@ -569,6 +602,7 @@ const EMPTY_DATA_STATE: DataState = {
   organizations: [],
   departments: [],
   positions: [],
+  activityTypes: [],
   branches: [],
   dataCenters: [],
   employees: [],
@@ -593,6 +627,9 @@ const EMPTY_DATA_STATE: DataState = {
   addPosition: asyncNoop as unknown as DataState['addPosition'],
   updatePosition: asyncNoop as unknown as DataState['updatePosition'],
   deletePosition: asyncNoop as unknown as DataState['deletePosition'],
+  addActivityType: asyncNoop as unknown as DataState['addActivityType'],
+  updateActivityType: asyncNoop as unknown as DataState['updateActivityType'],
+  deleteActivityType: asyncNoop as unknown as DataState['deleteActivityType'],
   addBranch: asyncNoop as unknown as DataState['addBranch'],
   updateBranch: asyncNoop as unknown as DataState['updateBranch'],
   deleteBranch: asyncNoop as unknown as DataState['deleteBranch'],

@@ -82,8 +82,8 @@ interface AuthState {
   canManageServers: () => boolean;
   /**
    * Право на редактирование конкретного справочника (model: 'department' |
-   * 'position' | 'branch' | 'dataCenter') — зеркало canEditDirectory() с бэкенда:
-   * HR — всё кроме ЦОД, sysadmin — только ЦОД, admin — всё.
+   * 'position' | 'branch' | 'dataCenter' | 'activityType') — зеркало canEditDirectory() с бэкенда:
+   * HR — всё кроме ЦОД (включая «Виды деятельности»), sysadmin — только ЦОД, admin — всё.
    */
   canEditDirectory: (model: string) => boolean;
   /**

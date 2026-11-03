@@ -172,11 +172,13 @@ const SERVER_ROLES: string[] = ['admin', 'sysadmin'];
 const roleOf = (c: any): string => c.get('user')?.role ?? '';
 
 /**
- * Права на справочники (отделы/должности/филиалы/ЦОД) по ролям:
+ * Права на справочники (отделы/должности/филиалы/ЦОД/виды деятельности) по ролям:
  * - admin          — всё;
- * - hr_specialist  — отделы/должности/филиалы (полностью), ЦОД — только просмотр;
+ * - hr_specialist  — отделы/должности/филиалы/виды деятельности (полностью), ЦОД — только просмотр;
  * - sysadmin       — ЦОД (полностью), остальные — только просмотр;
  * - остальные      — только просмотр.
+ * Справочник «Виды деятельности» (activityType): создание/удаление/редактирование
+ * разрешены только администратору и специалисту по кадрам (решение от 2026-11).
  */
 function canEditDirectory(role: string, model: string): boolean {
   if (role === 'admin') return true;
@@ -276,6 +278,8 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
   bik: 'БИК',
   taxSystem: 'система налогообложения',
   industry: 'отрасль',
+  okved: 'ОКВЭД',
+  isMain: 'является основным видом деятельности',
   employeeCount: 'штатная численность',
   foundedDate: 'дата основания',
   logo: 'логотип',
@@ -1855,6 +1859,7 @@ app.delete('/api/organizations/:id', authMiddleware, requireRole(['admin']), asy
     await tx.department.deleteMany({ where: { organizationId: id } });
     await tx.position.deleteMany({ where: { organizationId: id } });
     await tx.branch.deleteMany({ where: { organizationId: id } });
+    await tx.activityType.deleteMany({ where: { organizationId: id } });
 
     // Основные данные организации
     await tx.employee.deleteMany({ where: { organizationId: id } });
@@ -3369,6 +3374,146 @@ for (const cfg of directoryConfigs) {
     return c.json({ success: true });
   });
 }
+
+// ============================================================
+// Справочник «Виды деятельности» (ОКВЭД)
+// ============================================================
+// Две логические сущности: основной вид деятельности (isMain=true, ровно один)
+// и дополнительные виды (isMain=false). Права на создание/редактирование/удаление —
+// только у администратора и специалиста по кадрам (canEditDirectory(role,'activityType')).
+// Формат ОКВЭД: максимум 6 цифр и два разделителя-точки, напр. «62.01.1».
+const OKVED_RE = /^\d{1,2}(\.\d{1,2}){0,2}$/;
+
+function validateOkved(raw: string): string | null {
+  const s = raw.trim();
+  if (!OKVED_RE.test(s)) return 'Некорректный ОКВЭД: максимум 6 цифр и две точки (например, 62.01.1)';
+  if (s.replace(/\D/g, '').length > 6) return 'Некорректный ОКВЭД: максимум 6 цифр';
+  return null;
+}
+
+function publicActivityType(a: any): any {
+  return { ...a, createdAt: isoDate(a.createdAt), updatedAt: isoDate(a.updatedAt) };
+}
+
+app.get('/api/activity-types', authMiddleware, async (c) => {
+  // Скоуп по активной организации + старые глобальные записи (organizationId = null).
+  // Основной вид деятельности всегда идёт первым, далее — по наименованию.
+  const me = await prisma.user.findUnique({ where: { id: c.get('user').userId }, select: { organizationId: true } });
+  const items: any[] = await prisma.activityType.findMany({
+    where: me?.organizationId
+      ? { OR: [{ organizationId: me.organizationId }, { organizationId: null }] }
+      : {},
+    orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
+  });
+  return c.json(items.map(publicActivityType));
+});
+
+app.post('/api/activity-types', authMiddleware, async (c) => {
+  // Только admin и hr_specialist (canEditDirectory); sysadmin и остальные — без доступа.
+  if (!canEditDirectory(roleOf(c), 'activityType')) return c.json({ error: 'Недостаточно прав' }, 403);
+  const parsed = z.object({
+    okved: z.string().min(1),
+    name: z.string().min(1),
+    isMain: z.boolean().optional().default(false),
+    organizationId: z.union([z.string().uuid(), z.null()]).optional(),
+  }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
+
+  const okvedErr = validateOkved(parsed.data.okved);
+  if (okvedErr) return c.json({ error: okvedErr }, 400);
+
+  const currentUser = c.get('user');
+  const dbUser = await prisma.user.findUnique({ where: { id: currentUser.userId }, select: { organizationId: true } });
+  const orgId = dbUser?.organizationId ?? parsed.data.organizationId ?? null;
+
+  const okvedNorm = parsed.data.okved.trim();
+  const clashWhere: any = { okved: okvedNorm };
+  if (orgId) clashWhere.organizationId = orgId;
+  const exists = await prisma.activityType.findFirst({ where: clashWhere });
+  if (exists) return c.json({ error: `Вид деятельности «${okvedNorm}» уже существует` }, 409);
+
+  const item = await prisma.$transaction(async (tx: any) => {
+    // Основной вид в справочнике может быть только один: предыдущий становится дополнительным.
+    if (parsed.data.isMain) {
+      await tx.activityType.updateMany({ where: { isMain: true, ...(orgId ? { organizationId: orgId } : {}) }, data: { isMain: false } });
+    }
+    return tx.activityType.create({
+      data: {
+        okved: okvedNorm,
+        name: parsed.data.name.trim(),
+        isMain: Boolean(parsed.data.isMain),
+        organizationId: orgId,
+        updatedById: currentUser.userId,
+      },
+    });
+  });
+
+  await createHistoryEntry('activityType', item.id, currentUser.fullName);
+  await writeAudit(currentUser, 'create', 'activityType', item.id, item.name, `Создан справочник: вид деятельности «${item.okved} ${item.name}»`, c.req.header('x-forwarded-for'));
+  return c.json(publicActivityType(item), 201);
+});
+
+app.put('/api/activity-types/:id', authMiddleware, async (c) => {
+  if (!canEditDirectory(roleOf(c), 'activityType')) return c.json({ error: 'Недостаточно прав' }, 403);
+  const { id } = c.req.param();
+  const parsed = z.object({
+    okved: z.string().min(1).optional(),
+    name: z.string().min(1).optional(),
+    isMain: z.boolean().optional(),
+  }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
+
+  const currentUser = c.get('user');
+  const old: any = await prisma.activityType.findUnique({ where: { id } });
+  if (!old) return c.json({ error: 'Not found' }, 404);
+
+  if (parsed.data.okved !== undefined) {
+    const err = validateOkved(parsed.data.okved);
+    if (err) return c.json({ error: err }, 400);
+    const clashWhere: any = { okved: parsed.data.okved.trim(), id: { not: id } };
+    if (old.organizationId) clashWhere.organizationId = old.organizationId;
+    const clash = await prisma.activityType.findFirst({ where: clashWhere });
+    if (clash) return c.json({ error: `Вид деятельности «${parsed.data.okved.trim()}» уже существует` }, 409);
+  }
+
+  const newData: any = {};
+  if (parsed.data.okved !== undefined) newData.okved = parsed.data.okved.trim();
+  if (parsed.data.name !== undefined) newData.name = parsed.data.name.trim();
+  if (parsed.data.isMain !== undefined) newData.isMain = parsed.data.isMain;
+  newData.updatedById = currentUser.userId;
+
+  const item: any = await prisma.$transaction(async (tx: any) => {
+    // Разрешаем ровно один основной вид: при назначении основного прежнему снимаем флаг.
+    if (newData.isMain === true) {
+      await tx.activityType.updateMany({ where: { isMain: true, id: { not: id }, ...(old.organizationId ? { organizationId: old.organizationId } : {}) }, data: { isMain: false } });
+    }
+    return tx.activityType.update({ where: { id }, data: newData });
+  });
+
+  await applyUpdate({
+    ctx: currentUser,
+    ipAddress: c.req.header('x-forwarded-for'),
+    entityType: 'activityType',
+    entityId: id,
+    entityName: item.name,
+    oldObj: old,
+    newData,
+  });
+
+  return c.json(publicActivityType(item));
+});
+
+app.delete('/api/activity-types/:id', authMiddleware, async (c) => {
+  if (!canEditDirectory(roleOf(c), 'activityType')) return c.json({ error: 'Недостаточно прав' }, 403);
+  const { id } = c.req.param();
+  const currentUser = c.get('user');
+  const old: any = await prisma.activityType.findUnique({ where: { id } });
+  if (!old) return c.json({ error: 'Not found' }, 404);
+
+  await prisma.activityType.delete({ where: { id } });
+  await writeAudit(currentUser, 'delete', 'activityType', id, old.name, `Удалён справочник: вид деятельности «${old.okved} ${old.name}»`, c.req.header('x-forwarded-for'));
+  return c.json({ success: true });
+});
 
 // ============================================================
 // Администрирование системы: заявки на вступление в организации

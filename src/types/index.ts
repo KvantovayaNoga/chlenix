@@ -129,6 +129,18 @@ export interface Position {
   updatedBy: string | null;
 }
 
+// Справочник «Виды деятельности» (ОКВЭД).
+// Логические сущности: основной вид (isMain=true, ровно один) и дополнительные.
+export interface ActivityType {
+  id: string;
+  okved: string;              // ОКВЭД: максимум 6 цифр, два разделителя-точки (62.01.1)
+  name: string;               // Наименование вида деятельности
+  isMain: boolean;            // Является основным видом деятельности
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
 // Справочник: филиалы
 export interface Branch {
   id: string;

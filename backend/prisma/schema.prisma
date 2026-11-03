@@ -43,6 +43,7 @@ model User {
   employeeProfile   Employee?          @relation("EmployeeUser")
   departments       Department[]       @relation("DepartmentUpdater")
   positions         Position[]         @relation("PositionUpdater")
+  activityTypes     ActivityType[]     @relation("ActivityTypeUpdater")
   branches          Branch[]           @relation("BranchUpdater")
   dataCenters       DataCenter[]       @relation("DataCenterUpdater")
   equipment         Equipment[]        @relation("EquipmentUpdater")
@@ -172,6 +173,27 @@ model Branch {
   @@unique([organizationId, name])
   @@index([organizationId])
   @@map("branches")
+}
+
+// Справочник «Виды деятельности» (ОКВЭД). Две логические сущности:
+// основной вид деятельности (isMain = true) и дополнительные (isMain = false).
+// Основной вид всегда один — при выставлении флага у новой записи предыдущий
+// основной автоматически становится дополнительным.
+model ActivityType {
+  id             String   @id @default(uuid())
+  okved          String   // ОКВЭД: максимум 6 цифр, два разделителя в виде точек (XX.XX.XX)
+  name           String   // Наименование вида деятельности
+  isMain         Boolean  @default(false) @map("is_main")
+  organizationId String?  @map("organization_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  updatedById    String?  @map("updated_by")
+
+  updatedBy User? @relation("ActivityTypeUpdater", fields: [updatedById], references: [id])
+
+  @@index([organizationId])
+  @@index([isMain])
+  @@map("activity_types")
 }
 
 // Дата-центры (ЦОД): сторонние/облачные вычислительные мощности,
