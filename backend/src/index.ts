@@ -121,6 +121,9 @@ const EDITOR_ROLES = ALL_ROLES.filter((r) => r !== 'viewer');
 const ORG_CREATE_ROLES: string[] = ['admin', 'hr_specialist'];
 /** Полное управление сотрудниками (CRUD): admin + HR. */
 const EMPLOYEE_MANAGE_ROLES: string[] = ['admin', 'hr_specialist'];
+/** Право менять активную организацию (switch-organization): admin + HR.
+ *  Решение от 2026-11: МОЛ, системный администратор и пользователь — без такого права. */
+const ORG_SWITCH_ROLES: string[] = ['admin', 'hr_specialist'];
 /** Создание/редактирование карточек оборудования: admin + HR (МОЛ — только связка assign/unassign). */
 const EQUIPMENT_MANAGE_ROLES: string[] = ['admin', 'hr_specialist'];
 /**
@@ -560,7 +563,7 @@ app.get('/api/auth/my-organizations', authMiddleware, async (c) => {
 // POST /api/auth/switch-organization — сменить активную организацию и перевыпустить JWT.
 // Администратор может переключаться между всеми организациями системы;
 // обычный пользователь — только между своими.
-app.post('/api/auth/switch-organization', authMiddleware, async (c) => {
+app.post('/api/auth/switch-organization', authMiddleware, requireRole(ORG_SWITCH_ROLES), async (c) => {
   const parsed = z.object({ organizationId: z.string().uuid() }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'Некорректные данные' }, 400);
 

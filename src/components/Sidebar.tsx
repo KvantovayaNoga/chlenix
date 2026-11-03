@@ -35,7 +35,7 @@ const roleColors: Record<string, string> = {
 };
 
 export function Sidebar() {
-  const { currentUser, logout, canManageUsers, canManageServers, canCreateOrganization, myOrganizations, effectiveRole, impersonatedRole, setImpersonatedRole } = useAuthStore();
+  const { currentUser, logout, canManageUsers, canManageServers, canCreateOrganization, canSwitchOrganization, myOrganizations, effectiveRole, impersonatedRole, setImpersonatedRole } = useAuthStore();
   // Режим имитации роли (отладка интерфейса администратором, см. «Администрирование»):
   // сайдбар показывается так, как его видит пользователь с выбранной ролью;
   // кнопка «Админка» внизу (над «Выйти») СРАЗУ снимает имитацию и возвращает
@@ -215,8 +215,10 @@ export function Sidebar() {
             </NavLink>
 
             {/* Блок организаций: кнопка перехода на страницу «Сменить организацию» — НАД текущей
-                организацией; создание второй организации — под ней (см. ниже). */}
-            {!isMinimized && item.icon === Building2 && organization && accessibleOrgs.length > 1 && (
+                организацией; создание второй организации — под ней (см. ниже).
+                Смена организации доступна только admin и HR (canSwitchOrganization):
+                МОЛ, системный администратор и пользователь менять её не могут. */}
+            {!isMinimized && item.icon === Building2 && organization && accessibleOrgs.length > 1 && canSwitchOrganization() && (
               <button
                 onClick={() => navigate('/organization/switch')}
                 className="flex items-center gap-2 w-full mt-1 ml-3 px-3 py-2 rounded-lg text-xs uppercase tracking-wide text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"

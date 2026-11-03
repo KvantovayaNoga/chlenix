@@ -11,9 +11,30 @@ import { Building2, MapPin, Phone, Hash, Crown, Check, ArrowLeft, Plus } from 'l
  */
 export function SwitchOrganizationPage() {
   const navigate = useNavigate();
-  const { currentUser, myOrganizations, switchOrganization } = useAuthStore();
+  const { currentUser, myOrganizations, switchOrganization, canSwitchOrganization } = useAuthStore();
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Резервная защита: смена организации доступна только admin и HR
+  // (кнопка в сайдбаре скрыта, маршрут закрыт RoleGuard'ом).
+  if (!canSwitchOrganization()) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
+        <Building2 className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
+        <h2 className="text-xl font-bold text-gray-700 dark:text-gray-200 mb-2">Смена организации недоступна</h2>
+        <p className="text-gray-500 dark:text-gray-400 max-w-md">
+          Переключать организацию могут только администратор системы и специалист по кадрам.
+          Если вам нужна другая организация — обратитесь к ним.
+        </p>
+        <button
+          onClick={() => navigate('/dashboard')}
+          className="mt-6 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 transition-all"
+        >
+          Вернуться на обзор
+        </button>
+      </div>
+    );
+  }
 
   const orgs = myOrganizations();
   const activeId = currentUser?.organizationId;

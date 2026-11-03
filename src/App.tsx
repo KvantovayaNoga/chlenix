@@ -94,7 +94,7 @@ function App() {
           <Route path="/admin" element={<AdminOnly><AdminPanelPage /></AdminOnly>} />
           <Route path="/organization" element={<OrganizationPage />} />
           <Route path="/organization/create" element={<RoleGuard roles={['admin', 'hr_specialist']}><CreateOrganizationPage /></RoleGuard>} />
-          <Route path="/organization/switch" element={<SwitchOrganizationPage />} />
+          <Route path="/organization/switch" element={<RoleGuard roles={['admin', 'hr_specialist']}><SwitchOrganizationPage /></RoleGuard>} />
           <Route path="/users" element={<ProtectedRoute requiredRole="admin"><UsersPage /></ProtectedRoute>} />
           <Route path="/users/:id" element={<ProtectedRoute><UserProfilePage /></ProtectedRoute>} />
           <Route path="/about" element={<ProtectedRoute requiredRole="admin"><AboutPage /></ProtectedRoute>} />

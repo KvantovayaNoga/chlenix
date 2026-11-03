@@ -57,12 +57,20 @@ interface AuthState {
   //     ASSIGN_ROLES, SERVER_ROLES) ---
   /** Создание организаций: admin + hr_specialist (ORG_CREATE_ROLES). */
   canCreateOrg: () => boolean;
-  /** CRUD сотрудников: admin + hr_specialist (EMPLOYEE_MANAGE_ROLES). */
+  /** CRUD сотрудников: admin + hr_specialist (EMPLOYEE_MANAGE_ROLES).
+   *  МОЛ, системный администратор и пользователь — без права добавлять сотрудников. */
   canManageEmployees: () => boolean;
+  /** Редактирование карточки организации (реквизиты): только admin. */
+  canEditOrganization: () => boolean;
   /** Создание/редактирование карточек серверов/кластеров: admin + HR + sysadmin (см. isInfraEquipment на бэкенде). */
   canManageServerCards: () => boolean;
   /** Связка «сотрудник ↔ оборудование»: admin + HR + МОЛ (ASSIGN_ROLES). */
   canAssignEquipment: () => boolean;
+  /**
+   * Смена активной организации (страница /organization/switch): admin + HR.
+   * Решение от 2026-11: МОЛ, sysadmin и пользователь (viewer) организацию менять не могут.
+   */
+  canSwitchOrganization: () => boolean;
   /** Серверные разделы (физические серверы / ВМ / платформы виртуализации): admin + sysadmin (SERVER_ROLES). */
   canManageServers: () => boolean;
   /**
@@ -332,7 +340,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canManageUsers: () => isAdminUser,
       hasOrganization: () => !!currentUser?.organizationId,
       canCreateOrg: () => isAdminUser || uiRole === 'hr_specialist',
+      // Решение от 2026-11: добавлять сотрудников организации может только
+      // администратор и кадровик. МОЛ, системный администратор и пользователь
+      // (viewer) — без такого права (кнопка «Добавить сотрудника» скрыта).
       canManageEmployees: () => isAdminUser || uiRole === 'hr_specialist',
+      // Редактирование карточки организации (реквизиты): только администратор.
+      // МОЛ, системный администратор и пользователь организацию не редактируют
+      // (зеркало бэкенда: PUT /api/organizations/:id — requireRole(['admin'])).
+      canEditOrganization: () => isAdminUser,
       /**
        * Создание/редактирование карточек серверов и кластеров.
        * Зеркало бэкенда: POST/PUT /api/equipment доступны admin+HR для любой техники,
@@ -342,6 +357,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        */
       canManageServerCards: () => isAdminUser || uiRole === 'sysadmin' || uiRole === 'hr_specialist',
       canAssignEquipment: () => isAdminUser || uiRole === 'hr_specialist' || uiRole === 'materially_responsible',
+      // Смена организации: только admin и HR (см. комментарий в интерфейсе AuthState).
+      canSwitchOrganization: () => isAdminUser || uiRole === 'hr_specialist',
       canManageServers: () => isAdminUser || uiRole === 'sysadmin',
       // Зеркало canEditDirectory() из backend/src/index.ts
       canEditDirectory: (model: string) => {
@@ -391,8 +408,10 @@ const authFallback: AuthState = {
   hasOrganization: () => false,
   canCreateOrg: () => false,
   canManageEmployees: () => false,
+  canEditOrganization: () => false,
   canManageServerCards: () => false,
   canAssignEquipment: () => false,
+  canSwitchOrganization: () => false,
   canManageServers: () => false,
   canEditDirectory: () => false,
 };

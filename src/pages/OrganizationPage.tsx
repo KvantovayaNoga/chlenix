@@ -80,7 +80,7 @@ function InfoRow({ label, value }: { label: string; value?: string | number | nu
 
 export function OrganizationPage() {
   const navigate = useNavigate();
-  const { currentUser, canEdit, isAdmin, canCreateOrganization } = useAuthStore();
+  const { currentUser, canEditOrganization, isAdmin, canCreateOrganization } = useAuthStore();
   const { users } = useAuthStore();
   const { organizations, updateOrganization, deleteOrganization, employees, equipment, error: storeError } = useDataStore();
 
@@ -166,8 +166,9 @@ export function OrganizationPage() {
             </div>
             {!isEditing && (
               <div className="flex gap-2 flex-shrink-0">
-                {/* Права синхронизированы с бэкендом: редактирование организации — admin (PUT /api/organizations/:id) */}
-                {canEdit() && isAdmin() && (
+                {/* Права синхронизированы с бэкендом: редактирование организации — admin (PUT /api/organizations/:id).
+                    Решение от 2026-11: МОЛ, системный администратор и пользователь организацию не редактируют. */}
+                {canEditOrganization() && (
                   <button
                     onClick={() => setIsEditing(true)}
                     className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/30"
@@ -271,7 +272,7 @@ export function OrganizationPage() {
       )}
 
       {/* Edit form */}
-      {isEditing && (
+      {isEditing && canEditOrganization() && (
         <EditOrganizationForm
           organization={organization}
           onClose={() => setIsEditing(false)}
