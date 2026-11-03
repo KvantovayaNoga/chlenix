@@ -79,9 +79,12 @@ export function EmployeesPage() {
   // Организация сотрудника: актуальная (из последней сессии привязанной учётной записи)
   const getEmpOrg = (emp: Employee): { name: string | null; total: number } => {
     const acc = emp.userId ? userOrgsMap.get(emp.userId) : undefined;
-    if (!acc) return { name: emp.userOrganization?.organizationName ?? null, total: 0 };
+    // Организация карточки приоритетна (её можно выбрать в редактировании);
+    // если карточка без организации — актуальная организация учётной записи.
+    const ownName = emp.organization?.shortName || emp.organization?.name || emp.userOrganization?.organizationName || null;
+    if (!acc) return { name: ownName, total: 0 };
     return {
-      name: acc.organizationName || emp.userOrganization?.organizationName || null,
+      name: ownName || acc.organizationName || null,
       total: acc.organizations?.length ?? 0,
     };
   };
@@ -279,7 +282,12 @@ export function AddEmployeeModal({ onClose, onAdd, initial }: { onClose: () => v
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (hasErrors) return; // форма остаётся открытой — показываем подсказки внутри полей
-    const res = await onAdd({ ...formData, birthDate: formData.birthDate || null, userId: formData.userId || null });
+    const payload: any = { ...formData, birthDate: formData.birthDate || null, userId: formData.userId || null };
+    // При редактировании пустое значение = «Без организации» (явная отвязка) —
+    // отправляем null только если карточка была привязана; иначе «без изменений».
+    if (payload.organizationId === '' && initial && !initial.organizationId) delete payload.organizationId;
+    else if (payload.organizationId === '') payload.organizationId = null;
+    const res = await onAdd(payload);
     if (res !== false) onClose();
   };
   const handleChange = (field: string, value: string | boolean) => { setFormData(prev => ({ ...prev, [field]: value })); };
@@ -301,16 +309,26 @@ export function AddEmployeeModal({ onClose, onAdd, initial }: { onClose: () => v
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Должность<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><select value={formData.positionId} onChange={(e) => handleChange('positionId', e.target.value)} className={errCls('positionId')}><option value="">Выберите должность</option>{positions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>{errHint('positionId')}</div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Отдел<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><select value={formData.departmentId} onChange={(e) => handleChange('departmentId', e.target.value)} className={errCls('departmentId')}><option value="">Выберите отдел</option>{departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select>{errHint('departmentId')}</div>
           </div>
-          {/* Привязка сотрудника к организации — доступна администратору и HR */}
-          {canPickOrg && orgs.length > 0 ? (
+          {/* Привязка сотрудника к организации — доступна администратору и HR.
+              Пустое значение ('') = «Без организации» (для новых — активная организация). */}
+          {canPickOrg ? (
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"><Building className="w-3.5 h-3.5 inline mr-1 text-gray-400" />Организация</label>
               <select value={formData.organizationId} onChange={(e) => handleChange('organizationId', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">
-                <option value="">Текущая активная организация</option>
+                {initial
+                  ? <>
+                      {/* «Без организации» доступно только если карточка уже привязана — иначе это «без изменений» */}
+                      {initial.organizationId
+                        ? <option value="">Без организации</option>
+                        : <option value="" disabled hidden>Без организации</option>}
+                    </>
+                  : <option value="">Без организации (по умолчанию — текущая активная)</option>}
                 {orgs.map(o => <option key={o.id} value={o.id}>{o.shortName || o.name}</option>)}
               </select>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{initial?.organizationId
-                ? `Сейчас: ${orgs.find(o => o.id === initial.organizationId)?.shortName || orgs.find(o => o.id === initial.organizationId)?.name || 'другая организация (вне списка доступных)'}. Выберите другую, чтобы перенести карточку.`
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{initial
+                ? `Сейчас: ${initial.organizationId
+                    ? (orgs.find(o => o.id === initial.organizationId)?.shortName || orgs.find(o => o.id === initial.organizationId)?.name || 'организация вне списка доступных')
+                    : 'без организации'}. Выберите другую, чтобы перенести карточку, или «Без организации», чтобы отвязать.`
                 : 'Карточка будет создана в активной организации; выберите другую, если нужно.'}</p>
             </div>
           ) : null}

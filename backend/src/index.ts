@@ -1513,8 +1513,9 @@ function publicVM(vm: any): any {
 
 const employeeInclude = { position: true, department: true, branch: true, equipment: true, organization: { select: { id: true, name: true, shortName: true } }, linkedUser: { select: { id: true, fullName: true, email: true } } } as const;
 
-// Столбец «Организация» в списке сотрудников: если сотрудник привязан к учётной
-// записи — актуальная организация из её последней сессии (users.organization_id).
+// Столбец «Организация» в списке сотрудников: приоритет — организация, к которой
+// привязана карточка сотрудника (employee.organizationId); если карточка без
+// организации и есть учётная запись — актуальная организация из её последней сессии.
 async function attachEmployeeOrgs(list: any[]) {
   const userIds = [...new Set(list.map((e: any) => e.userId).filter(Boolean))] as string[];
   const byUser = new Map<string, { organizationId: string | null; organizationName: string | null }>();
@@ -1534,7 +1535,11 @@ async function attachEmployeeOrgs(list: any[]) {
       });
     }
   }
-  return list.map((e: any) => ({ ...e, userOrganization: e.userId ? (byUser.get(e.userId) ?? null) : null }));
+  return list.map((e: any) => {
+    const own = e.organization ? { organizationId: e.organization.id, organizationName: e.organization.shortName || e.organization.name } : null;
+    const fromUser = e.userId ? (byUser.get(e.userId) ?? null) : null;
+    return { ...e, userOrganization: own ?? fromUser };
+  });
 }
 
 app.get('/api/employees', authMiddleware, async (c) => {
@@ -1693,8 +1698,11 @@ app.put('/api/employees/:id', authMiddleware, requireRole(EMPLOYEE_MANAGE_ROLES)
       const org = await prisma.organization.findUnique({ where: { id: newData.organizationId }, select: { id: true } });
       if (!org) return c.json({ error: 'Выбранная организация не найдена' }, 400);
       targetOrgId = org.id;
+      newData.organizationId = org.id;
     } else {
-      delete newData.organizationId; // пустое значение — оставляем текущую организацию
+      // Явно выбрано «Без организации» — отвязываем карточку от организации
+      targetOrgId = null;
+      newData.organizationId = null;
     }
   } else {
     delete newData.organizationId;
