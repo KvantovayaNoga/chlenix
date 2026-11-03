@@ -602,7 +602,7 @@ async function applyUpdate(opts: {
     // состава было бы видно только в истории сервера, а не кластера.
     const beforeCid = opts.oldObj.parentClusterId ?? null;
     const afterCid = opts.newData.parentClusterId ?? null;
-    if (!same(beforeCid, afterCid)) {
+    if (beforeCid !== afterCid) {
       const selfName = await historyDisplayValue('parentClusterId', opts.entityId);
       if (afterCid) {
         await writeHistoryBatch('equipment', String(afterCid), opts.ctx.fullName, [{
@@ -667,7 +667,7 @@ async function writeHistoryBatch(
   entityType: string,
   entityId: string,
   changedBy: string,
-  items: { field: string; oldValue?: string | null; newValue?: string | null }[],
+  items: { field: string; oldValue?: string | null; newValue?: string | null; summary?: string }[],
 ): Promise<void> {
   if (items.length === 0) return;
   // Краткая подпись для заголовка группы: до 30 символов, многострочные и
@@ -2893,13 +2893,15 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(SERVER_ROLES), 
     : null;
   const extraChanges: { field: string; oldValue: string; newValue: string; summary: string }[] = [];
   if ((clusterBefore?.parentClusterId ?? null) !== (clusterAfterId?.parentClusterId ?? null)) {
-    const hostName = await historyDisplayValue('hostServerId', vm.hostServerId);
     const beforeLabel = clusterBefore?.parentClusterId
       ? await historyDisplayValue('parentClusterId', clusterBefore.parentClusterId) : '—';
     const afterLabel = clusterAfterId?.parentClusterId
       ? await historyDisplayValue('parentClusterId', clusterAfterId.parentClusterId) : '—';
     // Строка «кластер: X → Y» — про клики внутри ВМ (переезд на хост вне кластера).
-    recordChange(extraChanges, 'кластер (виртуальный)', beforeLabel, afterLabel);
+    extraChanges.push({
+      field: 'кластер (виртуальный)', oldValue: beforeLabel, newValue: afterLabel,
+      summary: `кластер (виртуальный): "${beforeLabel}" → "${afterLabel}"`,
+    });
     // И событие в истории самого кластера («добавлен/исключён ВМ …») — чтобы
     // перемещение ВМ было видно и со стороны кластеров.
     const selfLabel = `ВМ ${vm.name}`;
