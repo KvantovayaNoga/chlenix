@@ -447,9 +447,10 @@ export function OrganizationPage() {
           organization={organization}
           directorCandidates={[...employees].sort((a, b) => Number(b.isHeadEmployee ?? false) - Number(a.isHeadEmployee ?? false))}
           onClose={() => setIsEditing(false)}
-          onSave={(data) => {
-            updateOrganization(organization.id, data);
-            setIsEditing(false);
+          onSave={async (data) => {
+            // Окно редактирования закрывается ТОЛЬКО если бэкенд принял изменения;
+            // при ошибке форма остаётся открытой с введёнными данными.
+            return await updateOrganization(organization.id, data);
           }}
         />
       )}
@@ -543,21 +544,53 @@ function EditOrganizationForm({
   /** Сотрудники штатного расписания для выбора руководителя (руководитель — первым) */
   directorCandidates: Employee[];
   onClose: () => void;
-  onSave: (data: Partial<Organization>) => void;
+  onSave: (data: Partial<Organization>) => Promise<boolean>;
 }) {
   const positions = useDataStore((s) => s.positions);
   const [form, setForm] = useState({ ...organization });
+  // Внутренняя валидация (общий стиль проекта): после нажатия «Сохранить»
+  // незаполненные обязательные поля подсвечиваются красной рамкой с инлайн-
+  // подсказкой; если данные не прошли проверку или бэкенд отклонил сохранение —
+  // форма остаётся открытой (закрыть без сохранения можно «Отменой»/крестиком).
+  const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const errCls = 'border-red-400 dark:border-red-600 focus:ring-red-400';
+
+  const requiredFields: Array<{ key: keyof Organization; label: string; min?: number }> = [
+    { key: 'shortName', label: 'Укажите краткое наименование (минимум 2 символа).', min: 2 },
+    { key: 'name', label: 'Укажите полное наименование (минимум 3 символа).', min: 3 },
+    { key: 'inn', label: 'ИНН обязателен для организации.' },
+    { key: 'ogrn', label: 'ОГРН / ОГРНИП обязателен для организации.' },
+    { key: 'postalCode', label: 'Укажите почтовый индекс.' },
+    { key: 'legalAddress', label: 'Укажите юридический адрес.' },
+  ];
+  const fieldErr = (key: keyof Organization, min?: number): string | null => {
+    if (!submitted) return null;
+    const v = String((form as any)[key] ?? '').trim();
+    if (!v) return requiredFields.find((f) => f.key === key)?.label ?? 'Поле обязательно для заполнения.';
+    if (min && v.length < min) return requiredFields.find((f) => f.key === key)?.label ?? 'Слишком короткое значение.';
+    return null;
+  };
 
   const handleChange = (field: keyof Organization, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }) as any);
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (form.name.trim().length < 3) return;
-    // Краткое наименование обязательно (как в форме регистрации)
-    if ((form.shortName ?? '').trim().length < 2) return;
-    onSave({ ...form, name: form.name.trim(), shortName: form.shortName!.trim() });
+    if (saving) return;
+    setSubmitted(true);
+    setSaveError(null);
+    const hasErrors = requiredFields.some((f) => fieldErr(f.key, f.min));
+    if (hasErrors) return;
+    setSaving(true);
+    const ok = await onSave({ ...form, name: form.name.trim(), shortName: form.shortName!.trim() });
+    if (!ok) {
+      setSaveError('Не удалось сохранить организацию. Изменения НЕ применены — проверьте соединение и попробуйте ещё раз.');
+      setSaving(false);
+    }
+    // При успехе родитель закроет форму (setIsEditing(false)).
   };
 
   return (
@@ -575,11 +608,13 @@ function EditOrganizationForm({
         {/* Порядок полей как в форме регистрации: сначала краткое, затем полное наименование */}
         <div className="md:col-span-2">
           <label className={labelCls}>Краткое наименование<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
-          <input type="text" value={form.shortName ?? ''} onChange={(e) => handleChange('shortName', e.target.value)} placeholder="ООО «Ромашка»" className={inputCls} required />
+          <input type="text" value={form.shortName ?? ''} onChange={(e) => handleChange('shortName', e.target.value)} placeholder="ООО «Ромашка»" className={`${inputCls} ${fieldErr('shortName', 2) ? errCls : ''}`} />
+          {fieldErr('shortName', 2) && <p className="text-xs text-red-500 mt-1">{fieldErr('shortName', 2)}</p>}
         </div>
         <div className="md:col-span-2">
           <label className={labelCls}>Полное наименование<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
-          <input type="text" value={form.name} onChange={(e) => handleChange('name', e.target.value)} className={inputCls} required />
+          <input type="text" value={form.name} onChange={(e) => handleChange('name', e.target.value)} className={`${inputCls} ${fieldErr('name', 3) ? errCls : ''}`} />
+          {fieldErr('name', 3) && <p className="text-xs text-red-500 mt-1">{fieldErr('name', 3)}</p>}
         </div>
         <div>
           <label className={labelCls}>Организационно-правовая форма<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
@@ -588,7 +623,8 @@ function EditOrganizationForm({
         </div>
         <div>
           <label className={labelCls}>ИНН<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
-          <input type="text" maxLength={12} value={form.inn} onChange={(e) => handleChange('inn', e.target.value.replace(/\D/g, ''))} className={inputCls} />
+          <input type="text" maxLength={12} value={form.inn} onChange={(e) => handleChange('inn', e.target.value.replace(/\D/g, ''))} className={`${inputCls} ${fieldErr('inn') ? errCls : ''}`} />
+          {fieldErr('inn') && <p className="text-xs text-red-500 mt-1">{fieldErr('inn')}</p>}
         </div>
         <div>
           <label className={labelCls}>КПП</label>
@@ -596,7 +632,8 @@ function EditOrganizationForm({
         </div>
         <div>
           <label className={labelCls}>ОГРН / ОГРНИП<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
-          <input type="text" maxLength={15} value={form.ogrn} onChange={(e) => handleChange('ogrn', e.target.value.replace(/\D/g, ''))} className={inputCls} />
+          <input type="text" maxLength={15} value={form.ogrn} onChange={(e) => handleChange('ogrn', e.target.value.replace(/\D/g, ''))} className={`${inputCls} ${fieldErr('ogrn') ? errCls : ''}`} />
+          {fieldErr('ogrn') && <p className="text-xs text-red-500 mt-1">{fieldErr('ogrn')}</p>}
         </div>
         <div>
           <label className={labelCls}>Система налогообложения</label>
@@ -604,7 +641,8 @@ function EditOrganizationForm({
         </div>
         <div>
           <label className={labelCls}>Почтовый индекс<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
-          <input type="text" maxLength={6} value={form.postalCode} onChange={(e) => handleChange('postalCode', e.target.value.replace(/\D/g, ''))} className={inputCls} />
+          <input type="text" maxLength={6} value={form.postalCode} onChange={(e) => handleChange('postalCode', e.target.value.replace(/\D/g, ''))} className={`${inputCls} ${fieldErr('postalCode') ? errCls : ''}`} />
+          {fieldErr('postalCode') && <p className="text-xs text-red-500 mt-1">{fieldErr('postalCode')}</p>}
         </div>
         <div>
           <label className={labelCls}>Город</label>
@@ -612,7 +650,8 @@ function EditOrganizationForm({
         </div>
         <div className="md:col-span-2">
           <label className={labelCls}>Юридический адрес<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label>
-          <input type="text" value={form.legalAddress} onChange={(e) => handleChange('legalAddress', e.target.value)} className={inputCls} />
+          <input type="text" value={form.legalAddress} onChange={(e) => handleChange('legalAddress', e.target.value)} className={`${inputCls} ${fieldErr('legalAddress') ? errCls : ''}`} />
+          {fieldErr('legalAddress') && <p className="text-xs text-red-500 mt-1">{fieldErr('legalAddress')}</p>}
         </div>
         <div className="md:col-span-2">
           <label className={labelCls}>Фактический адрес</label>
@@ -673,19 +712,27 @@ function EditOrganizationForm({
         </div>
       </div>
 
+      {saveError && (
+        <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 px-4 py-3 text-sm text-red-600 dark:text-red-300">
+          {saveError}
+        </div>
+      )}
+
       <div className="flex justify-end gap-3 pt-2">
         <button
           type="button"
           onClick={onClose}
-          className="px-6 py-2.5 rounded-xl font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-transparent hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 transition-all"
+          disabled={saving}
+          className="px-6 py-2.5 rounded-xl font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-transparent hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 transition-all disabled:opacity-50"
         >
           Отмена
         </button>
         <button
           type="submit"
-          className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/30"
+          disabled={saving}
+          className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/30 disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <Save className="w-4 h-4" /> Сохранить
+          <Save className="w-4 h-4" /> {saving ? 'Сохранение…' : 'Сохранить'}
         </button>
       </div>
     </form>

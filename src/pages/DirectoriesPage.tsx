@@ -342,26 +342,42 @@ function DirectoryModal({ item, type, onClose, onSave }: { item: any; type: stri
   const { activityTypes } = useDataStore();
   const [formData, setFormData] = useState(item || (type === 'activity-types' ? { okved: '', name: '', isMain: false } : { name: '', description: '', address: '', owner: '' }));
   const [saving, setSaving] = useState(false);
+  // Внутренняя валидация (общий стиль проекта): после нажатия «Добавить/Сохранить»
+  // обязательные поля подсвечиваются красной рамкой + инлайн-подсказка; если сущность
+  // не может быть создана — модалка НЕ закрывается, данные сохраняются в форме.
+  const [submitted, setSubmitted] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const nameErr = submitted && !String(formData.name ?? '').trim()
+    ? 'Укажите наименование — запись без названия не создастся.' : null;
+  const ownerErr = submitted && type === 'data-centers' && !String(formData.owner ?? '').trim()
+    ? 'Для ЦОД обязательно укажите владельца.' : null;
+  const addressErr = submitted && type === 'branches' && !String(formData.address ?? '').trim()
+    ? 'Для филиала обязательно укажите адрес.' : null;
+  const okvedErr = submitted && type === 'activity-types' && !OKVED_RE.test(String(formData.okved ?? '').trim())
+    ? 'Некорректный ОКВЭД: максимум 6 цифр и два разделителя в виде точек (например, 62.01.1).' : null;
+  // Основной вид деятельности может быть только один (правило зеркалит бэкенд).
+  const mainConflict = type === 'activity-types' && Boolean(formData.isMain)
+    && activityTypes.some(a => a.isMain && a.id !== item?.id);
+  const errCls = 'border-red-400 dark:border-red-600 focus:ring-red-400';
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saving) return;
-    // Валидация ОКВЭД для справочника «Виды деятельности» (зеркало бэкенда)
-    if (type === 'activity-types' && !OKVED_RE.test((formData.okved || '').trim())) {
-      alert('Некорректный ОКВЭД: максимум 6 цифр и два разделителя в виде точек (например, 62.01.1)');
-      return;
-    }
-    // Всплывающая подсказка: основной вид деятельности может быть только один.
-    // Если другой вид уже помечен основным — изменения НЕ применяются, модалка
-    // остаётся открытой (её можно закрыть кнопкой «Отмена»/крестиком без сохранения),
-    // пока с текущего основного вида не снимут галочку «Основной вид деятельности».
-    if (type === 'activity-types' && formData.isMain && activityTypes.some(a => a.isMain && a.id !== item?.id)) {
-      alert('У организации не может быть 2 основных вида деятельности');
-      return;
+    setSubmitted(true);
+    setFormError(null);
+    // Проверка обязательных полей: окно остаётся открытым, пока сущность реально не создана.
+    if (type === 'activity-types') {
+      if (!String(formData.name ?? '').trim() || !OKVED_RE.test(String(formData.okved ?? '').trim())) return;
+      if (mainConflict) { setFormError('У организации не может быть 2 основных видов деятельности — сначала снимите отметку «Основной вид» с текущей записи.'); return; }
+    } else {
+      if (!String(formData.name ?? '').trim()) return;
+      if (type === 'data-centers' && !String(formData.owner ?? '').trim()) return;
+      if (type === 'branches' && !String(formData.address ?? '').trim()) return;
     }
     setSaving(true);
     const ok = await onSave(formData);
     // при неудаче оставляем модалку открытой с введёнными данными
-    if (!ok) setSaving(false);
+    if (!ok) { setFormError('Не удалось сохранить запись. Проверьте соединение и попробуйте ещё раз.'); setSaving(false); }
   };
 
   const fieldCls = 'w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200';
@@ -377,25 +393,36 @@ function DirectoryModal({ item, type, onClose, onSave }: { item: any; type: stri
           {type === 'activity-types' ? (
             <>
               {/* Поля справочника «Виды деятельности»: ОКВЭД + Наименование */}
-              <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ОКВЭД<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="text" value={formData.okved || ''} onChange={(e) => setFormData(p => ({ ...p, okved: e.target.value }))} placeholder="Напр.: 62.01.1" maxLength={8} className={fieldCls} required /></div>
-              <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Наименование вида деятельности<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="text" value={formData.name || ''} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} placeholder="Разработка компьютерного программного обеспечения" className={fieldCls} required /></div>
-              <label className="flex items-center gap-2 cursor-pointer select-none text-sm font-medium text-gray-700 dark:text-gray-300">
+              <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ОКВЭД<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="text" value={formData.okved || ''} onChange={(e) => setFormData(p => ({ ...p, okved: e.target.value }))} placeholder="Напр.: 62.01.1" maxLength={8} className={`${fieldCls} ${okvedErr ? errCls : ''}`} /></div>
+              {okvedErr && <p className="text-xs text-red-500 mt-1">{okvedErr}</p>}
+              <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Наименование вида деятельности<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="text" value={formData.name || ''} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} placeholder="Разработка компьютерного программного обеспечения" className={`${fieldCls} ${nameErr ? errCls : ''}`} /></div>
+              {nameErr && <p className="text-xs text-red-500 mt-1">{nameErr}</p>}
+              <label className={`flex items-center gap-2 cursor-pointer select-none text-sm font-medium text-gray-700 dark:text-gray-300 ${mainConflict ? 'text-red-500' : ''}`}>
                 <input type="checkbox" checked={Boolean(formData.isMain)} onChange={(e) => setFormData(p => ({ ...p, isMain: e.target.checked }))} className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 bg-white dark:bg-gray-700 focus:ring-2 focus:ring-indigo-500 cursor-pointer" />
                 Является основным видом деятельности
               </label>
+              {mainConflict && <p className="text-xs text-red-500 -mt-2">У организации уже есть основной вид деятельности — снимите отметку с него или уберите галочку здесь.</p>}
               <p className="text-xs text-gray-500 dark:text-gray-400">Основной вид может быть только один — он встанет на первое место в справочнике.</p>
             </>
           ) : (
             <>
-          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Название<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="text" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} className={fieldCls} required /></div>
-          {type === 'data-centers' && <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Владелец<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="text" value={formData.owner || ''} onChange={(e) => setFormData(p => ({ ...p, owner: e.target.value }))} placeholder="Напр.: ООО «Облако», сторонний провайдер" className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required /></div>}
-          {(type === 'branches' || type === 'data-centers') && <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Адрес{type === 'branches' ? <span className="text-red-500 ml-0.5" title="Обязательное поле">*</span> : null}</label><input type="text" value={formData.address || ''} onChange={(e) => setFormData(p => ({ ...p, address: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" {...(type === 'branches' ? { required: true } : {})} /></div>}
+          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Название<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="text" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} className={`${fieldCls} ${nameErr ? errCls : ''}`} /></div>
+          {nameErr && <p className="text-xs text-red-500 -mt-2">{nameErr}</p>}
+          {type === 'data-centers' && (<div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Владелец<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="text" value={formData.owner || ''} onChange={(e) => setFormData(p => ({ ...p, owner: e.target.value }))} placeholder="Напр.: ООО «Облако», сторонний провайдер" className={`w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 ${ownerErr ? errCls : ''}`} />
+            {ownerErr && <p className="text-xs text-red-500 mt-1">{ownerErr}</p>}</div>)}
+          {(type === 'branches' || type === 'data-centers') && (<div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Адрес{type === 'branches' ? <span className="text-red-500 ml-0.5" title="Обязательное поле">*</span> : null}</label><input type="text" value={formData.address || ''} onChange={(e) => setFormData(p => ({ ...p, address: e.target.value }))} className={`w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 ${addressErr ? errCls : ''}`} />
+            {addressErr && <p className="text-xs text-red-500 mt-1">{addressErr}</p>}</div>)}
           <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Описание</label><textarea value={formData.description} onChange={(e) => setFormData(p => ({ ...p, description: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" rows={3} /></div>
             </>
           )}
+          {formError && (
+            <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 px-4 py-3 text-sm text-red-600 dark:text-red-300">
+              {formError}
+            </div>
+          )}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Отмена</button>
-            <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">{item ? 'Сохранить' : 'Добавить'}</button>
+            <button type="button" onClick={onClose} disabled={saving} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">Отмена</button>
+            <button type="submit" disabled={saving} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed">{saving ? 'Сохранение…' : item ? 'Сохранить' : 'Добавить'}</button>
           </div>
         </form>
       </div>
@@ -418,6 +445,11 @@ function CustomDirectoryModal({ directory, onClose, onSave }: {
   const [items, setItems] = useState<string[]>(directory ? directory.items.map(i => i.value) : []);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  // Внутренняя валидация: обязательные поля подсвечиваются красной рамкой +
+  // инлайн-подсказка; при ошибке модалка остаётся открытой с введёнными данными.
+  const [submitted, setSubmitted] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const nameErr = submitted && !name.trim() ? 'Укажите наименование внутреннего справочника.' : null;
 
   const addItem = () => {
     const v = draft.trim();
@@ -430,14 +462,17 @@ function CustomDirectoryModal({ directory, onClose, onSave }: {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saving) return;
-    if (!name.trim()) { alert('Укажите наименование внутреннего справочника'); return; }
+    setSubmitted(true);
+    setFormError(null);
+    if (!name.trim()) return;
     // незакоммиченное значение из поля ввода добавляем в список
     const finalItems = [...items];
     const d = draft.trim();
     if (d && !finalItems.some(x => x.toLowerCase() === d.toLowerCase())) finalItems.push(d);
     setSaving(true);
     const ok = await onSave({ name, description: description.trim() || null, items: finalItems });
-    if (!ok) setSaving(false); // при неудаче оставляем модалку открытой с введёнными данными
+    // при неудаче оставляем модалку открытой с введёнными данными
+    if (!ok) { setFormError('Не удалось сохранить справочник. Проверьте соединение и попробуйте ещё раз.'); setSaving(false); }
   };
 
   const fieldCls = 'w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200';
@@ -450,7 +485,8 @@ function CustomDirectoryModal({ directory, onClose, onSave }: {
           <button onClick={onClose} className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"><X className="w-6 h-6" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Наименование<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Напр.: Инвентарные группы" className={fieldCls} required autoFocus /></div>
+          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Наименование<span className="text-red-500 ml-0.5" title="Обязательное поле">*</span></label><input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Напр.: Инвентарные группы" className={`${fieldCls} ${nameErr ? 'border-red-400 dark:border-red-600 focus:ring-red-400' : ''}`} autoFocus /></div>
+          {nameErr && <p className="text-xs text-red-500 -mt-2">{nameErr}</p>}
           <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Описание</label><textarea value={description ?? ''} onChange={(e) => setDescription(e.target.value)} className={fieldCls} rows={2} placeholder="Для чего будет использоваться справочник" /></div>
 
           {/* Набор записей справочника */}
@@ -481,9 +517,15 @@ function CustomDirectoryModal({ directory, onClose, onSave }: {
             )}
           </div>
 
+          {formError && (
+            <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 px-4 py-3 text-sm text-red-600 dark:text-red-300">
+              {formError}
+            </div>
+          )}
+
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Отмена</button>
-            <button type="submit" disabled={saving} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60">{directory ? 'Сохранить' : 'Создать справочник'}</button>
+            <button type="button" onClick={onClose} disabled={saving} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">Отмена</button>
+            <button type="submit" disabled={saving} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed">{saving ? 'Сохранение…' : directory ? 'Сохранить' : 'Создать справочник'}</button>
           </div>
         </form>
       </div>
