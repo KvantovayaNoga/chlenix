@@ -557,19 +557,24 @@ function EditOrganizationForm({
   const [saveError, setSaveError] = useState<string | null>(null);
   const errCls = 'border-red-400 dark:border-red-600 focus:ring-red-400';
 
-  const requiredFields: Array<{ key: keyof Organization; label: string; min?: number }> = [
+  const requiredFields: Array<{ key: keyof Organization; label: string; min?: number; pattern?: RegExp }> = [
     { key: 'shortName', label: 'Укажите краткое наименование (минимум 2 символа).', min: 2 },
     { key: 'name', label: 'Укажите полное наименование (минимум 3 символа).', min: 3 },
-    { key: 'inn', label: 'ИНН обязателен для организации.' },
-    { key: 'ogrn', label: 'ОГРН / ОГРНИП обязателен для организации.' },
-    { key: 'postalCode', label: 'Укажите почтовый индекс.' },
+    // Правила совпадают с бэкендом (organizationSchema): inn/ogrn — min(4),
+    // почтовый индекс — ровно 6 цифр. Раньше клиент пропускал, например, ИНН
+    // из 3 символов, сервер отвечал 400, и «Сохранить» выглядело сломанным.
+    { key: 'inn', label: 'ИНН должен содержать не менее 4 цифр.', pattern: /^\d{4,}$/ },
+    { key: 'ogrn', label: 'ОГРН / ОГРНИП должен содержать не менее 4 цифр.', pattern: /^\d{4,}$/ },
+    { key: 'postalCode', label: 'Почтовый индекс — ровно 6 цифр.', pattern: /^\d{6}$/ },
     { key: 'legalAddress', label: 'Укажите юридический адрес.' },
   ];
-  const fieldErr = (key: keyof Organization, min?: number): string | null => {
+  const fieldErr = (key: keyof Organization, min?: number, pattern?: RegExp): string | null => {
     if (!submitted) return null;
     const v = String((form as any)[key] ?? '').trim();
-    if (!v) return requiredFields.find((f) => f.key === key)?.label ?? 'Поле обязательно для заполнения.';
-    if (min && v.length < min) return requiredFields.find((f) => f.key === key)?.label ?? 'Слишком короткое значение.';
+    const label = requiredFields.find((f) => f.key === key)?.label ?? 'Поле обязательно для заполнения.';
+    if (!v) return label;
+    if (min && v.length < min) return label;
+    if (pattern && !pattern.test(v)) return label;
     return null;
   };
 
@@ -582,7 +587,7 @@ function EditOrganizationForm({
     if (saving) return;
     setSubmitted(true);
     setSaveError(null);
-    const hasErrors = requiredFields.some((f) => fieldErr(f.key, f.min));
+    const hasErrors = requiredFields.some((f) => fieldErr(f.key, f.min, f.pattern));
     if (hasErrors) return;
     setSaving(true);
     // В payload — ТОЛЬКО записываемые поля формы. Раньше сюда попадали
@@ -595,6 +600,16 @@ function EditOrganizationForm({
     }
     payload.name = String(payload.name ?? '').trim();
     payload.shortName = String(payload.shortName ?? '').trim();
+    // Нормализация значений под контракт бэкенда: пустые строки в необязательных
+    // полях => null (email обязан быть либо корректным, либо отсутствовать —
+    // «@» без домена сервер отвергал 400, и кнопка выглядела сломанной).
+    const emailRaw = String(payload.email ?? '').trim();
+    if (emailRaw && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(emailRaw)) {
+      setSaveError('Поле «Email»: укажите корректный адрес (например: info@example.ru) или очистите его.');
+      return; // finally разблокирует кнопку; форма остаётся открытой с данными
+    }
+    payload.email = emailRaw || null;
+    if ('foundedDate' in payload && !String(payload.foundedDate ?? '').trim()) payload.foundedDate = null;
     try {
       const ok = await onSave(payload as Partial<Organization>);
       if (!ok) {
@@ -721,7 +736,7 @@ function EditOrganizationForm({
         </div>
         <div>
           <label className={labelCls}>Дата основания</label>
-          <input type="date" value={form.foundedDate} onChange={(e) => handleChange('foundedDate', e.target.value)} className={inputCls} />
+          <input type="date" value={/^\d{4}-\d{2}-\d{2}$/.test(String(form.foundedDate ?? )) ? String(form.foundedDate) : } onChange={(e) => handleChange('foundedDate', e.target.value)} className={inputCls} />
         </div>
         <div className="md:col-span-2">
           <label className={labelCls}>Примечания</label>

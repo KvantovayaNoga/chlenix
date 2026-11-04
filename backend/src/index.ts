@@ -1783,7 +1783,12 @@ const organizationSchema = z.object({
   bik: orgText,
   taxSystem: orgText,
   employeeCount: z.preprocess((v) => (v === '' || v === undefined ? null : v), z.number().int().nullable().optional()),
-  foundedDate: orgText,
+  // Дата основания — значение <input type="date">. В БД колонка строковая,
+  // но пустая дата нормализуем в null ('' больше не попадает в запись).
+  foundedDate: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? null : v ?? null),
+    z.string().max(10).nullable().optional(),
+  ),
   logo: z.string().nullable().optional(),
   notes: orgText,
 }).strict();
@@ -1961,6 +1966,8 @@ app.put('/api/organizations/:id', authMiddleware, requireRole(['admin']), async 
   for (const [k, v] of Object.entries(parsed.data)) {
     if (v !== undefined) newData[k] = v;
   }
+  // email: пустая строка => null (колонка уникальна/опциональна; '' ломает запись).
+  if ('email' in newData && !newData.email) newData.email = null;
   newData.updatedById = currentUser.userId;
 
   // Руководитель выбирается карточкой сотрудника — ФИО/должность
