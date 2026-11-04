@@ -487,14 +487,16 @@ export function normalizeServerPayload<T extends Record<string, any>>(data: T, i
     if (out.storageCapacityGB === '' || out.storageCapacityGB == null) out.storageCapacityGB = null;
     else out.storageCapacityGB = Number(out.storageCapacityGB) || null;
   }
-  // Косяк 11: кластер — только агрегатор, ресурсы нулевые.
-  // МОЛ/инвентарный/серийный номера — атрибуты физической инвентарной карточки:
-  // кластер не является материальным объектом учёта, поэтому у него их не бывает.
-  if (out.serverRole === 'cluster') {
+  // Разделение двух сущностей с внутренним кодом роли 'cluster':
+  //  • кластер-сущность (parentClusterId пуст) — логический агрегатор: ресурсы
+  //    нулевые (аккумулирует хосты), МОЛ/инвентарный/серийный отсутствуют,
+  //    внутрь другого кластера не входит;
+  //  • «Хост» (parentClusterId задан) — физическая инвентарная карточка:
+  //    сохраняет CPU/RAM/Диск, серийник/инвентарник и МОЛ.
+  if (out.serverRole === 'cluster' && !out.parentClusterId) {
     out.cpuCores = null;
     out.ramGB = null;
     out.diskGB = null;
-    out.parentClusterId = null; // кластер не может входить в другой кластер
     out.materiallyResponsibleEmployeeId = null;
     out.serialNumber = null;
     out.inventoryNumber = null;
@@ -519,8 +521,12 @@ export function normalizeServerPayload<T extends Record<string, any>>(data: T, i
   if (out.dataCenterId && !out.branchId) out.locationType = 'data_center';
   else if (out.branchId && !out.dataCenterId) out.locationType = 'branch';
   else out.locationType = null;
-  // Кластер-родитель обязателен только для хостов/СХД, которые помещают в кластер
-  if (out.serverRole === 'hypervisor_host' || out.serverRole === 'storage') {
+  // Кластер-родитель сохраняется только у сущностей, которых помещают внутрь
+  // кластера: легаси-хосты гипервизора ('hypervisor_host'), СХД ('storage') и
+  // «Хосты» новой модели (роль 'cluster' с parentClusterId — физический сервер
+  // платформы внутри кластера-сущности). Кластер-сущность (без parentClusterId)
+  // внутрь другого кластера не входит.
+  if (out.serverRole === 'hypervisor_host' || out.serverRole === 'storage' || out.serverRole === 'cluster') {
     /* parentClusterId остаётся как есть */
   } else {
     out.parentClusterId = null;

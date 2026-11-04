@@ -2640,9 +2640,16 @@ app.post('/api/equipment', authMiddleware, requireRole([...EQUIPMENT_CREATE_ROLE
     return c.json({ error: 'Недостаточно прав: системному администратору доступно только создание серверов и кластеров' }, 403);
   }
 
+  // Разграничение двух сущностей с кодом роли 'cluster' (см. PUT): кластер-
+  // СУЩНОСТЬ создаётся без parentClusterId (логический агрегатор); «Хост» —
+  // физическая инвентарная карточка, создаётся сразу внутри кластера
+  // (parentClusterId задан). Определяем по переданному родителю до валидации.
+  const createParentRef = await resolveRef('equipment', data.parentClusterId ?? undefined).catch(() => null);
+  const isCreateClusterEntity = data.serverRole === CLUSTER_ROLE && !createParentRef;
+
   // Серийный/инвентарный номера обязательны для физической техники;
   // кластер виртуализации — логическая сущность, у него их может не быть.
-  if (data.serverRole !== CLUSTER_ROLE) {
+  if (!isCreateClusterEntity) {
     if (!data.serialNumber?.trim()) return c.json({ error: 'Укажите серийный номер' }, 400);
     if (!data.inventoryNumber?.trim()) return c.json({ error: 'Укажите инвентарный номер' }, 400);
   }
@@ -2764,8 +2771,16 @@ app.put('/api/equipment/:id', authMiddleware, requireRole([...EQUIPMENT_MANAGE_R
   const { id } = c.req.param();
   const body = await c.req.json().catch(() => null);
   // ClusterForm передаёт состав кластера служебным полем __members — извлекаем до валидации
-  const requestedMembers = Array.isArray(body?.__members) ? body.__members : null;
+  let requestedMembers: string[] | null = Array.isArray(body?.__members) ? body.__members : null;
   if (body && '__members' in body) delete body.__members;
+  // Хосты кластера (сущности «Хост», роль 'cluster') — как в POST: добавляются в состав
+  if (Array.isArray(body?.__hostIds)) {
+    const hostIds: string[] = body.__hostIds.filter((x: unknown): x is string => typeof x === 'string' && !!x);
+    if (hostIds.length > 0) {
+      requestedMembers = [...(requestedMembers ?? []), ...hostIds];
+    }
+    delete body.__hostIds;
+  }
   const parsed = equipmentSchema.partial().safeParse(body);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
@@ -2785,6 +2800,20 @@ app.put('/api/equipment/:id', authMiddleware, requireRole([...EQUIPMENT_MANAGE_R
   }
 
   const newData: any = { ...parsed.data };
+
+  // Разграничение двух сущностей с кодом роли 'cluster':
+  //  • кластер-сущность (без собственного parentClusterId) — логический
+  //    агрегатор без инвентарной карточки: МОЛ/серийник/инвентарник обнуляются;
+  //  • «Хост» (роль 'cluster' с parentClusterId) — физическая инвентарная
+  //    карточка внутри кластера: сохраняет серийник/инвентарник/МОЛ и ресурсы.
+  const resultingParentClusterId = (() => {
+    if ('parentClusterId' in newData) {
+      const raw = typeof newData.parentClusterId === 'string' ? newData.parentClusterId.trim() : newData.parentClusterId;
+      return raw || null;
+    }
+    return old.parentClusterId || null;
+  })();
+  const isClusterEntityRole = resultingServerRole === CLUSTER_ROLE && !resultingParentClusterId;
   // Нормализация legacy-значений состояния в новую статусную модель (см. normalizeCondition).
   if ('condition' in newData) newData.condition = normalizeCondition(newData.condition);
   // Статус «Эксплуатация с ограничениями» требует дефект/причину ограничений.
@@ -2819,15 +2848,14 @@ app.put('/api/equipment/:id', authMiddleware, requireRole([...EQUIPMENT_MANAGE_R
   // МОЛ: пустой выбор/несуществующий сотрудник => null (снятие МОЛ), а не
   // undefined — иначе запись «не обновляется», и история молчит о снятии МОЛ.
   if ('materiallyResponsibleEmployeeId' in newData) newData.materiallyResponsibleEmployeeId = await resolveRef('employee', newData.materiallyResponsibleEmployeeId) ?? null;
-  // Итоговая роль (после применения PATCH) — cluster => принудительно обнуляем эти поля,
-  // включая снятие ранее ошибочно назначенного МОЛ.
-  {
-    const effectiveRole = 'serverRole' in newData ? (newData.serverRole || null) : old.serverRole;
-    if (effectiveRole === CLUSTER_ROLE) {
-      newData.materiallyResponsibleEmployeeId = null;
-      newData.serialNumber = null;
-      newData.inventoryNumber = null;
-    }
+  // Итоговая роль (после применения PATCH): кластер-СУЩНОСТЬ (без родителя) —
+  // логическая сущность, не материальный объект учёта: принудительно обнуляем
+  // МОЛ/серийник/инвентарник, включая снятие ранее ошибочно назначенного МОЛ.
+  // «Хост» (роль 'cluster' с parentClusterId) — физическая карточка: поля сохраняются.
+  if (isClusterEntityRole) {
+    newData.materiallyResponsibleEmployeeId = null;
+    newData.serialNumber = null;
+    newData.inventoryNumber = null;
   }
   if ('purchaseDate' in newData) newData.purchaseDate = normalizeDateField(newData.purchaseDate);
   if ('writeOffDate' in newData) newData.writeOffDate = normalizeDateField(newData.writeOffDate);
@@ -2845,8 +2873,9 @@ app.put('/api/equipment/:id', authMiddleware, requireRole([...EQUIPMENT_MANAGE_R
       throw e;
     }
   }
-  // Кластер не может сам находиться внутри кластера — снимаем привязку при смене роли
-  if (newData.serverRole === 'cluster') newData.parentClusterId = null;
+  // Кластер-СУЩНОСТЬ не может сам находиться внутри кластера — снимаем привязку
+  // при смене роли. «Хост» (роль 'cluster' с parentClusterId) остаётся внутри кластера.
+  if (newData.serverRole === CLUSTER_ROLE && !resultingParentClusterId) newData.parentClusterId = null;
   // Смена роли: если сервер перестал быть кластером, его члены нельзя «вешать в никуда» —
   // отвязываем их, иначе на странице платформы хосты останутся «в несуществующем кластере»
   if ('serverRole' in newData && old.serverRole === 'cluster' && newData.serverRole !== 'cluster') {
