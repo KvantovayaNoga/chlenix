@@ -2102,6 +2102,19 @@ const employeeInclude = { position: true, department: true, branch: true, equipm
 // Столбец «Организация» в списке сотрудников: приоритет — организация, к которой
 // привязана карточка сотрудника (employee.organizationId); если карточка без
 // организации и есть учётная запись — актуальная организация из её последней сессии.
+/** Помечает сотрудников, выбранных руководителями организации: золотая
+ * звёздочка в UI + подъём на первое место в списке сотрудников. */
+async function attachHeadFlags(list: any[]): Promise<any[]> {
+  const orgIds = [...new Set(list.map((e: any) => e.organizationId).filter(Boolean))] as string[];
+  if (!orgIds.length) return list;
+  const orgs = await prisma.organization.findMany({
+    where: { id: { in: orgIds }, directorEmployeeId: { not: null } },
+    select: { directorEmployeeId: true },
+  });
+  const headEmpIds = new Set(orgs.map((o) => o.directorEmployeeId as string));
+  return list.map((e: any) => ({ ...e, isHeadEmployee: headEmpIds.has(e.id) }));
+}
+
 async function attachEmployeeOrgs(list: any[]) {
   const userIds = [...new Set(list.map((e: any) => e.userId).filter(Boolean))] as string[];
   const byUser = new Map<string, { organizationId: string | null; organizationName: string | null }>();
@@ -2133,7 +2146,10 @@ app.get('/api/employees', authMiddleware, async (c) => {
   const where: any = {};
   if (scope.orgId) where.organizationId = scope.orgId; else where.organizationId = null;
   const employees = await prisma.employee.findMany({ where, include: employeeInclude, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }] });
-  return c.json(await attachEmployeeOrgs(employees.map(publicEmployee)));
+  // Руководитель организации — на первом месте списка сотрудников
+  const withFlags = await attachHeadFlags(await attachEmployeeOrgs(employees.map(publicEmployee)));
+  withFlags.sort((a: any, b: any) => (b.isHeadEmployee ? 1 : 0) - (a.isHeadEmployee ? 1 : 0));
+  return c.json(withFlags);
 });
 
 app.get('/api/employees/:id', authMiddleware, async (c) => {
@@ -2146,7 +2162,7 @@ app.get('/api/employees/:id', authMiddleware, async (c) => {
   }
   // Карточка сотрудника: все организации привязанной учётной записи
   // (активная — где пользователь был в последний раз)
-  const [enriched] = await attachEmployeeOrgs([publicEmployee(employee)]);
+  const [enriched] = await attachHeadFlags(await attachEmployeeOrgs([publicEmployee(employee)]));
   if (employee.userId) {
     const acc = await prisma.user.findUnique({
       where: { id: employee.userId },

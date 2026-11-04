@@ -13,6 +13,7 @@ import { api, ApiError } from '../api/client';
 import { ROLE_LABELS, type UserRole } from '../types';
 import { Inbox, Check, X, ShieldCheck, Clock, Users2, Building2, Mail, Bug } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
+import { formatDateTime } from '../utils/formatDate';
 
 interface JoinRequestItem {
   id: string;
@@ -202,7 +203,7 @@ export function AdminPanelPage() {
                       <Building2 className="w-3.5 h-3.5" /> Организация: {req.organization.shortName || req.organization.name}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                      Заявка от {new Date(req.createdAt).toLocaleString('ru-RU')}
+                      Заявка от {formatDateTime(req.createdAt)}
                       {req.status === 'approved' && req.assignedRole ? ` · роль: ${ROLE_LABELS[req.assignedRole as UserRole] ?? req.assignedRole}` : ''}
                       {req.approver ? ` · обработал: ${req.approver.fullName}` : ''}
                     </p>

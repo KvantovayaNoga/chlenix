@@ -24,7 +24,9 @@ import {
   Briefcase,
   History,
 } from 'lucide-react';
-import type { Organization, OrganizationLegalForm } from '../types';
+import type { Organization, OrganizationLegalForm, Employee } from '../types';
+import { HeadStar } from '../components/HeadStar';
+import { formatDate } from '../utils/formatDate';
 
 
 const inputCls =
@@ -443,6 +445,7 @@ export function OrganizationPage() {
       {isEditing && canEditOrganization() && (
         <EditOrganizationForm
           organization={organization}
+          directorCandidates={[...employees].sort((a, b) => Number(b.isHeadEmployee ?? false) - Number(a.isHeadEmployee ?? false))}
           onClose={() => setIsEditing(false)}
           onSave={(data) => {
             updateOrganization(organization.id, data);
@@ -460,8 +463,7 @@ export function OrganizationPage() {
               <InfoRow label="КПП" value={organization.kpp} />
               <InfoRow label="ОГРН / ОГРНИП" value={organization.ogrn} />
               <InfoRow label="Система налогообложения" value={organization.taxSystem} />
-              <InfoRow label="Отрасль" value={organization.industry} />
-              <InfoRow label="Дата основания" value={organization.foundedDate} />
+              <InfoRow label="Дата основания" value={formatDate(organization.foundedDate)} />
               <InfoRow label="Штатная численность" value={organization.employeeCount ?? undefined} />
             </InfoCard>
 
@@ -483,7 +485,9 @@ export function OrganizationPage() {
               <div className="flex flex-col sm:flex-row sm:justify-between sm:gap-4 py-1">
                 <span className="text-sm text-gray-500 dark:text-gray-400 flex-shrink-0">Руководитель</span>
                 <span className="flex flex-col sm:items-end">
-                  <span className={`text-sm font-medium ${organization.directorName?.trim() ? 'text-gray-800 dark:text-gray-200' : 'text-gray-600 italic'}`}>
+                  <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${organization.directorName?.trim() ? 'text-gray-800 dark:text-gray-200' : 'text-gray-600 italic'}`}>
+                    {/* Золотая звёздочка руководителя организации */}
+                    {organization.directorEmployeeId && <HeadStar />}
                     {organization.directorName?.trim() || 'не указан'}
                   </span>
                   {organization.directorPosition?.trim() && (
@@ -531,10 +535,13 @@ export function OrganizationPage() {
 
 function EditOrganizationForm({
   organization,
+  directorCandidates,
   onClose,
   onSave,
 }: {
   organization: Organization;
+  /** Сотрудники штатного расписания для выбора руководителя (руководитель — первым) */
+  directorCandidates: Employee[];
   onClose: () => void;
   onSave: (data: Partial<Organization>) => void;
 }) {
@@ -622,17 +629,22 @@ function EditOrganizationForm({
           <label className={labelCls}>Сайт</label>
           <input type="text" value={form.website} onChange={(e) => handleChange('website', e.target.value)} className={inputCls} />
         </div>
-        <div>
-          <label className={labelCls}>Отрасль</label>
-          <input type="text" value={form.industry} onChange={(e) => handleChange('industry', e.target.value)} className={inputCls} />
-        </div>
-        <div>
-          <label className={labelCls}>Руководитель (ФИО)</label>
-          <input type="text" value={form.directorName} onChange={(e) => handleChange('directorName', e.target.value)} placeholder="Иванов И. И." className={inputCls} />
-        </div>
-        <div>
-          <label className={labelCls}>Должность руководителя</label>
-          <input type="text" value={form.directorPosition ?? ''} onChange={(e) => handleChange('directorPosition', e.target.value)} placeholder="Директор" className={inputCls} />
+        <div className="md:col-span-2">
+          <label className={labelCls}>Руководитель</label>
+          {/* Необязательное поле: руководитель выбирается из списка сотрудников
+              штатного расписания (ФИО и должность синхронизирует бэкенд). */}
+          <select
+            value={form.directorEmployeeId ?? ''}
+            onChange={(e) => setForm((prev) => ({ ...prev, directorEmployeeId: e.target.value || null }) as any)}
+            className={inputCls}
+          >
+            <option value="">Не указан</option>
+            {directorCandidates.filter((emp) => emp.isEmployed).map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {(emp.isHeadEmployee ? '★ ' : '') + [emp.lastName, emp.firstName, emp.middleName].filter(Boolean).join(' ') + ' — ' + (emp.position?.name ?? 'должность не указана')}
+              </option>
+            ))}
+          </select>
         </div>
         <div>
           <label className={labelCls}>Наименование банка</label>

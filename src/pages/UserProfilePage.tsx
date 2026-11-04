@@ -4,6 +4,8 @@ import { ArrowLeft, Mail, Shield, Calendar, Edit, User as UserIcon, Upload, X } 
 import { useState, useRef, useEffect } from 'react';
 import { AvatarUpload } from '../components/AvatarUpload';
 import { AvatarCropper } from '../components/AvatarCropper';
+import { HeadStar } from '../components/HeadStar';
+import { formatDate } from '../utils/formatDate';
 
 const roleLabels = {
   admin: 'Администратор',
@@ -125,7 +127,11 @@ export function UserProfilePage() {
                 />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-200">{user.fullName}</h1>
+                <h1 className="inline-flex items-center gap-2 text-2xl font-bold text-gray-800 dark:text-gray-200">
+                  {/* Золотая звезда наследуется от привязанного сотрудника-руководителя */}
+                  {user.isHeadEmployee && <HeadStar className="w-6 h-6" />}
+                  <span>{user.fullName}</span>
+                </h1>
                 <p className="text-gray-400 mt-1">{user.email}</p>
                 <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-medium ${
                   user.role === 'admin' ? 'bg-red-100 text-red-700' :
@@ -213,7 +219,7 @@ export function UserProfilePage() {
                     <Calendar className="w-4 h-4" />
                     Дата создания
                   </div>
-                  <p className="text-gray-800 dark:text-gray-200">{new Date(user.createdAt).toLocaleDateString('ru-RU')}</p>
+                  <p className="text-gray-800 dark:text-gray-200">{formatDate(user.createdAt)}</p>
                 </div>
                 <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4">
                   <div className="flex items-center gap-2 text-gray-400 text-sm mb-1">

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, History, User, Calendar, X } from 'lucide-react';
 import { api } from '../api/client';
 import { onDataChanged } from '../store/dataStore';
+import { formatDateTime } from '../utils/formatDate';
 
 export interface HistoryEntry {
   id: string;
@@ -253,7 +254,7 @@ export function HistoryLog({ history, title = 'История изменений
                   </div>
                   <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
                     <Calendar className="w-3 h-3" />
-                    {new Date(entry.changedAt).toLocaleString('ru-RU')}
+                    {formatDateTime(entry.changedAt)}
                   </div>
                 </div>
                 <div className="text-sm">
@@ -382,7 +383,7 @@ export function HistoryLog({ history, title = 'История изменений
                   <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Дата и время</p>
                   <p className="text-gray-800 dark:text-gray-200 flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
-                    {new Date(selectedGroup.head.changedAt).toLocaleString('ru-RU')}
+                    {formatDateTime(selectedGroup.head.changedAt)}
                   </p>
                 </div>
               </div>
@@ -450,7 +451,7 @@ export function FullHistoryModal({ groups: groupsProp, history, title = 'Ист�
                     </div>
                     <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
                       <Calendar className="w-3 h-3" />
-                      {new Date(entry.changedAt).toLocaleString('ru-RU')}
+                      {formatDateTime(entry.changedAt)}
                     </div>
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-300 break-all">

@@ -9,6 +9,8 @@ import { AddEmployeeModal } from './EmployeesPage';
 import { statusLabels } from '../utils/equipmentStatus';
 import { EquipmentCardModal } from '../components/EquipmentCardModal';
 import { UserOrganizationsModal } from '../components/UserOrganizationsModal';
+import { HeadStar } from '../components/HeadStar';
+import { formatDate, formatDateTime } from '../utils/formatDate';
 
 const categoryLabels: Record<EquipmentCategory, string> = {
   computer: 'Компьютер', monitor: 'Монитор', peripheral: 'Периферия', furniture: 'Мебель',
@@ -87,7 +89,11 @@ export function EmployeeDetailPage() {
                 </button>
               )}
               <div className={`w-20 h-20 rounded-full mx-auto flex items-center justify-center text-white text-2xl font-bold ${employee.isEmployed ? 'bg-indigo-500' : 'bg-gray-400'}`}>{employee.lastName.charAt(0)}{employee.firstName.charAt(0)}</div>
-              <h2 className="text-xl font-bold text-gray-700 dark:text-gray-200 mt-4">{employee.lastName} {employee.firstName} {employee.middleName}</h2>
+              <h2 className="inline-flex items-center gap-2 text-xl font-bold text-gray-700 dark:text-gray-200 mt-4">
+                {/* Золотая звёздочка руководителя организации */}
+                {employee.isHeadEmployee && <HeadStar className="w-5 h-5" />}
+                <span>{employee.lastName} {employee.firstName} {employee.middleName}</span>
+              </h2>
               <p className="text-gray-600 dark:text-gray-400">{getPosName()}</p>
               <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-medium ${employee.isEmployed ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'}`}>{employee.isEmployed ? 'Работает' : 'Уволен'}</span>
             </div>
@@ -123,12 +129,12 @@ export function EmployeeDetailPage() {
               <div className="flex items-center gap-3 text-gray-600 dark:text-gray-400"><Phone className="w-4 h-4 text-gray-400 dark:text-gray-500" /><div><p>{employee.workPhone}</p><p className="text-xs text-gray-500 dark:text-gray-500">Внутр.: {employee.internalPhone}</p></div></div>
               <div className="flex items-center gap-3 text-gray-600 dark:text-gray-400"><PhoneCall className="w-4 h-4 text-gray-400 dark:text-gray-500" /><span>{employee.personalPhone}</span></div>
               <div className="flex items-center gap-3 text-gray-600 dark:text-gray-400"><MapPin className="w-4 h-4 text-gray-400 dark:text-gray-500" /><div><p>{getBranchName()}</p><p className="text-xs text-gray-500 dark:text-gray-500">{employee.floor && `Этаж ${employee.floor}, `}Кабинет {employee.room}</p></div></div>
-              <div className="flex items-center gap-3 text-gray-600 dark:text-gray-400"><Calendar className="w-4 h-4 text-gray-400 dark:text-gray-500" /><span>Принят: {new Date(employee.hireDate).toLocaleDateString('ru-RU')}</span></div>
+              <div className="flex items-center gap-3 text-gray-600 dark:text-gray-400"><Calendar className="w-4 h-4 text-gray-400 dark:text-gray-500" /><span>Принят: {formatDate(employee.hireDate)}</span></div>
             </div>
             {employee.notes && <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg text-sm text-gray-600 dark:text-gray-400"><p className="font-medium text-gray-700 dark:text-gray-300 mb-1">Примечания:</p><p>{employee.notes}</p></div>}
             <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-500 space-y-1">
-              <p>Создано: {new Date(employee.createdAt).toLocaleString('ru-RU')}</p>
-              <p>Обновлено: {new Date(employee.updatedAt).toLocaleString('ru-RU')}</p>
+              <p>Создано: {formatDateTime(employee.createdAt)}</p>
+              <p>Обновлено: {formatDateTime(employee.updatedAt)}</p>
               <p>Обновил: {getUserName(employee.updatedBy)}</p>
             </div>
           </div>

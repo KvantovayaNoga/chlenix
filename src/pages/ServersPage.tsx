@@ -14,6 +14,7 @@ import { parsePortList } from '../types';
 import { EmployeeSearch } from '../components/EmployeeSearch';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
 import { FullHistoryModal, useEntityHistory } from '../components/HistoryLog';
+import { formatDateTime } from '../utils/formatDate';
 
 // История изменений ВМ: подгружается с сервера (GET /virtual-machines/:id/history)
 // через useEntityHistory и мгновенно обновляется после любого сохранения —
@@ -375,7 +376,7 @@ export function ServersPage() {
                 </div>
               )}
               <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                Обновлено: {new Date(vm.updatedAt).toLocaleString('ru-RU')} • {getUserName(vm.updatedBy)}
+                Обновлено: {formatDateTime(vm.updatedAt)} • {getUserName(vm.updatedBy)}
               </div>
             </div>
           );
@@ -581,8 +582,8 @@ export function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, servic
           </div>
 
           <div className="pt-4 border-t border-gray-700 text-xs text-gray-400">
-            <p>Создано: {new Date(vm.createdAt).toLocaleString('ru-RU')}</p>
-            <p>Обновлено: {new Date(vm.updatedAt).toLocaleString('ru-RU')} • {getUserName(vm.updatedBy)}</p>
+            <p>Создано: {formatDateTime(vm.createdAt)}</p>
+            <p>Обновлено: {formatDateTime(vm.updatedAt)} • {getUserName(vm.updatedBy)}</p>
           </div>
 
           {/* История изменений ВМ (GET /virtual-machines/:id/history) — по аналогии

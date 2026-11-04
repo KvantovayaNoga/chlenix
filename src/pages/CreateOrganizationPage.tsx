@@ -21,6 +21,7 @@ export function CreateOrganizationPage() {
   const bootstrap = useAuthStore((s) => s.bootstrap);
   const currentUser = useAuthStore((s) => s.currentUser);
   const addOrganization = useDataStore((s) => s.addOrganization);
+  const employees = useDataStore((s) => s.employees);
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -46,8 +47,9 @@ export function CreateOrganizationPage() {
     phone: '',
     email: '',
     website: '',
-    directorName: '',
-    directorPosition: '',
+    // Руководитель — необязательный выбор карточки сотрудника из штатного
+    // расписания (выпадающий список). ФИО/должность синхронизирует бэкенд.
+    directorEmployeeId: '',
     bankName: '',
     checkingAccount: '',
     correspondentAccount: '',
@@ -126,8 +128,7 @@ export function CreateOrganizationPage() {
         phone: form.phone.trim(),
         email: form.email.trim(),
         website: form.website.trim(),
-        directorName: form.directorName.trim(),
-        directorPosition: form.directorPosition.trim(),
+        directorEmployeeId: form.directorEmployeeId || null,
         bankName: form.bankName.trim(),
         checkingAccount: form.checkingAccount.trim(),
         correspondentAccount: form.correspondentAccount.trim(),
@@ -424,25 +425,23 @@ export function CreateOrganizationPage() {
               <Building2 className="w-5 h-5" /> Руководство и банковские реквизиты
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className={labelCls}>Руководитель (ФИО)</label>
-                <input
-                  type="text"
-                  value={form.directorName}
-                  onChange={(e) => handleChange('directorName', e.target.value)}
+              <div className="md:col-span-2">
+                <label className={labelCls}>Руководитель</label>
+                {/* Необязательное поле: руководитель выбирается из списка
+                    сотрудников штатного расписания (ФИО и должность
+                    подтягиваются автоматически на бэкенде). */}
+                <select
+                  value={form.directorEmployeeId}
+                  onChange={(e) => handleChange('directorEmployeeId', e.target.value)}
                   className={inputCls}
-                  placeholder="Иванов И. И."
-                />
-              </div>
-              <div>
-                <label className={labelCls}>Должность руководителя</label>
-                <input
-                  type="text"
-                  value={form.directorPosition}
-                  onChange={(e) => handleChange('directorPosition', e.target.value)}
-                  className={inputCls}
-                  placeholder="Директор"
-                />
+                >
+                  <option value="">Не указан</option>
+                  {employees.filter((emp) => emp.isEmployed).map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {[emp.lastName, emp.firstName, emp.middleName].filter(Boolean).join(' ')} — {emp.position?.name ?? 'должность не указана'}
+                    </option>
+                  ))}
+                </select>
               </div>
               {/* Главный бухгалтер убран из карточки организации: он определяется
                   по штатному расписанию среди сотрудников (справочники → должности). */}

@@ -14,6 +14,7 @@ import { DecimalInput } from '../components/DecimalInput';
 import { ServerRoleIcon } from '../components/ServerRoleIcon';
 import { VmCountBadge } from '../components/VmCountBadge';
 import type { StorageSystemType, StorageProtocol } from '../types';
+import { formatDateTime } from '../utils/formatDate';
 
 export function PhysicalServersPage() {
   const { equipment, employees, branches, dataCenters, addEquipment, updateEquipment, deleteEquipment, getVMsByHost } = useDataStore();
@@ -195,7 +196,7 @@ export function PhysicalServersPage() {
                 )}
               </div>
               <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-400 dark:text-gray-500">
-                Обновлено: {new Date(server.updatedAt).toLocaleString('ru-RU')} • {getUserName(server.updatedBy)}
+                Обновлено: {formatDateTime(server.updatedAt)} • {getUserName(server.updatedBy)}
               </div>
             </div>
           );

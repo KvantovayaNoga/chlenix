@@ -11,6 +11,7 @@ import { useAuthStore } from '../store/authStore';
 import { EquipmentModalWrapper } from '../pages/EquipmentPage';
 import { ServerEditModal, ClusterEditModal } from '../pages/PhysicalServersPage';
 import { statusLabels } from '../utils/equipmentStatus';
+import { formatDate } from '../utils/formatDate';
 
 const categoryLabels: Record<EquipmentCategory, string> = {
   computer: 'Компьютер', monitor: 'Монитор', peripheral: 'Периферия', furniture: 'Мебель',
@@ -123,7 +124,7 @@ export function EquipmentCardModal({ equipmentId, onClose }: { equipmentId: stri
                 <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 inline-flex items-center gap-1" title="Материально ответственное лицо — сотрудник, на подотчёте которого числится это оборудование"><User className="w-3 h-3" /> МОЛ: {molName}</span>
               ) : null;
             })()}
-            {eq.writeOffDate && <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">Списано {new Date(eq.writeOffDate).toLocaleDateString('ru-RU')}</span>}
+            {eq.writeOffDate && <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">Списано {formatDate(eq.writeOffDate)}</span>}
           </div>
 
           <div className="divide-y divide-gray-50 dark:divide-gray-700/60">
@@ -136,7 +137,7 @@ export function EquipmentCardModal({ equipmentId, onClose }: { equipmentId: stri
               </>
             )}
             <Row icon={MapPin} label="Размещение" value={dc ? `ЦОД: ${dc}` : branch ? `${branch}${eq.floor ? `, этаж ${eq.floor}` : ''}${eq.room ? `, к. ${eq.room}` : ''}` : '—'} />
-            <Row icon={Calendar} label="Дата покупки" value={eq.purchaseDate ? new Date(eq.purchaseDate).toLocaleDateString('ru-RU') : '—'} />
+            <Row icon={Calendar} label="Дата покупки" value={eq.purchaseDate ? formatDate(eq.purchaseDate) : '—'} />
 
             {(eq.cpuCores != null || eq.ramGB != null || eq.diskGB != null) && (
               <Row icon={Cpu} label="Ресурсы" value={[
@@ -161,7 +162,7 @@ export function EquipmentCardModal({ equipmentId, onClose }: { equipmentId: stri
 
             {eq.defectNote ? <Row label="Дефект / причина ограничений" value={eq.defectNote} /> : null}
             {eq.notes && <Row label="Примечания" value={eq.notes} />}
-            <Row icon={Building} label="Учёт" value={`Создано: ${new Date(eq.createdAt).toLocaleDateString('ru-RU')} • Обновлено: ${new Date(eq.updatedAt).toLocaleDateString('ru-RU')}`} />
+            <Row icon={Building} label="Учёт" value={`Создано: ${formatDate(eq.createdAt)} • Обновлено: ${formatDate(eq.updatedAt)}`} />
           </div>
 
           {canAssign && eq.assignedToEmployeeId && !editing && (

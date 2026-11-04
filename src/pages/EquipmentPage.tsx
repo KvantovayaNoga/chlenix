@@ -12,6 +12,7 @@ import { EmployeeSearch } from '../components/EmployeeSearch';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
 import { serverRoleVisual } from '../components/ServerRoleIcon';
 import { statusLabels, DEFAULT_EQUIPMENT_STATUS, statusRequiresDefect } from '../utils/equipmentStatus';
+import { formatDate } from '../utils/formatDate';
 
 const categoryLabels: Record<EquipmentCategory, string> = {
   computer: 'Компьютеры', monitor: 'Мониторы', peripheral: 'Периферия', furniture: 'Мебель',
@@ -305,7 +306,7 @@ export function EquipmentPage() {
                     <td className="px-4 py-3 text-sm text-gray-600">{eq.serverRole === 'cluster' ? '—' : eq.materiallyResponsibleEmployee ? `${eq.materiallyResponsibleEmployee.lastName} ${eq.materiallyResponsibleEmployee.firstName}` : eq.materiallyResponsibleEmployeeId ? getEmployeeName(eq.materiallyResponsibleEmployeeId) : '—'}</td>
                     <td className="px-4 py-3">
                       <div className="text-xs text-gray-500">
-                        <p>{new Date(eq.updatedAt).toLocaleDateString('ru-RU')}</p>
+                        <p>{formatDate(eq.updatedAt)}</p>
                         <p className="text-gray-400">{getUserName(eq.updatedBy)}</p>
                       </div>
                     </td>

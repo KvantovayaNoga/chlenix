@@ -7,11 +7,12 @@ import type { Employee, User, Organization } from '../types';
 import { api } from '../api/client';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
 
-// п.3: единый формат даты для сотрудников — дд.мм.гггг
+// Единый формат даты по проекту: DD-MM-YYYY (см. utils/formatDate)
+import { formatDate, formatDateTime } from '../utils/formatDate';
+import { HeadStar } from '../components/HeadStar';
+
 export function fmtRuDate(iso?: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('ru-RU');
+  return formatDate(iso);
 }
 
 export function EmployeesPage() {
@@ -182,8 +183,11 @@ export function EmployeesPage() {
                     : <>{employee.lastName.charAt(0)}{employee.firstName.charAt(0)}</>}
                 </div>
                 <div>
-                  {/* п.4: полное ФИО (Фамилия Имя Отчество) */}
-                  <h3 className="font-semibold text-gray-700 dark:text-gray-200">{[employee.lastName, employee.firstName, employee.middleName].filter(Boolean).join(' ')}</h3>
+                  {/* п.4: полное ФИО (Фамилия Имя Отчество); золотая звёздочка — руководитель организации */}
+                  <h3 className="inline-flex items-center gap-1.5 font-semibold text-gray-700 dark:text-gray-200">
+                    {employee.isHeadEmployee && <HeadStar />}
+                    {[employee.lastName, employee.firstName, employee.middleName].filter(Boolean).join(' ')}
+                  </h3>
                   <p className="text-sm text-gray-600 dark:text-gray-400">{getPosName(employee.positionId)}</p>
                 </div>
               </div>

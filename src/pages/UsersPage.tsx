@@ -5,6 +5,8 @@ import type { User, UserRole } from '../types';
 import { ROLE_LABELS } from '../types';
 import { FullHistoryModal, useEntityHistory } from '../components/HistoryLog';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
+import { HeadStar } from '../components/HeadStar';
+import { formatDate } from '../utils/formatDate';
 
 const roleLabels: Record<UserRole, string> = ROLE_LABELS;
 
@@ -176,7 +178,11 @@ export function UsersPage() {
                             : user.fullName.charAt(0)}
                         </div>
                         <div>
-                          <p className="font-medium text-gray-800 dark:text-gray-200">{user.fullName}</p>
+                          <p className="inline-flex items-center gap-1.5 font-medium text-gray-800 dark:text-gray-200">
+                            {/* Золотая звезда наследуется учёткой привязанного сотрудника-руководителя */}
+                            {user.isHeadEmployee && <HeadStar />}
+                            {user.fullName}
+                          </p>
                           {user.id === currentUser?.id && <span className="text-xs text-indigo-500 dark:text-indigo-400">(это вы)</span>}
                         </div>
                       </div>
@@ -188,7 +194,7 @@ export function UsersPage() {
                     <td className="px-6 py-4">
                       {user.isActive ? <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400 text-sm"><CheckCircle className="w-4 h-4" /> Активен</span> : <span className="inline-flex items-center gap-1 text-red-500 dark:text-red-400 text-sm"><XCircle className="w-4 h-4" /> Заблокирован</span>}
                     </td>
-                    {isAdmin && <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{new Date(user.createdAt).toLocaleDateString('ru-RU')}</td>}
+                    {isAdmin && <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{formatDate(user.createdAt)}</td>}
                     <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={() => openHistory(user)} className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30" title="История изменений"><History className="w-4 h-4" /></button>
