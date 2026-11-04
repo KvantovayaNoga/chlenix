@@ -23,7 +23,7 @@ const categoryIcons: Record<EquipmentCategory, React.ElementType> = {
 };
 // Статусная модель оборудования — общий справочник src/utils/equipmentStatus.ts.
 const serverRoleLabels: Record<string, string> = {
-  hypervisor_host: 'Хост гипервизора', storage: 'СХД', management_console: 'Консоль управления', cluster: 'Кластер', standalone: 'Автономный сервер',
+  hypervisor_host: 'Хост гипервизора', storage: 'СХД', management_console: 'Консоль управления', cluster: 'Хост', standalone: 'Автономный сервер',
 };
 
 function Row({ icon: Icon, label, value }: { icon?: React.ElementType; label: string; value: React.ReactNode }) {

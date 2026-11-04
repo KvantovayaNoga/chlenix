@@ -2481,17 +2481,20 @@ async function assertVmHostIsHypervisor(hostServerId: string | null | undefined)
 }
 class VmHostError extends Error {}
 
-/** Кластер (serverRole === 'cluster') не может быть сам помещён внутрь другого кластера. */
+/** Кластер (serverRole === 'cluster') не может быть сам помещён внутрь другого кластера.
+ *  Хосты кластера (сущности «Хост», тоже роль 'cluster') допускаются как члены:
+ *  вложенность запрещена только для кластеров-сущностей (без parentClusterId). */
 async function validateParentCluster(id: string | null | undefined, selfId?: string): Promise<string | null> {
   if (!id || id.trim() === '') return null;
   if (selfId && id === selfId) throw new VmHostError('Кластер не может включать сам себя.');
   const pc = await prisma.equipment.findUnique({ where: { id }, select: { serverRole: true, parentClusterId: true } });
   if (!pc) return null;
   if (pc.serverRole !== 'cluster') throw new VmHostError('Родительский кластер должен иметь роль «Кластер виртуализации».');
-  if (pc.parentClusterId) throw new VmHostError('Вложенность кластеров не поддерживается: выбранный кластер сам входит в другой кластер.');
+  if (pc.parentClusterId) throw new VmHostError('Вложенность кластеров не поддерживается: выбранный родительский кластер сам входит в другой кластер.');
   if (selfId) {
-    const child = await prisma.equipment.findUnique({ where: { id }, select: { parentClusterId: true } });
-    if (child && child.parentClusterId === selfId) throw new VmHostError('Нельзя поместить кластер внутрь его же члена — циклическая вложенность.');
+    const child = await prisma.equipment.findUnique({ where: { id: selfId }, select: { parentClusterId: true } });
+    // Хост кластера не может становиться родителем этого же кластера — цикл
+    if (child && child.parentClusterId === id) throw new VmHostError('Нельзя поместить кластер внутрь его же члена — циклическая вложенность.');
   }
   return id;
 }
@@ -2511,7 +2514,7 @@ async function applyClusterMembers(clusterId: string, orgId: string | null, memb
   await prisma.$transaction(async (tx) => {
     if (memberIds.length > 0) {
       const valid = await tx.equipment.findMany({
-        where: { id: { in: memberIds }, organizationId: orgId, serverRole: { in: ['hypervisor_host', 'storage', 'management_console'] } },
+        where: { id: { in: memberIds }, organizationId: orgId, serverRole: { in: ['cluster', 'hypervisor_host', 'storage', 'management_console'] } },
         select: { id: true, parentClusterId: true },
       });
       // Привязываем только свободные железо и текущих участников этого кластера.
@@ -2590,10 +2593,25 @@ app.post('/api/equipment', authMiddleware, requireRole([...EQUIPMENT_CREATE_ROLE
   const body = await c.req.json().catch(() => null);
   // ClusterForm передаёт состав кластера служебным полем __members — извлекаем его
   // до валидации схемы (в equipmentSchema его нет).
-  const requestedMembers = Array.isArray(body?.__members) ? body.__members : null;
+  let requestedMembers: string[] | null = Array.isArray(body?.__members) ? body.__members : null;
   if (body && '__members' in body) delete body.__members;
+  // Хосты кластера (сущности «Хост», роль 'cluster') помещаются внутрь кластера-
+  // сущности через parentClusterId. Кластер-сущность (без parentClusterId) внутрь
+  // другого кластера не пускаем — иначе он бы исчез из верхнего уровня списка.
+  if (Array.isArray(body?.__hostIds)) {
+    const hostIds: string[] = body.__hostIds.filter((x: unknown): x is string => typeof x === 'string' && !!x);
+    if (hostIds.length > 0) {
+      const hosts = await prisma.equipment.findMany({
+        where: { id: { in: hostIds }, serverRole: 'cluster', parentClusterId: null },
+        select: { id: true },
+      });
+      if (hosts.length > 0) {
+        requestedMembers = [...(requestedMembers ?? []), ...hosts.map((h) => h.id)];
+      }
+    }
+    delete body.__hostIds;
+  }
   const parsed = equipmentSchema.safeParse(body);
-  if (!parsed.success) {
     const first = parsed.error.issues[0];
     return c.json({ error: first?.message && first.message !== 'Invalid input' ? `Некорректные данные оборудования: ${first.message}` : 'Некорректные данные оборудования' }, 400);
   }

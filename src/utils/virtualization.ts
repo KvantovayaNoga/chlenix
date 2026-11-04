@@ -203,6 +203,9 @@ export interface PlatformCluster {
   name: string; // '' — хосты без кластера
   /** ID Equipment-кластера (serverRole === 'cluster'), если кластер заведён отдельной сущностью */
   clusterId?: string;
+  /** Хосты кластера (сущности «Хост» в интерфейсе, внутренний код роли 'cluster').
+   *  Кластер не может быть сам себе хостом — сам себя он не содержит. */
+  hostServers: Equipment[];
   hosts: Equipment[];
   /** СХД, помещённые внутрь этого кластера (parentClusterId) */
   storages: Equipment[];
@@ -263,6 +266,19 @@ export function buildVirtualizationPlatforms(
   const physicalConsoles = equipment.filter((e) => e.serverRole === 'management_console');
   const managementConsoles = virtualMachines.filter((v) => v.serverRole === 'management_console');
 
+  // Хосты кластеров (сущности «Хост», внутренний код роли 'cluster'): физические
+  // серверы платформы виртуализации, помещённые внутрь кластера-сущности через
+  // parentClusterId. Внутри кластера размещаются ТОЛЬКО хосты (плюс СХД, консоли
+  // и ВМ как состав кластера); сами сущности-кластеры верхнего уровня в список
+  // хостов не попадают — иначе одна сущность дублируется в двух местах страницы.
+  const hostServersByParent = new Map<string, Equipment[]>();
+  for (const hs of equipment) {
+    if (hs.serverRole !== 'cluster') continue; // только хосты (роль 'cluster')
+    const pc = (hs.parentClusterId || '').trim();
+    if (!pc) continue;
+    hostServersByParent.set(pc, [...(hostServersByParent.get(pc) || []), hs]);
+  }
+
   // Группируем хосты по гипервизору. Если поле «Гипервизор / платформа» пустое —
   // хост НЕ порождает новый гипервизор без имени: он попадает в общую категорию
   // «Хосты без кластера» (standaloneHosts на странице) и не создаёт платформу.
@@ -281,10 +297,14 @@ export function buildVirtualizationPlatforms(
     if (!groups.has(key)) groups.set(key, []);
   }
 
-  // Если реальных гипервизоров нет, но есть СХД/консоли — показываем одну сводную
-  // безымянную псевдо-платформу (она не является «новым гипервизором», unnamed).
+  // Платформа нужна, если в ней есть что показать: хосты, кластеры, СХД или
+  // консоли. Раньше безымянная псевдо-платформа не создавалась при одних лишь
+  // кластерах без гипервизора — из-за этого такие кластеры вовсе пропадали.
   let pseudoPlatformNeeded = false;
-  if (groups.size === 0 && (storage.length || physicalConsoles.length || managementConsoles.length)) {
+  if (
+    groups.size === 0 &&
+    (storage.length || physicalConsoles.length || managementConsoles.length || clusterEntities.length)
+  ) {
     groups.set('Гипервизор не указан', []);
     pseudoPlatformNeeded = true;
   }
@@ -332,16 +352,26 @@ export function buildVirtualizationPlatforms(
       const clusterStorages = cname
         ? allStorage.filter((st) => (entity && st.parentClusterId === entity.id) || (st.clusterName || '').trim() === cname)
         : [];
+      // Хосты кластера — только физические серверы, помещённые внутрь кластера
+      // (сущности «Хост»). Кластер не может быть хостом сам себе.
+      const clusterHostServers = entity
+        ? (hostServersByParent.get(entity.id) || []).filter((hs) => hs.id !== entity.id)
+        : [];
+      const hostIdsAll = new Set([...ids, ...clusterHostServers.map((h) => h.id)]);
+      const clusterVmsAll = cname
+        ? virtualMachines.filter((v) => v.hostServerId && hostIdsAll.has(v.hostServerId))
+        : clusterVms;
       clusters.push({
         name: cname,
         clusterId: entity?.id,
+        hostServers: clusterHostServers,
         hosts: clusterHosts,
         storages: clusterStorages,
-        vms: clusterVms,
-        cpuTotal: clusterHosts.reduce((s, h) => s + num(h.cpuCores), 0),
-        cpuUsed: clusterVms.reduce((s, v) => s + num(v.cpuCores), 0),
-        ramTotal: clusterHosts.reduce((s, h) => s + num(h.ramGB), 0),
-        ramUsed: clusterVms.reduce((s, v) => s + num(v.ramGB), 0),
+        vms: clusterVmsAll,
+        cpuTotal: [...clusterHosts, ...clusterHostServers].reduce((s, h) => s + num(h.cpuCores), 0),
+        cpuUsed: clusterVmsAll.reduce((s, v) => s + num(v.cpuCores), 0),
+        ramTotal: [...clusterHosts, ...clusterHostServers].reduce((s, h) => s + num(h.ramGB), 0),
+        ramUsed: clusterVmsAll.reduce((s, v) => s + num(v.ramGB), 0),
         diskTotalGB: clusterStorages.reduce((s, st) => s + (num(st.storageCapacityGB) || num(st.diskGB)), 0),
       });
     }

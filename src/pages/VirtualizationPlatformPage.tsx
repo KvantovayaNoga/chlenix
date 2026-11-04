@@ -142,16 +142,17 @@ function ClusterBlock({
               <UsageBar label="Ёмкость СХД" used={0} total={cluster.diskTotalGB} fmt={formatGB} />
             </div>
           )}
-          {/* Вложенные хосты */}
+          {/* Вложенные хосты — физические серверы кластера (сущности «Хост») и
+              легаси-хосты гипервизора. Сущность самого кластера здесь не показывается. */}
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1.5">
               Хосты внутри кластера
             </p>
-            {cluster.hosts.length === 0 ? (
+            {allHosts.length === 0 ? (
               <p className="text-xs text-gray-400 dark:text-gray-500">В кластер пока не добавлены хосты</p>
             ) : (
               <div className="space-y-2 pl-3 border-l-2 border-purple-100 dark:border-purple-900/40">
-                {cluster.hosts.map((h) => (
+                {allHosts.map((h) => (
                   <HostRow
                     key={h.id}
                     host={h}
