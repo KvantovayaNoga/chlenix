@@ -616,6 +616,11 @@ model Organization {
   // Руководитель организации — карточка сотрудника штатного расписания
   // (ранее были текстовые поля directorName/directorPosition — вычищены)
   directorEmployeeId   String?  @unique @map("director_employee_id")
+  // ФИО руководителя и должность — денормализованные значения из карточки
+  // сотрудника: отображаются в шапке организации и в списке организаций
+  // без доп. запросов. Синхронизируются бэкендом при выборе руководителя.
+  directorName         String?  @map("director_name")
+  directorPosition     String?  @map("director_position")
   accountantName       String?  @map("accountant_name")
   bankName             String?  @map("bank_name")
   checkingAccount      String?  @map("checking_account")

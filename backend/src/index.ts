@@ -1658,6 +1658,83 @@ const orgText = z.preprocess(
   z.string().max(500).nullable().optional(),
 );
 
+// Руководитель организации — карточка сотрудника из штатного расписания.
+// Пустая строка => null (поле необязательное).
+const directorEmployeeRef = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+  z.string().uuid().nullable().optional(),
+);
+
+// ФИО руководителя по карточке сотрудника (Фамилия Имя Отчество)
+function employeeFullName(e: { lastName: string; firstName: string; middleName?: string | null } | null | undefined): string {
+  if (!e) return '';
+  return [e.lastName, e.firstName, e.middleName].filter(Boolean).join(' ').trim();
+}
+
+/**
+ * Синхронизация руководителя организации с выбранной карточкой сотрудника:
+ * денормализуем ФИО/должность в организацию (для шапки карточки и списка
+ * организаций без доп. запросов). Валидация: сотрудник должен существовать
+ * и принадлежать этой же организации. Возвращает текст ошибки или null.
+ */
+async function syncOrgDirector(orgId: string, employeeId: string | null | undefined): Promise<string | null> {
+  if (employeeId == null || employeeId === '') {
+    await prisma.organization.update({
+      where: { id: orgId },
+      data: { directorEmployeeId: null, directorName: null, directorPosition: null },
+    });
+    return null;
+  }
+  const emp = await prisma.employee.findUnique({
+    where: { id: employeeId },
+    select: { id: true, organizationId: true, lastName: true, firstName: true, middleName: true, position: { select: { name: true } } },
+  });
+  if (!emp) return 'Выбранный руководитель не найден среди сотрудников';
+  if (emp.organizationId !== orgId) return 'Руководитель должен быть сотрудником этой организации';
+  await prisma.organization.update({
+    where: { id: orgId },
+    data: { directorEmployeeId: emp.id, directorName: employeeFullName(emp), directorPosition: emp.position?.name ?? null },
+  });
+  return null;
+}
+
+/**
+ * Является ли пользователь руководителем организации (золотая звёздочка
+ * наследуется привязанной учётной записью). Проверяет и активную
+ * организацию, и все организации членства пользователя.
+ */
+async function isHeadUser(userId: string): Promise<boolean> {
+  const emp = await prisma.employee.findFirst({
+    where: { userId },
+    select: { id: true, organizationId: true },
+  });
+  if (!emp) return false;
+  const memberOrgIds = (await prisma.userOrganization.findMany({ where: { userId }, select: { organizationId: true } })).map((m) => m.organizationId);
+  const orgIds = [...new Set([emp.organizationId, ...memberOrgIds].filter(Boolean))] as string[];
+  if (!orgIds.length) return false;
+  const cnt = await prisma.organization.count({ where: { id: { in: orgIds }, directorEmployeeId: emp.id } });
+  return cnt > 0;
+}
+
+/** Карта userId -> является ли руководителем организации (для списков пользователей). */
+async function headFlagsByUserId(userIds: string[]): Promise<Map<string, boolean>> {
+  const result = new Map<string, boolean>();
+  if (!userIds.length) return result;
+  const emps = await prisma.employee.findMany({
+    where: { userId: { in: userIds } },
+    select: { id: true, userId: true, organizationId: true },
+  });
+  const orgIds = [...new Set(emps.map((e) => e.organizationId).filter(Boolean))] as string[];
+  if (!orgIds.length) return result;
+  const heads = await prisma.organization.findMany({
+    where: { id: { in: orgIds }, directorEmployeeId: { not: null } },
+    select: { directorEmployeeId: true },
+  });
+  const headEmpIds = new Set(heads.map((h) => h.directorEmployeeId as string));
+  for (const e of emps) result.set(e.userId as string, headEmpIds.has(e.id));
+  return result;
+}
+
 const organizationSchema = z.object({
   name: z.string().min(2),           // Полное наименование
   legalForm: orgText,          // ОПФ — произвольный текст (вводится руками)

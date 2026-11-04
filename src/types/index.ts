@@ -54,6 +54,9 @@ export interface User {
   }>; // Где может работать пользователь
   // Карточка сотрудника, привязанная к учётной записи (для иерархии видимости оборудования)
   employee?: { id: string; departmentName: string; positionName: string } | null;
+  /** true — привязанный сотрудник является руководителем организации:
+   * пользователь наследует золотую звёздочку везде, где фигурирует. */
+  isHeadEmployee?: boolean;
   // Иерархия видимости оборудования (рассчитана на сервере):
   // all — видно всё оборудование организации; employeeIds — id сотрудников,
   // чьё закреплённое оборудование видно (своё + подчинённые для начальника отдела)
@@ -87,8 +90,11 @@ export interface Organization {
   phone: string;                // Контактный телефон
   email: string;                // Email
   website: string;              // Сайт
-  directorName: string;         // Руководитель (ФИО)
-  directorPosition: string;     // Должность руководителя (отображается под ФИО в карточке)
+  /** Руководитель организации — id карточки сотрудника из штатного расписания.
+   * Поле необязательное; выбирается из выпадающего списка сотрудников. */
+  directorEmployeeId?: string | null;
+  directorName: string;         // ФИО руководителя (синхронизируется с карточкой сотрудника)
+  directorPosition: string;     // Должность руководителя (берётся из карточки сотрудника)
   /** @deprecated Главный бухгалтер больше не указывается в карточке организации —
    * он определяется по штатному расписанию (должность среди сотрудников). */
   accountantName?: string;
@@ -97,7 +103,6 @@ export interface Organization {
   correspondentAccount: string; // Корреспондентский счёт
   bik: string;                  // БИК
   taxSystem: string;            // Система налогообложения
-  industry: string;             // Отрасль / вид деятельности
   employeeCount: number | null; // Штатная численность
   foundedDate: string;          // Дата основания
   logo?: string;                // Логотип (Base64)
@@ -206,6 +211,9 @@ export interface Employee {
   avatar?: string | null;      // автосинхронизируется с аватаром привязанного пользователя
   userId?: string | null;      // привязка учётной записи пользователя (авто — по e-mail)
   linkedUser?: { id: string; fullName: string; email: string } | null;
+  /** true — сотрудник выбран руководителем организации: в UI помечается
+   * золотой звёздочкой и поднимается на первое место в списке сотрудников. */
+  isHeadEmployee?: boolean;
   // Столбец «Организация»: актуальная организация привязанной учётной записи
   // (где пользователь был в последней сессии)
   userOrganization?: { organizationId: string | null; organizationName: string | null } | null;
