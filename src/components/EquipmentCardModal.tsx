@@ -185,7 +185,7 @@ export function EquipmentCardModal({ equipmentId, onClose }: { equipmentId: stri
         ) : isVirtualizationServer ? (
           <ServerEditModal server={eq} onClose={() => setEditing(false)} />
         ) : (
-          <EquipmentModalWrapper equipment={eq} onClose={() => setEditing(false)} />
+          <EquipmentModalWrapper equipment={eq} onClose={() => setEditing(false)} onSaved={() => setEditing(false)} />
         )
       )}
     </div>

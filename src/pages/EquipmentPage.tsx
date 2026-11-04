@@ -338,6 +338,7 @@ export function EquipmentPage() {
         <EquipmentModalWrapper
           equipment={editingEquipment}
           onClose={() => { setShowAddModal(false); setEditingEquipment(null); }}
+          onSaved={() => { setShowAddModal(false); setEditingEquipment(null); }}
         />
       )}
 
@@ -539,7 +540,7 @@ function EquipmentModal({
 
 // Публичная форма оборудования (используется и на странице, и из модалки
 // карточки оборудования): данные берёт из store, сохранение — через add/updateEquipment.
-export function EquipmentModalWrapper({ equipment, onClose }: { equipment: Equipment | null; onClose: () => void }) {
+export function EquipmentModalWrapper({ equipment, onClose, onSaved }: { equipment: Equipment | null; onClose: () => void; onSaved?: () => void }) {
   const { branches, addEquipment, updateEquipment } = useDataStore();
   return (
     <EquipmentModal
@@ -549,7 +550,9 @@ export function EquipmentModalWrapper({ equipment, onClose }: { equipment: Equip
       onSave={async (data: any) => {
         // Дожидаемся реального результата сохранения: модалка закрывается
         // ТОЛЬКО если сущность создана/обновлена на сервере.
-        return equipment ? await updateEquipment(equipment.id, data) : await addEquipment(data);
+        const ok = equipment ? await updateEquipment(equipment.id, data) : await addEquipment(data);
+        if (ok !== false) onSaved?.();
+        return ok;
       }}
     />
   );

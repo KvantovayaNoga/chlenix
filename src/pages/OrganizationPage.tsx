@@ -450,7 +450,9 @@ export function OrganizationPage() {
           onSave={async (data) => {
             // Окно редактирования закрывается ТОЛЬКО если бэкенд принял изменения;
             // при ошибке форма остаётся открытой с введёнными данными.
-            return await updateOrganization(organization.id, data);
+            const ok = await updateOrganization(organization.id, data);
+            if (ok !== false) setIsEditing(false);
+            return ok;
           }}
         />
       )}
@@ -736,7 +738,7 @@ function EditOrganizationForm({
         </div>
         <div>
           <label className={labelCls}>Дата основания</label>
-          <input type="date" value={/^\d{4}-\d{2}-\d{2}$/.test(String(form.foundedDate ?? )) ? String(form.foundedDate) : } onChange={(e) => handleChange('foundedDate', e.target.value)} className={inputCls} />
+          <input type="date" value={/^\d{4}-\d{2}-\d{2}$/.test(String(form.foundedDate ?? '')) ? String(form.foundedDate) : ''} onChange={(e) => handleChange('foundedDate', e.target.value)} className={inputCls} />
         </div>
         <div className="md:col-span-2">
           <label className={labelCls}>Примечания</label>
