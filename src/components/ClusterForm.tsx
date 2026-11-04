@@ -19,6 +19,7 @@ import {
 import { DecimalInput } from './DecimalInput';
 import { StorageField } from './StorageField';
 import { EmployeeSearch } from './EmployeeSearch';
+import { useDataStore } from '../store/dataStore';
 
 /**
  * LocationSelect — единый выбор места размещения: филиалы организации И ЦОД
@@ -227,12 +228,27 @@ export function ClusterForm({ cluster, branches, dataCenters, allEquipment, onCl
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitted(true);
+    setSaveError(null);
+    // Внутренняя проверка обязательных полей: окно НЕ закрывается, пока сущность
+    // действительно не создана (ошибки показаны инлайн под полями).
+    if (!formData.name.trim() || (!formData.branchId && !formData.dataCenterId)) return;
     const payload = normalizeClusterPayload({ ...formData }, Array.from(members), manual);
     const membersList = payload.__members;
     delete payload.__members;
-    onSave(payload as any, membersList);
+    setSaving(true);
+    try {
+      const result = await onSave(payload as any, membersList);
+      // onSave вернул false — сохранение не удалось, оставляем форму открытой.
+      if (result === false) setSaveError('Не удалось сохранить кластер. Проверьте соединение и попробуйте ещё раз.');
+      // При успехе onClose вызовет родитель (или ничего не вернёт — считаем успехом).
+    } catch {
+      setSaveError('Ошибка при сохранении кластера. Изменения НЕ сохранены — окно осталось открытым.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const inputCls = 'w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200';
@@ -253,7 +269,14 @@ export function ClusterForm({ cluster, branches, dataCenters, allEquipment, onCl
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Наименование кластера *</label>
-              <input type="text" value={formData.name} onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value }))} className={inputCls} placeholder="Например: HA-Cluster-01" required />
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value }))}
+                className={`${inputCls} ${nameErr ? 'border-red-400 dark:border-red-600 focus:ring-red-400' : ''}`}
+                placeholder="Например: HA-Cluster-01"
+              />
+              {nameErr && <p className="text-xs text-red-500 mt-1">{nameErr}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Имя кластера в гипервизоре</label>
@@ -277,6 +300,7 @@ export function ClusterForm({ cluster, branches, dataCenters, allEquipment, onCl
               dataCenterId={formData.dataCenterId}
               onChange={({ branchId, dataCenterId }) => setFormData((p) => ({ ...p, branchId, dataCenterId }))}
               label="Филиал / ЦОД *"
+              error={locErr}
             />
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Кабинет/помещение</label>
@@ -356,9 +380,18 @@ export function ClusterForm({ cluster, branches, dataCenters, allEquipment, onCl
             <textarea value={formData.notes} onChange={(e) => setFormData((p) => ({ ...p, notes: e.target.value }))} className={inputCls} rows={2} />
           </div>
 
+          {(saveError || storeError) && (
+            <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-600 dark:text-red-400">
+              {saveError ?? storeError}
+              <p className="text-xs text-red-500/80 mt-1">Заполните обязательные поля, отмеченные красной рамкой, и нажмите «{isEdit ? 'Сохранить' : 'Создать кластер'}» ещё раз.</p>
+            </div>
+          )}
+
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Отмена</button>
-            <button type="submit" className="px-5 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700">{isEdit ? 'Сохранить' : 'Создать кластер'}</button>
+            <button type="button" onClick={onClose} disabled={saving} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">Отмена</button>
+            <button type="submit" disabled={saving} className="px-5 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-60 disabled:cursor-not-allowed">
+              {saving ? 'Сохранение…' : isEdit ? 'Сохранить' : 'Создать кластер'}
+            </button>
           </div>
         </form>
       </div>

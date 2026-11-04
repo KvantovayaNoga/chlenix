@@ -210,10 +210,11 @@ export function UsersPage() {
         </div>
       </div>
 
-      {showAddModal && <UserModal onClose={() => setShowAddModal(false)} onSave={async (data) => { await addUser(data as any); setShowAddModal(false); }} />}
+      {showAddModal && <UserModal onClose={() => setShowAddModal(false)} onSave={async (data) => { const res = await addUser(data as any); return res; }} />}
       {/* П.2: дожидаемся обновления и перезапрашиваем список — изменения
-          (роль, блокировка) сразу видны на странице без перезагрузки */}
-      {editingUser && <UserModal user={editingUser} onClose={() => setEditingUser(null)} onSave={async (data) => { const res = await updateUser(editingUser.id, data); if (res.success) await refreshUsers(); setEditingUser(null); }} />}
+          (роль, блокировка) сразу видны на странице без перезагрузки.
+          При ошибке модалка остаётся открытой с инлайн-подсказкой (п.5). */}
+      {editingUser && <UserModal user={editingUser} onClose={() => setEditingUser(null)} onSave={async (data) => { const res = await updateUser(editingUser.id, data); if (res.success) await refreshUsers(); return res; }} />}
       
       {/* Модалка ПОЛНОЙ истории изменений пользователя: сверху вниз,
           самые свежие записи вверху. */}
@@ -238,35 +239,66 @@ export function UsersPage() {
   }
 }
 
+const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function UserModal({ user, onClose, onSave }: any) {
   const [formData, setFormData] = useState({
     fullName: user?.fullName || '', email: user?.email || '', password: '',
     role: user?.role || 'viewer', isActive: user?.isActive ?? true,
   });
+  // Внутренняя валидация модалки (п.5): при ошибках окно НЕ закрывается,
+  // обязательные поля подсвечиваются, показывается инлайн-подсказка.
+  const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const nameErr = submitted && !formData.fullName.trim() ? 'Укажите ФИО пользователя.' : null;
+  const emailErr = submitted && (!formData.email.trim() || !emailRe.test(formData.email.trim()))
+    ? 'Укажите корректный email (например, ivanov@company.ru).' : null;
+  const passErr = submitted && !user && !formData.password ? 'Задайте пароль — без него пользователь не сможет войти.' : null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitted(true);
+    setSaveError(null);
+    if (!formData.fullName.trim() || !emailRe.test(formData.email.trim()) || (!user && !formData.password)) return;
     const data: any = { fullName: formData.fullName, email: formData.email, role: formData.role, isActive: formData.isActive };
     if (formData.password) data.password = formData.password;
-    onSave(data);
+    setSaving(true);
+    try {
+      const res = await onSave(data);
+      if (res && res.success === false) {
+        setSaveError(res.error || 'Не удалось сохранить пользователя. Окно осталось открытым — данные в форме сохранены.');
+        return; // сущность не создана/не обновлена — НЕ закрываем окно
+      }
+      onClose();
+    } catch {
+      setSaveError('Ошибка соединения. Пользователь НЕ сохранён — попробуйте ещё раз.');
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const fieldCls = (err: string | null) => `w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 ${err ? 'border-red-400 dark:border-red-600 focus:ring-red-400' : 'border-gray-200 dark:border-gray-600 focus:ring-indigo-500'}`;
 
   return (
     <div className="modal-root fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">{user ? 'Редактировать' : 'Новый пользователь'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><X className="w-6 h-6" /></button>
+          <button onClick={onClose} disabled={saving} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-50"><X className="w-6 h-6" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ФИО *</label><input type="text" value={formData.fullName} onChange={(e) => setFormData(p => ({ ...p, fullName: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required /></div>
-          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email *</label><input type="email" value={formData.email} onChange={(e) => setFormData(p => ({ ...p, email: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required /></div>
-          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{user ? 'Новый пароль' : 'Пароль *'}</label><input type="password" value={formData.password} onChange={(e) => setFormData(p => ({ ...p, password: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required={!user} /></div>
+          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ФИО *</label><input type="text" value={formData.fullName} onChange={(e) => setFormData(p => ({ ...p, fullName: e.target.value }))} className={fieldCls(nameErr)} />{nameErr && <p className="text-xs text-red-500 mt-1">{nameErr}</p>}</div>
+          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email *</label><input type="email" value={formData.email} onChange={(e) => setFormData(p => ({ ...p, email: e.target.value }))} className={fieldCls(emailErr)} />{emailErr && <p className="text-xs text-red-500 mt-1">{emailErr}</p>}</div>
+          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{user ? 'Новый пароль' : 'Пароль *'}</label><input type="password" value={formData.password} onChange={(e) => setFormData(p => ({ ...p, password: e.target.value }))} className={fieldCls(passErr)} placeholder={user ? 'Оставьте пустым, чтобы не менять' : 'Минимум 6 символов'} autoComplete="new-password" />{passErr && <p className="text-xs text-red-500 mt-1">{passErr}</p>}</div>
           <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Роль</label><select value={formData.role} onChange={(e) => setFormData(p => ({ ...p, role: e.target.value as UserRole }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">{(Object.entries(roleLabels) as [UserRole, string][]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
           <div className="flex items-center gap-2"><input type="checkbox" id="isActive" checked={formData.isActive} onChange={(e) => setFormData(p => ({ ...p, isActive: e.target.checked }))} className="w-4 h-4 text-indigo-600 rounded" /><label htmlFor="isActive" className="text-sm text-gray-700 dark:text-gray-300">Активен</label></div>
+          {saveError && (
+            <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-600 dark:text-red-400">{saveError}</div>
+          )}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Отмена</button>
-            <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">{user ? 'Сохранить' : 'Создать'}</button>
+            <button type="button" onClick={onClose} disabled={saving} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">Отмена</button>
+            <button type="submit" disabled={saving} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed">{saving ? 'Сохранение…' : user ? 'Сохранить' : 'Создать'}</button>
           </div>
         </form>
       </div>

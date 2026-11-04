@@ -432,12 +432,12 @@ export function ServersPage() {
 
       {/* Add Interface Modal */}
       {showAddInterfaceModal && selectedVM && (
-        <AddInterfaceModal onClose={() => setShowAddInterfaceModal(false)} onSave={async (data) => { await addNetworkInterface(selectedVM.id, data as any); setShowAddInterfaceModal(false); }} />
+        <AddInterfaceModal onClose={() => setShowAddInterfaceModal(false)} onSave={async (data) => { const ok = await addNetworkInterface(selectedVM.id, data as any); return ok !== false; }} />
       )}
 
       {/* Add Service Modal */}
       {showAddServiceModal && selectedVM && (
-        <AddServiceModal onClose={() => setShowAddServiceModal(false)} onSave={(data) => { addService({ ...data, virtualMachineId: selectedVM.id } as any); setShowAddServiceModal(false); }} />
+        <AddServiceModal onClose={() => setShowAddServiceModal(false)} onSave={async (data) => { const ok = await addService({ ...data, virtualMachineId: selectedVM.id } as any); return ok !== false; }} />
       )}
 
       {/* Edit Interface Modal */}
@@ -449,9 +449,9 @@ export function ServersPage() {
             try {
               await api.put(`/network-interfaces/${editingInterface.id}`, data);
               await refreshVMs();
-              setEditingInterface(null);
+              return true;
             } catch {
-              alert('Не удалось сохранить интерфейс');
+              return false; // п.5: ошибка — окно остаётся открытым с инлайн-подсказкой
             }
           }} 
         />
@@ -462,10 +462,10 @@ export function ServersPage() {
         <EditServiceModal 
           service={editingService}
           onClose={() => setEditingService(null)} 
-          onSave={(data) => { 
-            updateService(editingService.id, data);
-            setEditingService(null);
-          }} 
+          onSave={async (data) => {
+            const ok = await updateService(editingService.id, data);
+            return ok !== false;
+          }}
         />
       )}
     </div>
@@ -596,10 +596,10 @@ export function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, servic
       {/* Вложенные модалки (используются, когда вызывающая страница не передала
           собственные обработчики — например, блок «Последние ВМ» на странице «Обзор») */}
       {localAddInterface && (
-        <AddInterfaceModal onClose={() => setLocalAddInterface(false)} onSave={async (data: any) => { await store.addNetworkInterface(vm.id, data); setLocalAddInterface(false); }} />
+        <AddInterfaceModal onClose={() => setLocalAddInterface(false)} onSave={async (data: any) => { const ok = await store.addNetworkInterface(vm.id, data); return ok !== false; }} />
       )}
       {localAddService && (
-        <AddServiceModal onClose={() => setLocalAddService(false)} onSave={(data: any) => { void store.addService({ ...data, virtualMachineId: vm.id }); setLocalAddService(false); }} />
+        <AddServiceModal onClose={() => setLocalAddService(false)} onSave={async (data: any) => { const ok = await store.addService({ ...data, virtualMachineId: vm.id }); return ok !== false; }} />
       )}
       {localEditInterface && (
         <EditInterfaceModal
@@ -609,9 +609,9 @@ export function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, servic
             try {
               await api.put(`/network-interfaces/${localEditInterface.id}`, data);
               await store.reloadVMs();
-              setLocalEditInterface(null);
+              return true;
             } catch {
-              alert('Не удалось сохранить интерфейс');
+              return false; // п.5: ошибка — окно остаётся открытым с инлайн-подсказкой
             }
           }}
         />
@@ -620,7 +620,7 @@ export function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, servic
         <EditServiceModal
           service={localEditService}
           onClose={() => setLocalEditService(null)}
-          onSave={(data: any) => { void store.updateService(localEditService.id, data); setLocalEditService(null); }}
+          onSave={async (data: any) => { const ok = await store.updateService(localEditService.id, data); return ok !== false; }}
         />
       )}
     </>
@@ -746,7 +746,36 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
 
 function AddInterfaceModal({ onClose, onSave }: any) {
   const [formData, setFormData] = useState({ name: 'eth0', macAddress: '', ipAddress: '', isPublic: false, notes: '' });
-  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
+  // п.5: внутренняя проверка обязательных полей + закрытие окна только при
+  // реальном сохранении сущности; при ошибке — инлайн-подсказка в общем стиле.
+  const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const nameErr = submitted && !String(formData.name ?? '').trim() ? 'Укажите название — без него запись не найдётся в реестре.' : null;
+  const macErr = 'macAddress' in formData && submitted && !String(formData.macAddress ?? '').trim() ? 'Укажите MAC-адрес интерфейса.' : null;
+  const ipErr = 'ipAddress' in formData && submitted && !String(formData.ipAddress ?? '').trim() ? 'Укажите IP-адрес интерфейса.' : null;
+  const missing = [nameErr, macErr, ipErr].filter(Boolean) as string[];
+  const darkCls = 'w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500';
+  const errCls = 'w-full px-3 py-2 border border-red-400 dark:border-red-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-red-400 outline-none placeholder-gray-500';
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitted(true);
+    setSaveError(null);
+    if (missing.length > 0) return; // окно остаётся открытым, показаны подсказки
+    setSaving(true);
+    try {
+      const ok = await onSave(formData);
+      if (ok === false) {
+        setSaveError('Не удалось сохранить: сервер отклонил запрос. Окно осталось открытым — введённые данные сохранены в форме.');
+        return;
+      }
+      onClose();
+    } catch {
+      setSaveError('Ошибка соединения. Изменения НЕ сохранены — попробуйте ещё раз.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="modal-root fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -756,14 +785,19 @@ function AddInterfaceModal({ onClose, onSave }: any) {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-300"><X className="w-6 h-6" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div><label className="block text-sm font-medium text-gray-300 mb-1">Имя интерфейса *</label><input type="text" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" required placeholder="eth0" /></div>
-          <div><label className="block text-sm font-medium text-gray-300 mb-1">MAC-адрес *</label><input type="text" value={formData.macAddress} onChange={(e) => setFormData(p => ({ ...p, macAddress: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" required placeholder="00:50:56:A1:01:01" /></div>
-          <div><label className="block text-sm font-medium text-gray-300 mb-1">IP-адрес *</label><input type="text" value={formData.ipAddress} onChange={(e) => setFormData(p => ({ ...p, ipAddress: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" required placeholder="10.0.2.10 или 203.0.113.10" /></div>
+          <div><label className="block text-sm font-medium text-gray-300 mb-1">Имя интерфейса *</label><input type="text" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} className={nameErr ? errCls : darkCls} placeholder="eth0" />{nameErr && <p className="text-xs text-red-400 mt-1">{nameErr}</p>}</div>
+          <div><label className="block text-sm font-medium text-gray-300 mb-1">MAC-адрес *</label><input type="text" value={formData.macAddress} onChange={(e) => setFormData(p => ({ ...p, macAddress: e.target.value }))} className={macErr ? errCls : darkCls} placeholder="00:50:56:A1:01:01" />{macErr && <p className="text-xs text-red-400 mt-1">{macErr}</p>}</div>
+          <div><label className="block text-sm font-medium text-gray-300 mb-1">IP-адрес *</label><input type="text" value={formData.ipAddress} onChange={(e) => setFormData(p => ({ ...p, ipAddress: e.target.value }))} className={ipErr ? errCls : darkCls} placeholder="10.0.2.10 или 203.0.113.10" />{ipErr && <p className="text-xs text-red-400 mt-1">{ipErr}</p>}</div>
           <div className="flex items-center gap-2"><input type="checkbox" id="isPublic" checked={formData.isPublic} onChange={(e) => setFormData(p => ({ ...p, isPublic: e.target.checked }))} className="w-4 h-4 text-indigo-600 rounded" /><label htmlFor="isPublic" className="text-sm text-gray-300">Белый (публичный) IP-адрес</label></div>
           <div><label className="block text-sm font-medium text-gray-300 mb-1">Примечания</label><textarea value={formData.notes} onChange={(e) => setFormData(p => ({ ...p, notes: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" rows={2} /></div>
+          {(saveError || missing.length > 0) && submitted && (
+            <div className="rounded-lg border border-red-400/60 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+              {saveError ?? ('Не заполнены обязательные поля: ' + missing.join(' '))}
+            </div>
+          )}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-700">
-            <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-700">Отмена</button>
-            <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Добавить</button>
+            <button type="button" onClick={onClose} disabled={saving} className="px-5 py-2.5 border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-700 disabled:opacity-50">Отмена</button>
+            <button type="submit" disabled={saving} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed">{saving ? 'Сохранение…' : 'Добавить'}</button>
           </div>
         </form>
       </div>
@@ -779,7 +813,36 @@ function EditInterfaceModal({ interface: iface, onClose, onSave }: any) {
     isPublic: iface?.isPublic || false, 
     notes: iface?.notes || '' 
   });
-  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
+  // п.5: внутренняя проверка обязательных полей + закрытие окна только при
+  // реальном сохранении сущности; при ошибке — инлайн-подсказка в общем стиле.
+  const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const nameErr = submitted && !String(formData.name ?? '').trim() ? 'Укажите название — без него запись не найдётся в реестре.' : null;
+  const macErr = 'macAddress' in formData && submitted && !String(formData.macAddress ?? '').trim() ? 'Укажите MAC-адрес интерфейса.' : null;
+  const ipErr = 'ipAddress' in formData && submitted && !String(formData.ipAddress ?? '').trim() ? 'Укажите IP-адрес интерфейса.' : null;
+  const missing = [nameErr, macErr, ipErr].filter(Boolean) as string[];
+  const darkCls = 'w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500';
+  const errCls = 'w-full px-3 py-2 border border-red-400 dark:border-red-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-red-400 outline-none placeholder-gray-500';
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitted(true);
+    setSaveError(null);
+    if (missing.length > 0) return; // окно остаётся открытым, показаны подсказки
+    setSaving(true);
+    try {
+      const ok = await onSave(formData);
+      if (ok === false) {
+        setSaveError('Не удалось сохранить: сервер отклонил запрос. Окно осталось открытым — введённые данные сохранены в форме.');
+        return;
+      }
+      onClose();
+    } catch {
+      setSaveError('Ошибка соединения. Изменения НЕ сохранены — попробуйте ещё раз.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="modal-root fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -789,14 +852,19 @@ function EditInterfaceModal({ interface: iface, onClose, onSave }: any) {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-300"><X className="w-6 h-6" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div><label className="block text-sm font-medium text-gray-300 mb-1">Имя интерфейса *</label><input type="text" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" required placeholder="eth0" /></div>
-          <div><label className="block text-sm font-medium text-gray-300 mb-1">MAC-адрес *</label><input type="text" value={formData.macAddress} onChange={(e) => setFormData(p => ({ ...p, macAddress: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" required placeholder="00:50:56:A1:01:01" /></div>
-          <div><label className="block text-sm font-medium text-gray-300 mb-1">IP-адрес *</label><input type="text" value={formData.ipAddress} onChange={(e) => setFormData(p => ({ ...p, ipAddress: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" required placeholder="10.0.2.10 или 203.0.113.10" /></div>
+          <div><label className="block text-sm font-medium text-gray-300 mb-1">Имя интерфейса *</label><input type="text" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} className={nameErr ? errCls : darkCls} placeholder="eth0" />{nameErr && <p className="text-xs text-red-400 mt-1">{nameErr}</p>}</div>
+          <div><label className="block text-sm font-medium text-gray-300 mb-1">MAC-адрес *</label><input type="text" value={formData.macAddress} onChange={(e) => setFormData(p => ({ ...p, macAddress: e.target.value }))} className={macErr ? errCls : darkCls} placeholder="00:50:56:A1:01:01" />{macErr && <p className="text-xs text-red-400 mt-1">{macErr}</p>}</div>
+          <div><label className="block text-sm font-medium text-gray-300 mb-1">IP-адрес *</label><input type="text" value={formData.ipAddress} onChange={(e) => setFormData(p => ({ ...p, ipAddress: e.target.value }))} className={ipErr ? errCls : darkCls} placeholder="10.0.2.10 или 203.0.113.10" />{ipErr && <p className="text-xs text-red-400 mt-1">{ipErr}</p>}</div>
           <div className="flex items-center gap-2"><input type="checkbox" id="isPublicEdit" checked={formData.isPublic} onChange={(e) => setFormData(p => ({ ...p, isPublic: e.target.checked }))} className="w-4 h-4 text-indigo-600 rounded" /><label htmlFor="isPublicEdit" className="text-sm text-gray-300">Белый (публичный) IP-адрес</label></div>
           <div><label className="block text-sm font-medium text-gray-300 mb-1">Примечания</label><textarea value={formData.notes} onChange={(e) => setFormData(p => ({ ...p, notes: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" rows={2} /></div>
+          {(saveError || missing.length > 0) && submitted && (
+            <div className="rounded-lg border border-red-400/60 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+              {saveError ?? ('Не заполнены обязательные поля: ' + missing.join(' '))}
+            </div>
+          )}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-700">
-            <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-700">Отмена</button>
-            <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Сохранить</button>
+            <button type="button" onClick={onClose} disabled={saving} className="px-5 py-2.5 border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-700 disabled:opacity-50">Отмена</button>
+            <button type="submit" disabled={saving} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed">{saving ? 'Сохранение…' : 'Сохранить'}</button>
           </div>
         </form>
       </div>
@@ -812,7 +880,36 @@ function EditServiceModal({ service: svc, onClose, onSave }: any) {
     description: svc?.description || '', 
     status: svc?.status || 'active' as const 
   });
-  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
+  // п.5: внутренняя проверка обязательных полей + закрытие окна только при
+  // реальном сохранении сущности; при ошибке — инлайн-подсказка в общем стиле.
+  const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const nameErr = submitted && !String(formData.name ?? '').trim() ? 'Укажите название — без него запись не найдётся в реестре.' : null;
+  const macErr = 'macAddress' in formData && submitted && !String(formData.macAddress ?? '').trim() ? 'Укажите MAC-адрес интерфейса.' : null;
+  const ipErr = 'ipAddress' in formData && submitted && !String(formData.ipAddress ?? '').trim() ? 'Укажите IP-адрес интерфейса.' : null;
+  const missing = [nameErr, macErr, ipErr].filter(Boolean) as string[];
+  const darkCls = 'w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500';
+  const errCls = 'w-full px-3 py-2 border border-red-400 dark:border-red-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-red-400 outline-none placeholder-gray-500';
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitted(true);
+    setSaveError(null);
+    if (missing.length > 0) return; // окно остаётся открытым, показаны подсказки
+    setSaving(true);
+    try {
+      const ok = await onSave(formData);
+      if (ok === false) {
+        setSaveError('Не удалось сохранить: сервер отклонил запрос. Окно осталось открытым — введённые данные сохранены в форме.');
+        return;
+      }
+      onClose();
+    } catch {
+      setSaveError('Ошибка соединения. Изменения НЕ сохранены — попробуйте ещё раз.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="modal-root fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -822,7 +919,7 @@ function EditServiceModal({ service: svc, onClose, onSave }: any) {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-300"><X className="w-6 h-6" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div><label className="block text-sm font-medium text-gray-300 mb-1">Название *</label><input type="text" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" required placeholder="Nginx" /></div>
+          <div><label className="block text-sm font-medium text-gray-300 mb-1">Название *</label><input type="text" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} className={nameErr ? errCls : darkCls} placeholder="Nginx" />{nameErr && <p className="text-xs text-red-400 mt-1">{nameErr}</p>}</div>
           <div><label className="block text-sm font-medium text-gray-300 mb-1">Версия</label><input type="text" value={formData.version} onChange={(e) => setFormData(p => ({ ...p, version: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" placeholder="1.24.0" /></div>
           <div><label className="block text-sm font-medium text-gray-300 mb-1">Порт(ы)</label><input type="text" inputMode="numeric" title="Номера портов через запятую, например: 80, 443" value={formData.port ?? ''} onChange={(e) => setFormData(p => ({ ...p, port: e.target.value.trim() === '' ? null : e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" placeholder="80, 443" /></div>
           <div><label className="block text-sm font-medium text-gray-300 mb-1">Статус</label>
@@ -833,9 +930,14 @@ function EditServiceModal({ service: svc, onClose, onSave }: any) {
             </select>
           </div>
           <div><label className="block text-sm font-medium text-gray-300 mb-1">Описание</label><textarea value={formData.description} onChange={(e) => setFormData(p => ({ ...p, description: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" rows={2} /></div>
+          {(saveError || missing.length > 0) && submitted && (
+            <div className="rounded-lg border border-red-400/60 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+              {saveError ?? ('Не заполнены обязательные поля: ' + missing.join(' '))}
+            </div>
+          )}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-700">
-            <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-700">Отмена</button>
-            <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Сохранить</button>
+            <button type="button" onClick={onClose} disabled={saving} className="px-5 py-2.5 border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-700 disabled:opacity-50">Отмена</button>
+            <button type="submit" disabled={saving} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed">{saving ? 'Сохранение…' : 'Сохранить'}</button>
           </div>
         </form>
       </div>
@@ -845,7 +947,36 @@ function EditServiceModal({ service: svc, onClose, onSave }: any) {
 
 function AddServiceModal({ onClose, onSave }: any) {
   const [formData, setFormData] = useState({ name: '', version: '', port: null as string | null, description: '', status: 'active' as const });
-  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
+  // п.5: внутренняя проверка обязательных полей + закрытие окна только при
+  // реальном сохранении сущности; при ошибке — инлайн-подсказка в общем стиле.
+  const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const nameErr = submitted && !String(formData.name ?? '').trim() ? 'Укажите название — без него запись не найдётся в реестре.' : null;
+  const macErr = 'macAddress' in formData && submitted && !String(formData.macAddress ?? '').trim() ? 'Укажите MAC-адрес интерфейса.' : null;
+  const ipErr = 'ipAddress' in formData && submitted && !String(formData.ipAddress ?? '').trim() ? 'Укажите IP-адрес интерфейса.' : null;
+  const missing = [nameErr, macErr, ipErr].filter(Boolean) as string[];
+  const darkCls = 'w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500';
+  const errCls = 'w-full px-3 py-2 border border-red-400 dark:border-red-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-red-400 outline-none placeholder-gray-500';
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitted(true);
+    setSaveError(null);
+    if (missing.length > 0) return; // окно остаётся открытым, показаны подсказки
+    setSaving(true);
+    try {
+      const ok = await onSave(formData);
+      if (ok === false) {
+        setSaveError('Не удалось сохранить: сервер отклонил запрос. Окно осталось открытым — введённые данные сохранены в форме.');
+        return;
+      }
+      onClose();
+    } catch {
+      setSaveError('Ошибка соединения. Изменения НЕ сохранены — попробуйте ещё раз.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="modal-root fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -855,13 +986,18 @@ function AddServiceModal({ onClose, onSave }: any) {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-300"><X className="w-6 h-6" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div><label className="block text-sm font-medium text-gray-300 mb-1">Название *</label><input type="text" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" required placeholder="Nginx" /></div>
+          <div><label className="block text-sm font-medium text-gray-300 mb-1">Название *</label><input type="text" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} className={nameErr ? errCls : darkCls} placeholder="Nginx" />{nameErr && <p className="text-xs text-red-400 mt-1">{nameErr}</p>}</div>
           <div><label className="block text-sm font-medium text-gray-300 mb-1">Версия</label><input type="text" value={formData.version} onChange={(e) => setFormData(p => ({ ...p, version: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" placeholder="1.24.0" /></div>
           <div><label className="block text-sm font-medium text-gray-300 mb-1">Порт(ы)</label><input type="text" inputMode="numeric" title="Номера портов через запятую, например: 80, 443" value={formData.port ?? ''} onChange={(e) => setFormData(p => ({ ...p, port: e.target.value.trim() === '' ? null : e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" placeholder="80, 443" /></div>
           <div><label className="block text-sm font-medium text-gray-300 mb-1">Описание</label><textarea value={formData.description} onChange={(e) => setFormData(p => ({ ...p, description: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder-gray-500" rows={2} /></div>
+          {(saveError || missing.length > 0) && submitted && (
+            <div className="rounded-lg border border-red-400/60 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+              {saveError ?? ('Не заполнены обязательные поля: ' + missing.join(' '))}
+            </div>
+          )}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-700">
-            <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-700">Отмена</button>
-            <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Добавить</button>
+            <button type="button" onClick={onClose} disabled={saving} className="px-5 py-2.5 border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-700 disabled:opacity-50">Отмена</button>
+            <button type="submit" disabled={saving} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed">{saving ? 'Сохранение…' : 'Добавить'}</button>
           </div>
         </form>
       </div>
