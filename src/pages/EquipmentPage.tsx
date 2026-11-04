@@ -359,7 +359,7 @@ function EquipmentModal({
   equipment: Equipment | null;
   branches: { id: string; name: string }[];
   onClose: () => void;
-  onSave: (data: Partial<Equipment>) => void;
+  onSave: (data: Partial<Equipment>) => Promise<boolean>;
 }) {
   const [formData, setFormData] = useState<Partial<Equipment>>(
     equipment || {
@@ -368,20 +368,36 @@ function EquipmentModal({
       condition: DEFAULT_EQUIPMENT_STATUS, defectNote: '', assignedToEmployeeId: null, materiallyResponsibleEmployeeId: null, branchId: '', floor: '', room: '', notes: '',
     }
   );
+  // Внутренняя валидация модалки: подсветка обязательных полей + баннер ошибок
+  const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const vErr = (f: string) => submitted && !String(formData[f as keyof Equipment] ?? '').trim();
+  const vCls = (f: string) => `w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 ${vErr(f) ? 'border-red-400 dark:border-red-600 focus:ring-red-400' : 'border-gray-200 dark:border-gray-600 focus:ring-indigo-500'}`;
+  const vHint = (f: string, msg: string) => vErr(f) ? <p className="text-xs text-red-500 mt-1">{msg}</p> : null;
 
   // Кластер — логическая сущность (совокупность оборудования и консоли управления):
   // у него нет МОЛ, инвентарного и серийного номера. Поля скрываем и обнуляем.
   const isClusterEdit = (equipment as any)?.serverRole === 'cluster';
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Статус «Эксплуатация с ограничениями» требует дефект/причину ограничений.
-    if (statusRequiresDefect(formData.condition) && !String(formData.defectNote ?? '').trim()) {
-      alert('Укажите дефект или причину ограничений для статуса «Эксплуатация с ограничениями»');
-      return;
-    }
+    if (saving) return;
+    // Косяк из примера пользователя: «Создать» закрывал окно без сохранения.
+    // Теперь: внутренняя проверка обязательных полей + await сохранения,
+    // закрытие — только если сущность реально создана/обновлена (см. onSave в родителе).
+    const missing: string[] = [];
+    if (!formData.name.trim()) missing.push('Наименование');
+    if (!isClusterEdit && !formData.serialNumber.trim()) missing.push('Серийный номер');
+    if (!isClusterEdit && !formData.inventoryNumber.trim()) missing.push('Инвентарный номер');
+    if (statusRequiresDefect(formData.condition) && !String(formData.defectNote ?? '').trim()) missing.push('Дефект / причина ограничений');
+    if (missing.length > 0) { setSubmitted(true); return; } // окно остаётся открытым с подсветкой полей
+    setSubmitted(false);
+    setSaving(true);
     // Кластер — логическая сущность: МОЛ/инвентарные поля ему не принадлежат
-    onSave(isClusterEdit ? { ...formData, materiallyResponsibleEmployeeId: null } : formData);
+    const ok = await onSave(isClusterEdit ? { ...formData, materiallyResponsibleEmployeeId: null } : formData);
+    setSaving(false);
+    if (ok === false) setSaveError('Сервер отклонил сохранение — проверьте уникальность серийного/инвентарного номеров и попробуйте снова.');
   };
 
   const handleChange = (field: string, value: string | null) => {
@@ -497,13 +513,10 @@ export function EquipmentModalWrapper({ equipment, onClose }: { equipment: Equip
       equipment={equipment}
       branches={branches}
       onClose={onClose}
-      onSave={(data: any) => {
-        if (equipment) {
-          updateEquipment(equipment.id, data);
-        } else {
-          addEquipment(data);
-        }
-        onClose();
+      onSave={async (data: any) => {
+        // Дожидаемся реального результата сохранения: модалка закрывается
+        // ТОЛЬКО если сущность создана/обновлена на сервере.
+        return equipment ? await updateEquipment(equipment.id, data) : await addEquipment(data);
       }}
     />
   );
