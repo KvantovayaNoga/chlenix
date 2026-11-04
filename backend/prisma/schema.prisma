@@ -613,15 +613,15 @@ model Organization {
   phone                String?
   email                String?
   website              String?
-  directorName         String?  @map("director_name")
-  directorPosition     String?  @map("director_position")
+  // Руководитель организации — карточка сотрудника штатного расписания
+  // (ранее были текстовые поля directorName/directorPosition — вычищены)
+  directorEmployeeId   String?  @unique @map("director_employee_id")
   accountantName       String?  @map("accountant_name")
   bankName             String?  @map("bank_name")
   checkingAccount      String?  @map("checking_account")
   correspondentAccount String?  @map("correspondent_account")
   bik                  String?
   taxSystem            String?  @map("tax_system")
-  industry             String?
   employeeCount        Int?     @map("employee_count")
   foundedDate          String?  @map("founded_date")
   logo                 String?  @db.Text
@@ -635,6 +635,7 @@ model Organization {
   memberships     UserOrganization[]
   joinRequests    JoinRequest[]
   employees       Employee[]
+  director        Employee?          @relation("OrganizationDirector", fields: [directorEmployeeId], references: [id])
   equipment       Equipment[]
   virtualMachines VirtualMachine[]
 
