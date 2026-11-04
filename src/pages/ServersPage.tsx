@@ -15,6 +15,7 @@ import { EmployeeSearch } from '../components/EmployeeSearch';
 import { FilterManager, SavedFilter } from '../components/FilterManager';
 import { FullHistoryModal, useEntityHistory } from '../components/HistoryLog';
 import { formatDateTime } from '../utils/formatDate';
+import { findClusterWithoutConsole } from '../utils/virtualization';
 
 // История изменений ВМ: подгружается с сервера (GET /virtual-machines/:id/history)
 // через useEntityHistory и мгновенно обновляется после любого сохранения —
@@ -160,6 +161,12 @@ export function ServersPage() {
   );
   // Отдельные сущности-кластеры (для опционального поля «Кластер» у ВМ)
   const activeEmployees = employees.filter(e => e.isEmployed);
+  // Кластер без консоли управления (для чекбокса «Консоль управления гипервизором»):
+  // если такой кластер существует, ВМ-консоль автоматически привязывается к нему.
+  const consoleCluster = useMemo(
+    () => findClusterWithoutConsole(equipment, virtualMachines, editingVM?.id ?? null),
+    [equipment, virtualMachines, editingVM],
+  );
 
   const filteredVMs = useMemo(() => {
     return virtualMachines.filter(vm => {
@@ -336,8 +343,9 @@ export function ServersPage() {
                     {canManageServers() && (
                       <button onClick={() => setEditingVM(vm)} className="text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30"><Edit className="w-4 h-4" /></button>
                     )}
-                    {/* История изменений ВМ доступна всем, кто видит карточку (как и просмотр самой ВМ по клику) */}
-                    <button onClick={() => setSelectedVM(vm)} className="text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30" title="История изменений"><History className="w-4 h-4" /></button>
+                    {/* История изменений ВМ доступна всем, кто видит карточку (как и просмотр самой ВМ по клику).
+                        Исправление: кнопка открывает именно историю (FullHistoryModal), а не карточку ВМ. */}
+                    <button onClick={() => setHistoryVM({ id: vm.id, name: vm.name })} className="text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30" title="История изменений"><History className="w-4 h-4" /></button>
                     {/* Удаление ВМ на бэкенде разрешено admin и sysadmin (SERVER_ROLES) */}
                     {canManageServers() && (
                       <button onClick={() => { if (confirm('Удалить ВМ?')) deleteVM(vm.id); }} className="text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30"><Trash2 className="w-4 h-4" /></button>
@@ -351,7 +359,6 @@ export function ServersPage() {
                 <div><span className="text-gray-600 dark:text-gray-400 text-xs">Ресурсы:</span><p className="font-medium text-gray-700 dark:text-gray-200">{vm.cpuCores} CPU / {vm.ramGB} ГБ / {vm.diskGB} ГБ</p></div>
                 <div><span className="text-gray-600 dark:text-gray-400 text-xs">Ответ. (инфра):</span><p className="font-medium text-gray-700 dark:text-gray-200">{getEmployeeName(vm.responsibleEmployeeId)}</p></div>
                 <div><span className="text-gray-600 dark:text-gray-400 text-xs">Ответ. (сервисы):</span><p className="font-medium text-gray-700 dark:text-gray-200">{getEmployeeName(vm.serviceResponsibleEmployeeId)}</p></div>
-                <div title="Материально ответственное лицо — сотрудник, на подотчёте которого числится ВМ"><span className="text-gray-600 dark:text-gray-400 text-xs">МОЛ:</span><p className="font-medium text-gray-700 dark:text-gray-200">{(() => { const m: any = (vm as any).materiallyResponsibleEmployee; if (m) return [m.lastName, m.firstName].filter(Boolean).join(' '); const mid = (vm as any).materiallyResponsibleEmployeeId; return mid ? getEmployeeName(mid) : '—'; })()}</p></div>
               </div>
               {/* Network Interfaces */}
               <div className="flex flex-wrap gap-2 mb-2">
@@ -429,6 +436,8 @@ export function ServersPage() {
           }}
           servers={hypervisorHosts}
           employees={activeEmployees}
+          equipment={equipment}
+          virtualMachines={virtualMachines}
           saveError={error}
         />
       )}
@@ -471,7 +480,26 @@ export function ServersPage() {
           }}
         />
       )}
+
+      {/* Полная история изменений ВМ — открывается КНОПКОЙ «История изменений»
+          на карточке ВМ (раньше кнопка ошибочно открывала саму карточку ВМ).
+          История подгружается с сервера (GET /virtual-machines/:id/history)
+          через useEntityHistory; модалка не блокирует прокрутку фона
+          (см. useLockBodyScroll), поэтому интерфейс за ней не «ломается». */}
+      {historyVM && <VMHistoryModal vmId={historyVM.id} vmName={historyVM.name} onClose={() => setHistoryVM(null)} />}
     </div>
+  );
+}
+
+// Обёртка полной истории ВМ для кнопки на карточке: данные грузятся с сервера,
+// а не берутся из кэша стора (в списке history всегда пустой массив).
+function VMHistoryModal({ vmId, vmName, onClose }: { vmId: string; vmName: string; onClose: () => void }) {
+  const { history, loading } = useEntityHistory(`/virtual-machines/${vmId}/history`);
+  return (
+    <>
+      <FullHistoryModal history={history} title={`История изменений: ${vmName}`} onClose={onClose} />
+      {loading && history.length === 0 && <p className="sr-only">Загрузка истории…</p>}
+    </>
   );
 }
 
@@ -529,7 +557,6 @@ export function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, servic
           <div className="grid grid-cols-2 gap-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
             <div><p className="text-xs text-gray-400 mb-1">Ответственный (инфраструктура)</p><p className="font-medium text-gray-200">{getEmployeeName(vm.responsibleEmployeeId)}</p></div>
             <div><p className="text-xs text-gray-400 mb-1">Ответственный (сервисы/middleware)</p><p className="font-medium text-gray-200">{getEmployeeName(vm.serviceResponsibleEmployeeId)}</p></div>
-            <div title="Материально ответственное лицо — сотрудник, на подотчёте которого числится ВМ"><p className="text-xs text-gray-400 mb-1">МОЛ (мат. ответственное лицо)</p><p className="font-medium text-gray-200">{(() => { const m: any = (vm as any).materiallyResponsibleEmployee; if (m) return [m.lastName, m.firstName].filter(Boolean).join(' '); const mid = (vm as any).materiallyResponsibleEmployeeId; return mid ? getEmployeeName(mid) : '—'; })()}</p></div>
           </div>
 
           <div>
