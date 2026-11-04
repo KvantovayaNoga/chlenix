@@ -3,7 +3,7 @@ import { useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { useDataStore } from '../store/dataStore';
 import { api } from '../api/client';
-import { HistoryLog, FullHistoryModal, useEntityHistory } from '../components/HistoryLog';
+import { FullHistoryModal, useEntityHistory } from '../components/HistoryLog';
 import {
   Building2,
   Pencil,
@@ -22,6 +22,7 @@ import {
   Wallet,
   BadgeCheck,
   Briefcase,
+  History,
 } from 'lucide-react';
 import type { Organization, OrganizationLegalForm } from '../types';
 
@@ -175,6 +176,8 @@ export function OrganizationPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Модалка полной истории изменений организации (открывается кнопкой в шапке)
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   if (!organization) {
     // Данные ещё не подгрузились (стартап/обновление страницы F5) — не показываем
@@ -205,6 +208,10 @@ export function OrganizationPage() {
   }
 
   const memberCount = users.filter((u) => u.organizationId === organization.id).length || 1;
+
+  // История изменений организации подгружается с сервера (GET /organizations/:id/history)
+  // через useEntityHistory и мгновенно обновляется после любого сохранения.
+  const { history: orgHistory } = useEntityHistory(`/organizations/${organization.id}/history`);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-10">
@@ -274,7 +281,18 @@ export function OrganizationPage() {
               )}
             </div>
             {!isEditing && (
-              <div className="flex gap-2 flex-shrink-0">
+              <div className="flex gap-2 flex-shrink-0 items-center">
+                {/* История изменений: небольшая квадратная кнопка с закруглёнными
+                    углами в общем стиле проекта, слева от «Редактировать».
+                    Клик открывает модалку полной истории (снизу вверх, как везде). */}
+                <button
+                  onClick={() => setHistoryOpen(true)}
+                  className="flex items-center justify-center w-9 h-9 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all"
+                  title="История изменений"
+                  aria-label="История изменений"
+                >
+                  <History className="w-4 h-4" />
+                </button>
                 {/* Права синхронизированы с бэкендом: редактирование организации — admin (PUT /api/organizations/:id).
                     Решение от 2026-11: МОЛ, системный администратор и пользователь организацию не редактируют. */}
                 {canEditOrganization() && (
@@ -451,38 +469,22 @@ export function OrganizationPage() {
             </div>
           )}
 
-          {/* Блок «История изменений»: сам компонент HistoryLog полностью
-              кликабелен и открывает модалку полной истории — дополнительная
-              обёртка с заголовком не нужна. */}
-          <OrganizationHistory orgId={organization.id} />
+          {/* Блок «История изменений» внизу карточки убран по требованию UI:
+              полная история открывается квадратной кнопкой с иконкой History
+              в шапке карточки (слева от «Редактировать») — см. FullHistoryModal ниже. */}
         </>
       )}
-    </div>
-  );
-}
 
-// История изменений организации подгружается с сервера (GET /organizations/:id/history)
-// через useEntityHistory и мгновенно обновляется после любого сохранения.
-// Блок полностью кликабелен: клик открывает модалку ПОЛНОЙ истории (сверху вниз).
-function OrganizationHistory({ orgId }: { orgId: string }) {
-  const { history, loading } = useEntityHistory(`/organizations/${orgId}/history`);
-  const [fullOpen, setFullOpen] = useState(false);
-  if (loading && history.length === 0) return <p className="text-gray-500 dark:text-gray-400 text-sm">Загрузка истории…</p>;
-  return (
-    <>
-      <HistoryLog
-        history={history}
-        entityKey={`org:${orgId}`}
-        controlledFull={fullOpen}
-        onOpenFull={() => setFullOpen(true)}
-        onCloseFull={() => setFullOpen(false)}
-      />
-      {/* Модалка полной истории рендерится здесь, чтобы гарантированно
-          перекрывать контент страницы (z-index поверх всех блоков). */}
-      {fullOpen && (
-        <FullHistoryModal history={history} onClose={() => setFullOpen(false)} />
+      {/* Модалка полной истории изменений организации — открывается кнопкой в шапке.
+          Рендерится на уровне страницы, чтобы гарантированно перекрывать контент (z-[70]). */}
+      {historyOpen && (
+        <FullHistoryModal
+          history={orgHistory}
+          title={`История изменений: ${organization.shortName || organization.name}`}
+          onClose={() => setHistoryOpen(false)}
+        />
       )}
-    </>
+    </div>
   );
 }
 
