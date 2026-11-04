@@ -361,6 +361,8 @@ function EquipmentModal({
   onClose: () => void;
   onSave: (data: Partial<Equipment>) => Promise<boolean>;
 }) {
+  // Текст ошибки сервера (уникальность номеров и т.п.) — показываем баннером в модалке
+  const storeError = useDataStore((s) => s.error);
   const [formData, setFormData] = useState<Partial<Equipment>>(
     equipment || {
       name: '', category: 'computer', serialNumber: '', inventoryNumber: '',
@@ -380,6 +382,8 @@ function EquipmentModal({
   // у него нет МОЛ, инвентарного и серийного номера. Поля скрываем и обнуляем.
   const isClusterEdit = (equipment as any)?.serverRole === 'cluster';
 
+  const needsDefect = statusRequiresDefect(formData.condition);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saving) return;
@@ -387,17 +391,19 @@ function EquipmentModal({
     // Теперь: внутренняя проверка обязательных полей + await сохранения,
     // закрытие — только если сущность реально создана/обновлена (см. onSave в родителе).
     const missing: string[] = [];
-    if (!formData.name.trim()) missing.push('Наименование');
-    if (!isClusterEdit && !formData.serialNumber.trim()) missing.push('Серийный номер');
-    if (!isClusterEdit && !formData.inventoryNumber.trim()) missing.push('Инвентарный номер');
-    if (statusRequiresDefect(formData.condition) && !String(formData.defectNote ?? '').trim()) missing.push('Дефект / причина ограничений');
+    if (!formData.name?.trim()) missing.push('Наименование');
+    if (!isClusterEdit && !formData.serialNumber?.trim()) missing.push('Серийный номер');
+    if (!isClusterEdit && !formData.inventoryNumber?.trim()) missing.push('Инвентарный номер');
+    if (needsDefect && !String(formData.defectNote ?? '').trim()) missing.push('Дефект / причина ограничений');
     if (missing.length > 0) { setSubmitted(true); return; } // окно остаётся открытым с подсветкой полей
     setSubmitted(false);
     setSaving(true);
+    setSaveError(null);
     // Кластер — логическая сущность: МОЛ/инвентарные поля ему не принадлежат
     const ok = await onSave(isClusterEdit ? { ...formData, materiallyResponsibleEmployeeId: null } : formData);
     setSaving(false);
-    if (ok === false) setSaveError('Сервер отклонил сохранение — проверьте уникальность серийного/инвентарного номеров и попробуйте снова.');
+    // ok === false — сервер НЕ создал/не обновил сущность: окно остаётся открытым
+    if (ok === false) setSaveError(storeError || 'Не удалось сохранить оборудование: сервер отклонил запрос. Проверьте уникальность серийного/инвентарного номеров и доступ к организации. Окно осталось открытым — введённые данные сохранены в форме.');
   };
 
   const handleChange = (field: string, value: string | null) => {
@@ -415,7 +421,8 @@ function EquipmentModal({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Наименование *</label>
-              <input type="text" value={formData.name || ''} onChange={(e) => handleChange('name', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required />
+              <input type="text" value={formData.name || ''} onChange={(e) => handleChange('name', e.target.value)} className={vCls('name')} />
+              {vHint('name', 'Укажите наименование оборудования — без него карточка не создаётся.')}
             </div>
             <div className="md:col-span-2">
               <EmployeeSearch
@@ -448,19 +455,22 @@ function EquipmentModal({
                 {Object.entries(activeStatusLabels).map(([key, { label }]) => (<option key={key} value={key}>{label}</option>))}
               </select>
             </div>
-            {statusRequiresDefect(formData.condition) && (
+            {needsDefect && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Дефект / причина ограничений *</label>
-                <textarea value={formData.defectNote || ''} onChange={(e) => handleChange('defectNote', e.target.value)} rows={2} className="w-full px-3 py-2 border border-yellow-300 dark:border-yellow-600 rounded-lg focus:ring-2 focus:ring-yellow-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Обязательно при статусе «Эксплуатация с ограничениями»" />
+                <textarea value={formData.defectNote || ''} onChange={(e) => handleChange('defectNote', e.target.value)} rows={2} className={`w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 ${vErr('defectNote') ? 'border-red-400 dark:border-red-600 focus:ring-red-400' : 'border-yellow-300 dark:border-yellow-600 focus:ring-yellow-500'}`} placeholder="Обязательно при статусе «Эксплуатация с ограничениями»" />
+                {vHint('defectNote', 'Для статуса «Эксплуатация с ограничениями» обязательно укажите дефект или причину ограничений.')}
               </div>
             )}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Серийный номер *</label>
-              <input type="text" value={formData.serialNumber || ''} onChange={(e) => handleChange('serialNumber', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required placeholder="Уникальный серийный номер" />
+              <input type="text" value={formData.serialNumber || ''} onChange={(e) => handleChange('serialNumber', e.target.value)} className={vCls('serialNumber')} placeholder="Уникальный серийный номер" />
+              {vHint('serialNumber', 'Укажите серийный номер — он уникален и участвует в поиске инвентаря.')}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Инвентарный номер *</label>
-              <input type="text" value={formData.inventoryNumber || ''} onChange={(e) => handleChange('inventoryNumber', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" required placeholder="INV-XXX-001" />
+              <input type="text" value={formData.inventoryNumber || ''} onChange={(e) => handleChange('inventoryNumber', e.target.value)} className={vCls('inventoryNumber')} placeholder="INV-XXX-001" />
+              {vHint('inventoryNumber', 'Укажите инвентарный номер — без него объект учёта не создаётся.')}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Бренд</label>
@@ -494,9 +504,27 @@ function EquipmentModal({
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Примечания</label>
             <textarea value={formData.notes || ''} onChange={(e) => handleChange('notes', e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" rows={2} />
           </div>
+          {/* Баннеры: список дозаполняемых полей + ошибка сохранения.
+              Кнопка «Добавить/Сохранить» НЕ закрывает окно, пока сущность реально
+              не создана на сервере (см. handleSubmit/onSave). */}
+          {submitted && (
+            <MissingFieldsBanner
+              missing={[
+                ...(!formData.name?.trim() ? ['Наименование'] : []),
+                ...(!isClusterEdit && !formData.serialNumber?.trim() ? ['Серийный номер'] : []),
+                ...(!isClusterEdit && !formData.inventoryNumber?.trim() ? ['Инвентарный номер'] : []),
+                ...(needsDefect && !String(formData.defectNote ?? '').trim() ? ['Дефект / причина ограничений'] : []),
+              ]}
+            />
+          )}
+          {saveError && (
+            <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+              {saveError}
+            </div>
+          )}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Отмена</button>
-            <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">{equipment ? 'Сохранить' : 'Добавить'}</button>
+            <button type="submit" disabled={saving} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60">{saving ? 'Сохранение…' : equipment ? 'Сохранить' : 'Добавить'}</button>
           </div>
         </form>
       </div>
