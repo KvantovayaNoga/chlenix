@@ -2481,8 +2481,18 @@ async function assertVmHostIsHypervisor(hostServerId: string | null | undefined)
 }
 class VmHostError extends Error {}
 
-/** Кластер (serverRole === 'cluster') не может быть сам помещён внутрь другого кластера.
- *  Хосты кластера (сущности «Хост», тоже роль 'cluster') допускаются как члены:
+/** Родительский объект должен быть кластером-СУЩНОСТЬЮ (serverRole === 'cluster'
+ *  без собственного parentClusterId). Хосты кластера (тоже роль 'cluster', но
+ *  с parentClusterId) родителем быть не могут. */
+async function assertClusterEntity(id: string, what = 'Кластер'): Promise<void> {
+  const cl = await prisma.equipment.findUnique({ where: { id }, select: { serverRole: true, parentClusterId: true } });
+  if (!cl || cl.serverRole !== 'cluster' || cl.parentClusterId) {
+    throw new VmHostError(`${what} должен быть кластером виртуализации (сущностью «Кластер»).`);
+  }
+}
+
+/** Кластер-сущность не может быть помещён внутрь другого кластера; хосты
+ *  кластера (сущности «Хост», тоже роль 'cluster') допускаются как члены:
  *  вложенность запрещена только для кластеров-сущностей (без parentClusterId). */
 async function validateParentCluster(id: string | null | undefined, selfId?: string): Promise<string | null> {
   if (!id || id.trim() === '') return null;
@@ -2492,7 +2502,11 @@ async function validateParentCluster(id: string | null | undefined, selfId?: str
   if (pc.serverRole !== 'cluster') throw new VmHostError('Родительский кластер должен иметь роль «Кластер виртуализации».');
   if (pc.parentClusterId) throw new VmHostError('Вложенность кластеров не поддерживается: выбранный родительский кластер сам входит в другой кластер.');
   if (selfId) {
-    const child = await prisma.equipment.findUnique({ where: { id: selfId }, select: { parentClusterId: true } });
+    const child = await prisma.equipment.findUnique({ where: { id: selfId }, select: { serverRole: true, parentClusterId: true } });
+    // Сущность-кластер не может становиться членом другого кластера
+    if (child && child.serverRole === 'cluster' && !child.parentClusterId) {
+      throw new VmHostError('Кластер-сущность не может входить в другой кластер — внутрь кластера помещаются только хосты, СХД и консоли управления.');
+    }
     // Хост кластера не может становиться родителем этого же кластера — цикл
     if (child && child.parentClusterId === id) throw new VmHostError('Нельзя поместить кластер внутрь его же члена — циклическая вложенность.');
   }
@@ -2612,6 +2626,7 @@ app.post('/api/equipment', authMiddleware, requireRole([...EQUIPMENT_CREATE_ROLE
     delete body.__hostIds;
   }
   const parsed = equipmentSchema.safeParse(body);
+  if (!parsed.success) {
     const first = parsed.error.issues[0];
     return c.json({ error: first?.message && first.message !== 'Invalid input' ? `Некорректные данные оборудования: ${first.message}` : 'Некорректные данные оборудования' }, 400);
   }
