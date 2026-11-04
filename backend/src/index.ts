@@ -76,9 +76,23 @@ process.on('uncaughtException', (err) => {
   log.error('Uncaught exception (process kept alive)', err);
 });
 
+// Ошибка с HTTP-статусом для маршрутов (по умолчанию onError отдаёт 500,
+// но отдельные места хотят вернуть понятный клиенту код и текст).
+class HttpError extends Error {
+  status: number;
+  constructor(message: string, status = 400) {
+    super(message);
+    this.name = 'HttpError';
+    this.status = status;
+  }
+}
+
 // Единая обработка ошибок (не отдаём внутренние детали клиенту)
 app.onError((err, c) => {
   log.error('Unhandled error', err);
+  if (err instanceof HttpError) {
+    return c.json({ error: err.message }, err.status as any);
+  }
   return c.json({ error: 'Внутренняя ошибка сервера' }, 500);
 });
 
@@ -1740,6 +1754,11 @@ async function headFlagsByUserId(userIds: string[]): Promise<Map<string, boolean
   return result;
 }
 
+// ВАЖНО (баг «бесконечное Сохранение…»): схема должна быть строгой — любые
+// лишние поля (например, computed-поля GET /organizations: directorName,
+// directorPosition, createdBy, updatedBy, createdAt, updatedAt) отклоняются с
+// понятной клиентской ошибкой 400 вместо «тихого» падения на Prisma
+// (Unknown argument → unhandled rejection → HTTP-запрос зависает навсегда).
 const organizationSchema = z.object({
   name: z.string().min(2),           // Полное наименование
   legalForm: orgText,          // ОПФ — произвольный текст (вводится руками)
@@ -1767,7 +1786,27 @@ const organizationSchema = z.object({
   foundedDate: orgText,
   logo: z.string().nullable().optional(),
   notes: orgText,
-});
+}).strict();
+
+// Из этих полей формы бэкенд собирает данные для записи в БД. Всё остальное
+// (computed-поля клиента) вырезается до валидации — иначе PUT падал бы 400.
+const ORG_WRITABLE_KEYS = [
+  'name', 'legalForm', 'shortName', 'inn', 'kpp', 'ogrn', 'legalAddress', 'postalCode',
+  'actualAddress', 'city', 'phone', 'email', 'website', 'directorEmployeeId',
+  'accountantName', 'bankName', 'checkingAccount', 'correspondentAccount', 'bik',
+  'taxSystem', 'employeeCount', 'foundedDate', 'logo', 'notes',
+];
+
+/** Возвращает тело запроса, очищенное только от записываемых полей организации. */
+async function readOrgBody(c: any): Promise<any> {
+  const raw = await c.req.json().catch(() => null);
+  if (!raw || typeof raw !== 'object') return null;
+  const out: Record<string, unknown> = {};
+  for (const key of ORG_WRITABLE_KEYS) {
+    if (key in raw) out[key] = (raw as any)[key];
+  }
+  return out;
+}
 
 function publicOrganization(o: any) {
   return {
@@ -1819,9 +1858,10 @@ app.get('/api/organizations/:id/history', authMiddleware, async (c) => {
 });
 
 app.post('/api/organizations', authMiddleware, requireRole(ORG_CREATE_ROLES), async (c) => {
-  const parsed = organizationSchema.safeParse(await c.req.json().catch(() => null));
+  const parsed = organizationSchema.safeParse(await readOrgBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Некорректные данные организации' }, 400);
+    const first = parsed.error.issues[0];
+    return c.json({ error: first?.message ? `Проверьте данные: ${first.message}` : 'Некорректные данные организации' }, 400);
   }
   const currentUser = c.get('user');
 
@@ -1905,9 +1945,12 @@ app.post('/api/organizations', authMiddleware, requireRole(ORG_CREATE_ROLES), as
 
 app.put('/api/organizations/:id', authMiddleware, requireRole(['admin']), async (c) => {
   const { id } = c.req.param();
-  const parsed = organizationSchema.partial().safeParse(await c.req.json().catch(() => null));
+  // Тело формы содержит computed-поля клиента (directorName/directorPosition/
+  // createdBy/createdAt и т.п.) — вырезаем их до строгой валидации.
+  const parsed = organizationSchema.partial().safeParse(await readOrgBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Некорректные данные' }, 400);
+    const first = parsed.error.issues[0];
+    return c.json({ error: first?.message ? `Проверьте данные: ${first.message}` : 'Некорректные данные' }, 400);
   }
   const currentUser = c.get('user');
 
@@ -1931,7 +1974,12 @@ app.put('/api/organizations/:id', authMiddleware, requireRole(['admin']), async 
     directorSynced = true;
   }
 
-  const org = await prisma.organization.update({ where: { id }, data: newData });
+  const org = await prisma.organization.update({ where: { id }, data: newData }).catch((e) => {
+    // Прозрачная ошибка вместо зависания запроса (баг «бесконечное Сохранение…»):
+    // любая rejected-ошибка Prisma превращается в ответ 400 с текстом причины.
+    console.error('PUT /organizations update failed:', e);
+    throw new HttpError(`Не удалось сохранить организацию: ${(e as Error)?.message || 'ошибка базы данных'}`, 400);
+  });
 
   await applyUpdate({
     ctx: currentUser,
@@ -1941,7 +1989,7 @@ app.put('/api/organizations/:id', authMiddleware, requireRole(['admin']), async 
     entityName: org.name,
     oldObj: oldOrg as any,
     newData,
-  });
+  }).catch((e) => console.error('applyUpdate(organization) failed:', e));
 
   const fresh = directorSynced
     ? await prisma.organization.findUnique({ where: { id } })

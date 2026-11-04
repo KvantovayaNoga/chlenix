@@ -585,7 +585,17 @@ function EditOrganizationForm({
     const hasErrors = requiredFields.some((f) => fieldErr(f.key, f.min));
     if (hasErrors) return;
     setSaving(true);
-    const ok = await onSave({ ...form, name: form.name.trim(), shortName: form.shortName!.trim() });
+    // В payload — ТОЛЬКО записываемые поля формы. Раньше сюда попадали
+    // computed-поля клиента (directorName/directorPosition/createdBy/
+    // updatedBy/createdAt/updatedAt), из-за чего бэкенд отклонял запись и
+    // кнопка «Сохранить» могла зависать в состоянии «Сохранение…».
+    const payload: Record<string, unknown> = { ...form };
+    for (const k of ['directorName', 'directorPosition', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt', 'id']) {
+      delete (payload as any)[k];
+    }
+    payload.name = String(payload.name ?? '').trim();
+    payload.shortName = String(payload.shortName ?? '').trim();
+    const ok = await onSave(payload as Partial<Organization>);
     if (!ok) {
       setSaveError('Не удалось сохранить организацию. Изменения НЕ применены — проверьте соединение и попробуйте ещё раз.');
       setSaving(false);
