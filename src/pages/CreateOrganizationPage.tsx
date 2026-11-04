@@ -437,9 +437,12 @@ export function CreateOrganizationPage() {
                   className={inputCls}
                 >
                   <option value="">Не указан</option>
-                  {employees.filter((emp) => emp.isEmployed).map((emp) => (
+                  {[...employees]
+                    .sort((a, b) => Number(b.isHeadEmployee ?? false) - Number(a.isHeadEmployee ?? false))
+                    .filter((emp) => emp.isEmployed)
+                    .map((emp) => (
                     <option key={emp.id} value={emp.id}>
-                      {[emp.lastName, emp.firstName, emp.middleName].filter(Boolean).join(' ')} — {positions.find((p) => p.id === emp.positionId)?.name ?? 'должность не указана'}
+                      {(emp.isHeadEmployee ? '★ ' : '') + [emp.lastName, emp.firstName, emp.middleName].filter(Boolean).join(' ')} — {positions.find((p) => p.id === emp.positionId)?.name ?? 'должность не указана'}
                     </option>
                   ))}
                 </select>
