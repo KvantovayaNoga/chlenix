@@ -400,11 +400,15 @@ function EquipmentModal({
     setSubmitted(false);
     setSaving(true);
     setSaveError(null);
-    // Кластер — логическая сущность: МОЛ/инвентарные поля ему не принадлежат
-    const ok = await onSave(isClusterEdit ? { ...formData, materiallyResponsibleEmployeeId: null } : formData);
-    setSaving(false);
-    // ok === false — сервер НЕ создал/не обновил сущность: окно остаётся открытым
-    if (ok === false) setSaveError(storeError || 'Не удалось сохранить оборудование: сервер отклонил запрос. Проверьте уникальность серийного/инвентарного номеров и доступ к организации. Окно осталось открытым — введённые данные сохранены в форме.');
+    try {
+      const ok = await onSave(isClusterEdit ? { ...formData, materiallyResponsibleEmployeeId: null } : formData);
+      // ok === false — сервер НЕ создал/не обновил сущность: окно остаётся открытым
+      if (ok === false) setSaveError(storeError || 'Не удалось сохранить оборудование: сервер отклонил запрос. Проверьте уникальность серийного/инвентарного номеров и доступ к организации. Окно осталось открытым — введённые данные сохранены в форме.');
+    } catch (err: any) {
+      setSaveError(err?.message || 'Не удалось сохранить оборудование. Окно осталось открытым — данные сохранены в форме.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleChange = (field: string, value: string | null) => {

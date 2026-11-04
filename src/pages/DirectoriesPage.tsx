@@ -375,9 +375,16 @@ function DirectoryModal({ item, type, onClose, onSave }: { item: any; type: stri
       if (type === 'branches' && !String(formData.address ?? '').trim()) return;
     }
     setSaving(true);
-    const ok = await onSave(formData);
-    // при неудаче оставляем модалку открытой с введёнными данными
-    if (!ok) { setFormError('Не удалось сохранить запись. Проверьте соединение и попробуйте ещё раз.'); setSaving(false); }
+    setFormError(null);
+    try {
+      const ok = await onSave(formData);
+      // при неудаче оставляем модалку открытой с введёнными данными
+      if (!ok) setFormError('Не удалось сохранить запись. Проверьте соединение и попробуйте ещё раз.');
+    } catch (err: any) {
+      setFormError(err?.message || 'Не удалось сохранить запись. Окно осталось открытым.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const fieldCls = 'w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200';
@@ -470,9 +477,16 @@ function CustomDirectoryModal({ directory, onClose, onSave }: {
     const d = draft.trim();
     if (d && !finalItems.some(x => x.toLowerCase() === d.toLowerCase())) finalItems.push(d);
     setSaving(true);
-    const ok = await onSave({ name, description: description.trim() || null, items: finalItems });
-    // при неудаче оставляем модалку открытой с введёнными данными
-    if (!ok) { setFormError('Не удалось сохранить справочник. Проверьте соединение и попробуйте ещё раз.'); setSaving(false); }
+    setFormError(null);
+    try {
+      const ok = await onSave({ name, description: description.trim() || null, items: finalItems });
+      // при неудаче оставляем модалку открытой с введёнными данными
+      if (!ok) setFormError('Не удалось сохранить справочник. Проверьте соединение и попробуйте ещё раз.');
+    } catch (err: any) {
+      setFormError(err?.message || 'Не удалось сохранить справочник. Окно осталось открытым.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const fieldCls = 'w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200';

@@ -595,12 +595,19 @@ function EditOrganizationForm({
     }
     payload.name = String(payload.name ?? '').trim();
     payload.shortName = String(payload.shortName ?? '').trim();
-    const ok = await onSave(payload as Partial<Organization>);
-    if (!ok) {
-      setSaveError('Не удалось сохранить организацию. Изменения НЕ применены — проверьте соединение и попробуйте ещё раз.');
+    try {
+      const ok = await onSave(payload as Partial<Organization>);
+      if (!ok) {
+        setSaveError('Не удалось сохранить организацию. Изменения НЕ применены — проверьте соединение и попробуйте ещё раз.');
+      }
+      // При успехе родитель закроет форму (setIsEditing(false)).
+    } catch (err: any) {
+      // Любая непредвиденная ошибка обязана разблокировать кнопку:
+      // без этого форма навечно остаётся в состоянии «Сохранение…».
+      setSaveError(err?.message || 'Не удалось сохранить организацию. Окно осталось открытым — данные сохранены в форме.');
+    } finally {
       setSaving(false);
     }
-    // При успехе родитель закроет форму (setIsEditing(false)).
   };
 
   return (

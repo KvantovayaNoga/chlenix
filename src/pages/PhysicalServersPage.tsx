@@ -400,10 +400,15 @@ function ServerModal({ server, onClose, onSave, branches, dataCenters, allEquipm
             return r;
           })()
         : formData;
-    const ok = await onSave(payload);
-    setSaving(false);
-    // ok === false — сервер НЕ создал/не обновил сущность: окно остаётся открытым
-    if (ok === false) setSaveError(storeError || 'Не удалось сохранить сервер: сервер отклонил запрос. Проверьте уникальность серийного/инвентарного номеров и доступ к организации. Окно осталось открытым — введённые данные сохранены в форме.');
+    try {
+      const ok = await onSave(payload);
+      // ok === false — сервер НЕ создал/не обновил сущность: окно остаётся открытым
+      if (ok === false) setSaveError(storeError || 'Не удалось сохранить сервер: сервер отклонил запрос. Проверьте уникальность серийного/инвентарного номеров и доступ к организации. Окно осталось открытым — введённые данные сохранены в форме.');
+    } catch (err: any) {
+      setSaveError(err?.message || 'Не удалось сохранить сервер. Окно осталось открытым — данные сохранены в форме.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
