@@ -22,6 +22,7 @@ export function CreateOrganizationPage() {
   const currentUser = useAuthStore((s) => s.currentUser);
   const addOrganization = useDataStore((s) => s.addOrganization);
   const employees = useDataStore((s) => s.employees);
+  const positions = useDataStore((s) => s.positions);
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -438,7 +439,7 @@ export function CreateOrganizationPage() {
                   <option value="">Не указан</option>
                   {employees.filter((emp) => emp.isEmployed).map((emp) => (
                     <option key={emp.id} value={emp.id}>
-                      {[emp.lastName, emp.firstName, emp.middleName].filter(Boolean).join(' ')} — {emp.position?.name ?? 'должность не указана'}
+                      {[emp.lastName, emp.firstName, emp.middleName].filter(Boolean).join(' ')} — {positions.find((p) => p.id === emp.positionId)?.name ?? 'должность не указана'}
                     </option>
                   ))}
                 </select>

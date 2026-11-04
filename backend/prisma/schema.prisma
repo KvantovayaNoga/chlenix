@@ -287,6 +287,8 @@ model Employee {
 
   // Связи
   organization Organization? @relation(fields: [organizationId], references: [id])
+  // Обратная связь: сотрудник выбран руководителем организации
+  headOf       Organization? @relation("OrganizationDirector")
   position     Position      @relation(fields: [positionId], references: [id])
   department   Department    @relation(fields: [departmentId], references: [id])
   branch       Branch?       @relation(fields: [branchId], references: [id])

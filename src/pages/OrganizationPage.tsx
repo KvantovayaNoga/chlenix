@@ -545,6 +545,7 @@ function EditOrganizationForm({
   onClose: () => void;
   onSave: (data: Partial<Organization>) => void;
 }) {
+  const positions = useDataStore((s) => s.positions);
   const [form, setForm] = useState({ ...organization });
 
   const handleChange = (field: keyof Organization, value: string) => {
@@ -641,7 +642,7 @@ function EditOrganizationForm({
             <option value="">Не указан</option>
             {directorCandidates.filter((emp) => emp.isEmployed).map((emp) => (
               <option key={emp.id} value={emp.id}>
-                {(emp.isHeadEmployee ? '★ ' : '') + [emp.lastName, emp.firstName, emp.middleName].filter(Boolean).join(' ') + ' — ' + (emp.position?.name ?? 'должность не указана')}
+                {(emp.isHeadEmployee ? '★ ' : '') + [emp.lastName, emp.firstName, emp.middleName].filter(Boolean).join(' ') + ' — ' + (positions.find((p) => p.id === emp.positionId)?.name ?? 'должность не указана')}
               </option>
             ))}
           </select>

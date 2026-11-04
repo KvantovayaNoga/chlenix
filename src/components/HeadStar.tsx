@@ -8,10 +8,11 @@ import { Star } from 'lucide-react';
  */
 export function HeadStar({ className = '', title = 'Руководитель организации' }: { className?: string; title?: string }) {
   return (
-    <Star
-      className={`w-4 h-4 fill-amber-400 text-amber-500 dark:fill-amber-300 dark:text-amber-300 flex-shrink-0 ${className}`}
-      aria-label={title}
-      title={title}
-    />
+    <span className="inline-flex items-center" title={title}>
+      <Star
+        className={`w-4 h-4 fill-amber-400 text-amber-500 dark:fill-amber-300 dark:text-amber-300 flex-shrink-0 ${className}`}
+        aria-label={title}
+      />
+    </span>
   );
 }
