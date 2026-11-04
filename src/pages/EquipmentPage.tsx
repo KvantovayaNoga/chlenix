@@ -13,6 +13,7 @@ import { FilterManager, SavedFilter } from '../components/FilterManager';
 import { serverRoleVisual } from '../components/ServerRoleIcon';
 import { statusLabels, DEFAULT_EQUIPMENT_STATUS, statusRequiresDefect } from '../utils/equipmentStatus';
 import { formatDate } from '../utils/formatDate';
+import { MissingFieldsBanner } from '../utils/modalValidation';
 
 const categoryLabels: Record<EquipmentCategory, string> = {
   computer: 'Компьютеры', monitor: 'Мониторы', peripheral: 'Периферия', furniture: 'Мебель',

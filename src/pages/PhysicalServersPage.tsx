@@ -348,32 +348,62 @@ function ServerModal({ server, onClose, onSave, branches, dataCenters, allEquipm
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Внутренняя валидация модалки (общий стиль проекта): обязательные поля
+  // подсвечиваются красной рамкой + инлайн-подсказка; при непроведённой
+  // валидации или ошибке сервера окно НЕ закрывается (см. ServerEditModal).
+  const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const storeError = useDataStore((s) => s.error);
+  const isRequiredField = (f: string) =>
+    f === 'name' || f === 'serialNumber' || f === 'inventoryNumber' || f === 'location';
+  const vErr = (f: string) => submitted && isRequiredField(f) && !String((formData as any)[f] ?? '').trim();
+  const vCls = (base: string, f?: string) =>
+    `${base}${f && vErr(f) ? ' border-red-400 dark:border-red-600 focus:ring-red-400' : ''}`;
+  const vHint = (f: string, msg: string) =>
+    vErr(f) ? <p className="text-xs text-red-500 mt-1">{msg}</p> : null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
+    // Проверка обязательных полей ВНУТРИ модалки: «Создать/Сохранить» не должна
+    // закрывать окно, если сущность реально не будет создана.
+    const missing: string[] = [];
+    if (!formData.name.trim()) missing.push('Наименование');
+    if (!server && !formData.serialNumber.trim()) missing.push('Серийный номер');
+    if (!server && !formData.inventoryNumber.trim()) missing.push('Инвентарный номер');
+    if (!server && !formData.branchId && !formData.dataCenterId) missing.push('Филиал / ЦОД');
+    if (missing.length > 0) { setSubmitted(true); return; } // окно остаётся открытым с подсветкой полей
+    setSubmitted(false);
+    setSaving(true);
+    setSaveError(null);
     // Косяк 6: без чекбокса сервер — обычный физический (role = null)
-    if (!isPlatform) {
-      onSave({ ...formData, serverRole: '', hypervisorName: '', clusterName: '', hypervisorVersion: '', storageType: '', storageProtocol: '', storageCapacityGB: null, parentClusterId: null });
-      return;
-    }
-    // При редактировании существующего сервера меняем только роль и поля платформы:
-    // характеристики (CPU/RAM/Диск), которые форма не показывает для выбранной роли,
-    // не должны затираться пустыми значениями. Для новых серверов — полный payload.
-    if (server) {
-      onSave({
-        __roleOnly: true,
-        name: formData.name,
-        serverRole: formData.serverRole || null,
-        hypervisorName: formData.hypervisorName || null,
-        clusterName: formData.clusterName || null,
-        hypervisorVersion: formData.hypervisorVersion || null,
-        storageType: formData.storageType || null,
-        storageProtocol: formData.storageProtocol || null,
-        storageCapacityGB: formData.storageCapacityGB ?? null,
-        parentClusterId: formData.parentClusterId || null,
-      });
-    } else {
-      onSave(formData);
-    }
+    const payload = !isPlatform
+      ? { ...formData, serverRole: '', hypervisorName: '', clusterName: '', hypervisorVersion: '', storageType: '', storageProtocol: '', storageCapacityGB: null, parentClusterId: null }
+      // При редактировании существующего сервера меняем только роль и поля платформы:
+      // характеристики (CPU/RAM/Диск), которые форма не показывает для выбранной роли,
+      // не должны затираться пустыми значениями. Для новых серверов — полный payload.
+      : server
+        ? (() => {
+            const r: Record<string, any> = {
+              __roleOnly: true,
+              name: formData.name,
+              serverRole: formData.serverRole || null,
+              hypervisorName: formData.hypervisorName || null,
+              clusterName: formData.clusterName || null,
+              hypervisorVersion: formData.hypervisorVersion || null,
+              storageType: formData.storageType || null,
+              storageProtocol: formData.storageProtocol || null,
+              storageCapacityGB: formData.storageCapacityGB ?? null,
+              parentClusterId: formData.parentClusterId || null,
+            };
+            return r;
+          })()
+        : formData;
+    const ok = await onSave(payload);
+    setSaving(false);
+    // ok === false — сервер НЕ создал/не обновил сущность: окно остаётся открытым
+    if (ok === false) setSaveError(storeError || 'Не удалось сохранить сервер: сервер отклонил запрос. Проверьте уникальность серийного/инвентарного номеров и доступ к организации. Окно осталось открытым — введённые данные сохранены в форме.');
   };
 
   return (

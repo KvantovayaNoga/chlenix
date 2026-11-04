@@ -35,6 +35,7 @@ export function LocationSelect({
   dataCenterId,
   onChange,
   label = 'Место размещения *',
+  error = null,
 }: {
   branches: Branch[];
   dataCenters: DataCenter[];
@@ -45,8 +46,10 @@ export function LocationSelect({
   dataCenterId: string;
   onChange: (v: { branchId: string; dataCenterId: string }) => void;
   label?: string;
+  /** Текст ошибки валидации (подсветка поля + инлайн-подсказка в общем стиле проекта) */
+  error?: string | null;
 }) {
-  const cls = 'w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200';
+  const cls = `w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 ${error ? 'border-red-400 dark:border-red-600 focus:ring-red-400' : 'border-gray-200 dark:border-gray-600 focus:ring-indigo-500'}`;
   // Текущее значение кодируем префиксом, чтобы филиал и ЦОД могли сосуществовать в одном select
   const value = dataCenterId ? `dc:${dataCenterId}` : branchId ? `br:${branchId}` : '';
   const handleChange = (next: string) => {
@@ -72,6 +75,7 @@ export function LocationSelect({
           </optgroup>
         )}
       </select>
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
     </div>
   );
 }
@@ -187,6 +191,19 @@ export function ClusterForm({ cluster, branches, dataCenters, allEquipment, onCl
     storageCapacityGB: cluster?.storageCapacityGB ?? null,
   });
   const [members, setMembers] = useState<Set<string>>(initialMembers);
+  // Внутренняя валидация модалки (общий стиль проекта): обязательные поля
+  // подсвечиваются красной рамкой + инлайн-подсказка; при непроведённой
+  // валидации или ошибке сервера окно НЕ закрывается (см. ClusterEditModal).
+  const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const storeError = useDataStore((s) => s.error);
+  const nameErr = submitted && !formData.name.trim()
+    ? 'Укажите наименование кластера — без имени его не найти в реестре.'
+    : null;
+  const locErr = submitted && !formData.branchId && !formData.dataCenterId
+    ? 'Выберите место размещения: филиал или ЦОД.'
+    : null;
 
   // Если страница пересобрала список оборудования (например, после сохранения),
   // подтягиваем актуальный состав кластера, чтобы форма не работала по устаревшим связям.
