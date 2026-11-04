@@ -26,8 +26,7 @@ export function DashboardPage() {
     ? virtualMachines.filter((vm: any) => {
         const ids = new Set<string>(vis.employeeIds ?? []);
         return (vm.responsibleEmployeeId && ids.has(vm.responsibleEmployeeId)) ||
-               (vm.serviceResponsibleEmployeeId && ids.has(vm.serviceResponsibleEmployeeId)) ||
-               (vm.materiallyResponsibleEmployeeId && ids.has(vm.materiallyResponsibleEmployeeId));
+               (vm.serviceResponsibleEmployeeId && ids.has(vm.serviceResponsibleEmployeeId));
       })
     : virtualMachines), [virtualMachines, vis]);
 

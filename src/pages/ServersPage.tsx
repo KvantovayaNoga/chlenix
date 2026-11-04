@@ -163,10 +163,13 @@ export function ServersPage() {
   const activeEmployees = employees.filter(e => e.isEmployed);
   // Кластер без консоли управления (для чекбокса «Консоль управления гипервизором»):
   // если такой кластер существует, ВМ-консоль автоматически привязывается к нему.
-  const consoleCluster = useMemo(
-    () => findClusterWithoutConsole(equipment, virtualMachines, editingVM?.id ?? null),
-    [equipment, virtualMachines, editingVM],
-  );
+  const consoleCluster = useMemo(() => {
+    const cl = findClusterWithoutConsole(equipment, virtualMachines, editingVM?.id ?? null);
+    if (!cl) return null;
+    // хосты кластера — для автопривязки консоли (ВМ размещается на хосте кластера)
+    const hosts = equipment.filter((e: any) => e.parentClusterId === cl.id && e.category === 'server');
+    return { id: cl.id, name: cl.name, hostServerIds: hosts.map((h: any) => h.id), hostNames: hosts.map((h: any) => h.name) };
+  }, [equipment, virtualMachines, editingVM]);
 
   const filteredVMs = useMemo(() => {
     return virtualMachines.filter(vm => {
@@ -436,8 +439,7 @@ export function ServersPage() {
           }}
           servers={hypervisorHosts}
           employees={activeEmployees}
-          equipment={equipment}
-          virtualMachines={virtualMachines}
+          consoleCluster={consoleCluster}
           saveError={error}
         />
       )}
@@ -657,7 +659,7 @@ export function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, servic
   );
 }
 
-function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any) {
+function VMEditModal({ vm, onClose, onSave, servers, employees, saveError, consoleCluster }: any) {
   // Выбор кластера в форме ВМ убран: принадлежность к кластеру определяется
   // автоматически по хост-серверу (хост входит в кластер => ВМ в этом кластере).
   const [formError, setFormError] = useState<string | null>(null);
@@ -666,10 +668,13 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
     name: vm?.name || '', hostname: vm?.hostname || '', type: vm?.type || 'virtual', hostServerId: vm?.hostServerId || null,
     os: vm?.os || '', cpuCores: vm?.cpuCores || 2, ramGB: vm?.ramGB || 4, diskGB: vm?.diskGB || 50,
     responsibleEmployeeId: vm?.responsibleEmployeeId || null, serviceResponsibleEmployeeId: vm?.serviceResponsibleEmployeeId || null,
-    materiallyResponsibleEmployeeId: (vm as any)?.materiallyResponsibleEmployeeId || null,
+    // МОЛ убран из ВМ: виртуальная машина — логическая сущность и не может
+    // числиться на материальном подотчёте (МОЛ остаётся только у оборудования).
+    // Роль «консоль управления гипервизором» — чекбокс вместо выпадающего
+    // списка ролей; поля «Назначенный хост» (provisionedOn) больше нет —
+    // оно дублировало «Хост-сервер».
+    isManagementConsole: vm?.serverRole === 'management_console',
     status: vm?.status || 'running', notes: vm?.notes || '',
-    serverRole: (vm?.serverRole || '') as ServerRole | '',
-    provisionedOn: vm?.provisionedOn || '',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -687,10 +692,18 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
       return;
     }
     setFormError(null);
-    // ВМ не может быть СХД; «назначенный хост» имеет смысл только для консолей/хостов-ролей
-    const payload = { ...formData };
-    if (payload.serverRole === '' || payload.serverRole === 'storage') payload.serverRole = '' as any;
-    if (payload.serverRole !== 'management_console' && payload.serverRole !== 'hypervisor_host') payload.provisionedOn = '';
+    // П.4: роль ВМ определяется чекбоксом «Консоль управления гипервизором».
+    // Поле «Назначенный хост» (provisionedOn) удалено — размещение задаётся
+    // полем «Хост-сервер». МОЛ из формы убран (п.2).
+    const payload: any = { ...formData };
+    delete payload.isManagementConsole;
+    payload.serverRole = formData.isManagementConsole ? 'management_console' : '';
+    payload.provisionedOn = null;
+    if (formData.isManagementConsole && consoleCluster?.hostServerIds?.length) {
+      // Консоль привязывается к первому хосту кластера без консоли —
+      // принадлежность ВМ к кластеру определяется автоматически по хосту.
+      payload.hostServerId = consoleCluster.hostServerIds[0];
+    }
     // п.5: ждём реального результата сохранения — окно закрывает родитель,
     // только если ВМ действительно создана/обновлена (onSave вернёт true/false).
     setSaving(true);
@@ -731,21 +744,33 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
             <div><DecimalInput label="RAM (ГБ)" value={formData.ramGB} onChange={(v) => setFormData(p => ({ ...p, ramGB: v ?? 0 }))} placeholder="Например: 8 или 4,5" /></div>
             <div><StorageField label="Диск" valueGB={formData.diskGB} onChange={(gb) => setFormData(p => ({ ...p, diskGB: gb ?? 0 }))} placeholder="Например: 100 или 1,5" hint="Объём хранится в ГБ; единица выбора (КБ…ПБ) — для удобства ввода." /></div>
             <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Статус</label><select value={formData.status} onChange={(e) => setFormData(p => ({ ...p, status: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">{Object.entries(vmStatusLabels).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Роль в системе виртуализации</label>
-              <select value={formData.serverRole} onChange={(e) => setFormData(p => ({ ...p, serverRole: e.target.value as ServerRole | '' }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200">
-                {serverRoleOptions.filter(o => o.value !== 'storage' && o.value !== 'cluster').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Например: консоль управления гипервизором (vCenter / Proxmox VE), размещённая как ВМ. Кластеры и СХД — только физические серверы.</p>
-            </div>
-            {(formData.serverRole === 'management_console' || formData.serverRole === 'hypervisor_host') && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Назначенный хост (pre-provisioning)</label>
-                <input type="text" value={formData.provisionedOn} onChange={(e) => setFormData(p => ({ ...p, provisionedOn: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" placeholder="Имя сервера-хоста, на котором будет размещена ВМ" />
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Если ВМ ещё не создана на хосте — укажите планируемое размещение.</p>
-              </div>
-            )}
           </div>
+          {/* П.4: чекбокс «Консоль управления гипервизором» показывается только
+              если в системе существует кластер без консоли. При выборе ВМ
+              автоматически привязывается к такому кластеру (через его хост). */}
+          {consoleCluster && (
+            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${formData.isManagementConsole ? 'border-indigo-300 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'}`}>
+              <input type="checkbox" checked={formData.isManagementConsole} onChange={(e) => {
+                const checked = e.target.checked;
+                setFormData(p => ({
+                  ...p,
+                  isManagementConsole: checked,
+                  // при включении консоли — сразу подсвечиваем автоматическую
+                  // привязку к хосту кластера без консоли
+                  hostServerId: checked && consoleCluster.hostServerIds?.length ? consoleCluster.hostServerIds[0] : p.hostServerId,
+                }));
+                setFormError(null);
+              }} className="mt-0.5 w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" />
+              <span>
+                <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">Консоль управления гипервизором</span>
+                <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Эта ВМ — консоль управления (например, vCenter / Proxmox VE).
+                  В системе есть кластер «{consoleCluster.name}» без консоли — машина будет автоматически привязана к нему
+                  {consoleCluster.hostServerIds?.length ? ` (хост: ${consoleCluster.hostNames?.[0] ?? '—'})` : ''}.
+                </span>
+              </span>
+            </label>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <EmployeeSearch
               value={formData.responsibleEmployeeId}
@@ -756,12 +781,6 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
               value={formData.serviceResponsibleEmployeeId}
               onChange={(id) => setFormData(p => ({ ...p, serviceResponsibleEmployeeId: id }))}
               label="Ответственный (сервисы)"
-            />
-            <EmployeeSearch
-              value={formData.materiallyResponsibleEmployeeId}
-              onChange={(id) => setFormData(p => ({ ...p, materiallyResponsibleEmployeeId: id }))}
-              label="МОЛ (материально ответственное лицо)"
-              placeholder="Сотрудник, на подотчёте которого числится ВМ..."
             />
           </div>
           <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Примечания</label><textarea value={formData.notes} onChange={(e) => setFormData(p => ({ ...p, notes: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200" rows={2} /></div>

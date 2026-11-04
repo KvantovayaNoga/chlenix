@@ -491,7 +491,7 @@ export function VirtualizationPlatformPage() {
                         <button
                           key={v.id}
                           onClick={() => navigate('/servers')}
-                          title={`${v.os || ''} • ${v.cpuCores} CPU / ${v.ramGB} ГБ RAM${v.provisionedOn ? ` • thin: ${v.provisionedOn}` : ''}`}
+                          title={`${v.os || ''} • ${v.cpuCores} CPU / ${v.ramGB} ГБ RAM`}
                           className="px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors text-left"
                         >
                           <span className="block">{v.name}</span>

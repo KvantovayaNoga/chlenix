@@ -2091,7 +2091,9 @@ function publicVM(vm: any): any {
     hostServer: vm.hostServer ? publicEquipmentBrief(vm.hostServer) : (vm.hostServer === null ? null : vm.hostServer),
     responsibleEmployee: briefEmp(vm.responsibleEmployee),
     serviceResponsibleEmployee: briefEmp(vm.serviceResponsibleEmployee),
-    materiallyResponsibleEmployee: briefEmp(vm.materiallyResponsibleEmployee),
+    // МОЛ убран из ВМ: логическая сущность не может быть на мат. подотчёте
+    materiallyResponsibleEmployee: undefined,
+    materiallyResponsibleEmployeeId: undefined,
     networkInterfaces: (vm.networkInterfaces || []).map((ni: any) => ({ ...ni, createdAt: isoDate(ni.createdAt), updatedAt: isoDate(ni.updatedAt) })),
     services: (vm.services || []).map((sv: any) => ({ ...sv, createdAt: isoDate(sv.createdAt), updatedAt: isoDate(sv.updatedAt) })),
   };
@@ -2975,8 +2977,8 @@ const vmSchema = z.object({
   diskGB: z.number().min(0).optional(),
   responsibleEmployeeId: z.string().optional().nullable(),
   serviceResponsibleEmployeeId: z.string().optional().nullable(),
-  // МОЛ (материально ответственное лицо) — сотрудник, на подотчёте которого числится ВМ
-  materiallyResponsibleEmployeeId: strOrEmpty(z.string()),
+  // МОЛ убран из ВМ (виртуальная машина — логическая сущность, не может
+  // числиться на материальном подотчёте). Поле принимается, но игнорируется.
   status: z.enum(['running', 'stopped', 'maintenance', 'decommissioned']).optional(),
   // Пустая строка / null = «роль не назначена» (автономный сервер без роли в
   // виртуализации тоже может быть хостом для ВМ) — нормализуем в null, чтобы
@@ -2993,7 +2995,6 @@ const vmInclude = {
   hostServer: true,
   responsibleEmployee: true,
   serviceResponsibleEmployee: true,
-  materiallyResponsibleEmployee: true,
   networkInterfaces: true,
   services: true,
 } as const;
@@ -3050,7 +3051,7 @@ app.post('/api/virtual-machines', authMiddleware, requireRole(SERVER_ROLES), asy
   const hostServerId = await resolveRef('equipment', data.hostServerId);
   const responsibleEmployeeId = await resolveRef('employee', data.responsibleEmployeeId);
   const serviceResponsibleEmployeeId = await resolveRef('employee', data.serviceResponsibleEmployeeId);
-  const materiallyResponsibleEmployeeId = await resolveRef('employee', data.materiallyResponsibleEmployeeId);
+  // МОЛ убран из ВМ (п.2): виртуальная машина — логическая сущность.
   // Хост обязателен: без него ВМ «нигде не живёт» и её нельзя ни разместить,
   // ни отнести к кластеру (кластер определяется автоматически по хосту).
   if (!hostServerId) {
@@ -3084,7 +3085,6 @@ app.post('/api/virtual-machines', authMiddleware, requireRole(SERVER_ROLES), asy
       hostServerId,
       responsibleEmployeeId,
       serviceResponsibleEmployeeId,
-      materiallyResponsibleEmployeeId,
       updatedById: currentUser.userId,
     },
     include: vmInclude,
@@ -3133,8 +3133,8 @@ app.put('/api/virtual-machines/:id', authMiddleware, requireRole(SERVER_ROLES), 
   }
   if ('responsibleEmployeeId' in newData) newData.responsibleEmployeeId = await resolveRef('employee', newData.responsibleEmployeeId) ?? null;
   if ('serviceResponsibleEmployeeId' in newData) newData.serviceResponsibleEmployeeId = await resolveRef('employee', newData.serviceResponsibleEmployeeId) ?? null;
-  // МОЛ ВМ: пустой выбор => null (снятие), иначе история не фиксировала бы снятие МОЛ.
-  if ('materiallyResponsibleEmployeeId' in newData) newData.materiallyResponsibleEmployeeId = await resolveRef('employee', newData.materiallyResponsibleEmployeeId) ?? null;
+  // МОЛ убран из ВМ (п.2): поле игнорируется при обновлении.
+  delete newData.materiallyResponsibleEmployeeId;
   if ('serverRole' in newData) newData.serverRole = newData.serverRole || null;
   if ('provisionedOn' in newData) newData.provisionedOn = newData.provisionedOn || null;
   newData.updatedById = currentUser.userId;

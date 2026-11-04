@@ -301,8 +301,7 @@ model Employee {
   molEquipment         Equipment[]           @relation("MolEquipment")
   vmResponsible        VirtualMachine[]      @relation("VMInfraResponsible")
   vmServiceResponsible VirtualMachine[]      @relation("VMServiceResponsible")
-  // Виртуальные машины, числящиеся за сотрудником как за МОЛ
-  molVirtualMachines   VirtualMachine[]      @relation("MolVirtualMachine")
+  // molVirtualMachines удалён (п.2): ВМ — логическая сущность, МОЛ у неё отсутствует
   assignments          EquipmentAssignment[]
 
   @@index([departmentId])
@@ -442,9 +441,8 @@ model VirtualMachine {
   diskGB                       Float    @default(50) @map("disk_gb")
   responsibleEmployeeId        String?  @map("responsible_employee_id")
   serviceResponsibleEmployeeId String?  @map("service_responsible_employee_id")
-  // МОЛ (материально ответственное лицо) — сотрудник, на подотчёте которого
-  // числится эта виртуальная машина (смежная сущность оборудования)
-  materiallyResponsibleEmployeeId String? @map("materially_responsible_employee_id")
+  // МОЛ удалён из ВМ (п.2): виртуальная машина — логическая сущность и не
+  // может числиться на материальном подотчёте (колонка удалена миграцией).
   status                       VMStatus @default(running)
   // Роль ВМ в системе виртуализации (например, консоль управления — vCenter как ВМ)
   serverRole                   String?  @map("server_role")
@@ -460,8 +458,7 @@ model VirtualMachine {
   hostServer                 Equipment?    @relation("HostServer", fields: [hostServerId], references: [id])
   responsibleEmployee        Employee?     @relation("VMInfraResponsible", fields: [responsibleEmployeeId], references: [id])
   serviceResponsibleEmployee Employee?     @relation("VMServiceResponsible", fields: [serviceResponsibleEmployeeId], references: [id])
-  // МОЛ — материально ответственное лицо, на подотчёте которого числится ВМ
-  materiallyResponsibleEmployee Employee?  @relation("MolVirtualMachine", fields: [materiallyResponsibleEmployeeId], references: [id])
+  // МОЛ удалён из ВМ (п.2): логическая сущность не может быть на мат. подотчёте
   updatedBy                  User?         @relation("VMUpdater", fields: [updatedById], references: [id])
 
   networkInterfaces NetworkInterface[]
@@ -471,7 +468,6 @@ model VirtualMachine {
   @@index([hostServerId])
   @@index([responsibleEmployeeId])
   @@index([serviceResponsibleEmployeeId])
-  @@index([materiallyResponsibleEmployeeId])
   @@index([status])
   @@map("virtual_machines")
 }
