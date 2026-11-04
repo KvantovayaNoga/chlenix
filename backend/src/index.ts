@@ -275,6 +275,9 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
   city: 'город',
   phone: 'телефон',
   website: 'сайт',
+  // Руководитель организации — выбор карточки сотрудника; в историю
+  // изменений попадает как «руководитель» по денормализованному ФИО.
+  directorEmployeeId: 'руководитель',
   directorName: 'руководитель',
   directorPosition: 'должность руководителя',
   bankName: 'банк',
@@ -282,7 +285,6 @@ const HISTORY_FIELD_LABELS: Record<string, string> = {
   correspondentAccount: 'корр. счёт',
   bik: 'БИК',
   taxSystem: 'система налогообложения',
-  industry: 'отрасль',
   okved: 'ОКВЭД',
   isMain: 'является основным видом деятельности',
   employeeCount: 'штатная численность',
@@ -1296,10 +1298,13 @@ app.get('/api/users', authMiddleware, async (c) => {
     orderBy: { createdAt: 'desc' },
     include: { memberships: { include: { organization: true } } },
   });
+  // Золотая звезда руководителя наследуется привязанной учётной записью.
+  const headFlags = await headFlagsByUserId(users.map((u: any) => u.id));
   // Столбец «Организация»: активная (из последней сессии) + все организации,
   // в которых состоит пользователь.
   return c.json(await Promise.all(users.map(async (u: any) => ({
     ...publicUser(u),
+    isHeadEmployee: headFlags.get(u.id) ?? false,
     organizationName: u.memberships.find((m: any) => m.organizationId === u.organizationId)?.organization?.shortName
       || u.memberships.find((m: any) => m.organizationId === u.organizationId)?.organization?.name
       || null,
@@ -1749,15 +1754,15 @@ const organizationSchema = z.object({
   phone: orgText,
   email: z.string().email().nullable().optional().or(z.literal('')),
   website: orgText,
-  directorName: orgText,
-  directorPosition: orgText,   // Должность руководителя (отдельное поле)
+  // Руководитель — необязательный выбор карточки сотрудника из штатного
+  // расписания (выпадающий список в UI). ФИО/должность синхронизирует бэкенд.
+  directorEmployeeId: directorEmployeeRef,
   accountantName: orgText,     // устаревшее поле (главный бухгалтер берётся из штатного расписания)
   bankName: orgText,
   checkingAccount: orgText,
   correspondentAccount: orgText,
   bik: orgText,
   taxSystem: orgText,
-  industry: orgText,
   employeeCount: z.preprocess((v) => (v === '' || v === undefined ? null : v), z.number().int().nullable().optional()),
   foundedDate: orgText,
   logo: z.string().nullable().optional(),
@@ -1776,7 +1781,7 @@ function publicOrganization(o: any) {
 
 app.get('/api/organizations', authMiddleware, async (c) => {
   const organizations = await prisma.organization.findMany({ orderBy: { createdAt: 'asc' } });
-  return c.json(organizations.map(publicOrganization));
+  return c.json(organizations.map((o) => ({ ...publicOrganization(o), directorEmployeeId: o.directorEmployeeId ?? null })));
 });
 
 // Публичный краткий список организаций — используется ТОЛЬКО на форме
@@ -1802,7 +1807,7 @@ app.get('/api/public/organizations', async (c) => {
 app.get('/api/organizations/:id', authMiddleware, async (c) => {
   const org = await prisma.organization.findUnique({ where: { id: c.req.param('id') } });
   if (!org) return c.json({ error: 'Not found' }, 404);
-  return c.json(publicOrganization(org));
+  return c.json({ ...publicOrganization(org), directorEmployeeId: org.directorEmployeeId ?? null });
 });
 
 app.get('/api/organizations/:id/history', authMiddleware, async (c) => {
@@ -1842,15 +1847,13 @@ app.post('/api/organizations', authMiddleware, requireRole(ORG_CREATE_ROLES), as
       phone: parsed.data.phone ?? null,
       email: typeof parsed.data.email === 'string' && parsed.data.email ? parsed.data.email : null,
       website: parsed.data.website ?? null,
-      directorName: parsed.data.directorName ?? null,
-      directorPosition: parsed.data.directorPosition ?? null,
+      directorEmployeeId: parsed.data.directorEmployeeId ?? null,
       accountantName: parsed.data.accountantName ?? null,
       bankName: parsed.data.bankName ?? null,
       checkingAccount: parsed.data.checkingAccount ?? null,
       correspondentAccount: parsed.data.correspondentAccount ?? null,
       bik: parsed.data.bik ?? null,
       taxSystem: parsed.data.taxSystem ?? null,
-      industry: parsed.data.industry ?? null,
       employeeCount: parsed.data.employeeCount ?? null,
       foundedDate: parsed.data.foundedDate ?? null,
       logo: parsed.data.logo ?? null,
@@ -1859,6 +1862,16 @@ app.post('/api/organizations', authMiddleware, requireRole(ORG_CREATE_ROLES), as
       updatedById: currentUser.userId,
     },
   });
+
+  // Синхронизация руководителя с карточкой сотрудника (ФИО/должность
+  // денормализуются в организацию; сотрудник обязан принадлежать ей же).
+  if (parsed.data.directorEmployeeId) {
+    const dirErr = await syncOrgDirector(org.id, parsed.data.directorEmployeeId);
+    if (dirErr) {
+      await prisma.organization.delete({ where: { id: org.id } }).catch(() => {});
+      return c.json({ error: dirErr }, 400);
+    }
+  }
 
   await createHistoryEntry('organization', org.id, currentUser.fullName);
   await writeAudit(currentUser, 'create', 'organization', org.id, org.name, `Создана организация "${org.name}"`, c.req.header('x-forwarded-for'));
@@ -1907,6 +1920,17 @@ app.put('/api/organizations/:id', authMiddleware, requireRole(['admin']), async 
   }
   newData.updatedById = currentUser.userId;
 
+  // Руководитель выбирается карточкой сотрудника — ФИО/должность
+  // денормализуем в организацию через syncOrgDirector (валидация: сотрудник
+  // существует и принадлежит этой же организации). В историю изменений
+  // попадает прежнее/новое значение directorName (подпись «руководитель»).
+  let directorSynced = false;
+  if ('directorEmployeeId' in parsed.data) {
+    const dirErr = await syncOrgDirector(id, parsed.data.directorEmployeeId ?? null);
+    if (dirErr) return c.json({ error: dirErr }, 400);
+    directorSynced = true;
+  }
+
   const org = await prisma.organization.update({ where: { id }, data: newData });
 
   await applyUpdate({
@@ -1919,7 +1943,11 @@ app.put('/api/organizations/:id', authMiddleware, requireRole(['admin']), async 
     newData,
   });
 
-  return c.json(publicOrganization(org));
+  const fresh = directorSynced
+    ? await prisma.organization.findUnique({ where: { id } })
+    : org;
+
+  return c.json(publicOrganization(fresh));
 });
 
 app.delete('/api/organizations/:id', authMiddleware, requireRole(['admin']), async (c) => {
