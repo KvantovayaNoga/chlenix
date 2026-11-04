@@ -81,6 +81,9 @@ export function ServersPage() {
   // версия резолвится из стора ниже (useMemo selectedVM).
   const [selectedVMSnapshot, setSelectedVM] = useState<VirtualMachine | null>(null);
   const [editingVM, setEditingVM] = useState<VirtualMachine | null>(null);
+  // Полная история изменений ВМ: открывается кнопкой «История изменений»
+  // отдельно от карточки ВМ (раньше кнопка ошибочно открывала саму карточку).
+  const [historyVM, setHistoryVM] = useState<{ id: string; name: string } | null>(null);
   const [showAddInterfaceModal, setShowAddInterfaceModal] = useState(false);
   const [showAddServiceModal, setShowAddServiceModal] = useState(false);
   const [editingInterface, setEditingInterface] = useState<NetworkInterface | null>(null);

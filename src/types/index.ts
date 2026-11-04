@@ -376,14 +376,16 @@ export interface VirtualMachine {
   diskGB: number;
   responsibleEmployeeId: string | null;
   serviceResponsibleEmployeeId: string | null;
-  /** МОЛ — материально ответственное лицо, на подотчёте которого числится ВМ */
-  materiallyResponsibleEmployeeId?: string | null;
-  materiallyResponsibleEmployee?: { id: string; firstName: string; lastName: string; middleName?: string } | null;
+  // МОЛ убран из ВМ: виртуальная машина — логическая сущность и не может
+  // числиться на материальном подотчёте (МОЛ остаётся только у оборудования).
   networkInterfaces: NetworkInterface[];
   status: 'running' | 'stopped' | 'maintenance' | 'decommissioned';
-  /** Роль ВМ в системе виртуализации (например, консоль управления — vCenter как ВМ) */
+  /** Роль ВМ в системе виртуализации. Сейчас используется единственная роль —
+   *  management_console (консоль управления гипервизором, например vCenter как ВМ). */
   serverRole?: ServerRole | null;
-  /** Назначенный хост гипервизора (thin provisioning) */
+  /** @deprecated Поле «Назначенный хост» удалено из формы ВМ: оно дублировало
+   *  «Хост-сервер» (hostServerId). Колонка БД сохранена для совместимости,
+   *  всегда null. */
   provisionedOn?: string | null;
   notes: string;
   createdAt: string;

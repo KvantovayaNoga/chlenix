@@ -56,6 +56,39 @@ export function parseDecimalInput(raw: string): number | null {
   return isFinite(n) ? n : null;
 }
 
+/** Ищет кластер-сущность (serverRole === 'cluster') без консоли управления.
+ *  Консолью считается ВМ с serverRole === 'management_console', хост-сервер
+ *  которой входит в этот кластер (hostServer.parentClusterId === cluster.id).
+ *  Используется чекбоксом «Консоль управления гипервизором» в форме ВМ:
+ *  при выборе такая ВМ автоматически привязывается к найденному кластеру. */
+export function findClusterWithoutConsole(
+  equipment: any[],
+  virtualMachines: any[],
+  excludeVmId?: string | null,
+): any | null {
+  const clusters = equipment.filter((e) => e.serverRole === 'cluster');
+  if (clusters.length === 0) return null;
+  // id хостов, входящих в каждый кластер
+  const hostIdsByCluster = new Map<string, Set<string>>();
+  for (const h of equipment) {
+    const pc = typeof h.parentClusterId === 'string' ? h.parentClusterId.trim() : '';
+    if (!pc) continue;
+    if (!hostIdsByCluster.has(pc)) hostIdsByCluster.set(pc, new Set());
+    hostIdsByCluster.get(pc)!.add(h.id);
+  }
+  // id кластеров, у которых уже есть консоль (ВМ-консоль на хосте этого кластера)
+  const consoleClusterIds = new Set<string>();
+  for (const v of virtualMachines) {
+    if (excludeVmId && v.id === excludeVmId) continue;
+    if (v.serverRole !== 'management_console' || !v.hostServerId) continue;
+    for (const [clusterId, hostIds] of hostIdsByCluster) {
+      if (hostIds.has(v.hostServerId)) consoleClusterIds.add(clusterId);
+    }
+  }
+  const withoutConsole = clusters.filter((cl) => !consoleClusterIds.has(cl.id));
+  return withoutConsole.length > 0 ? withoutConsole[0] : null;
+}
+
 /** Санитизация строки ввода: пропускает только цифры и одну запятую.
  *  Возвращает [чищеннаяСтрока, былОтброшенСимвол]. */
 export function sanitizeDecimalText(raw: string): [string, boolean] {
