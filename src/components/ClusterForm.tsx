@@ -216,6 +216,10 @@ export function ClusterForm({ cluster, branches, dataCenters, allEquipment, onCl
   // Чужие участники (состоят в другом кластере) не предлагаются — бэкенд их всё
   // равно не привяжет, а перенос делается через карточку самого железа.
   const hosts = allEquipment.filter((eq) => eq.serverRole === 'hypervisor_host' && eq.id !== cluster?.id && (!eq.parentClusterId || eq.parentClusterId === cluster?.id));
+  // В «Состав кластера» входят физические серверы-хосты платформы (serverRole
+  // === 'cluster', в интерфейсе — «Хост») и СХД; сами хосты гипервизора —
+  // легаси-связка по имени, тоже предлагаются.
+  const hostServers = allEquipment.filter((eq) => eq.serverRole === 'cluster' && eq.id !== cluster?.id && (!eq.parentClusterId || eq.parentClusterId === cluster?.id));
   const storages = allEquipment.filter((eq) => eq.serverRole === 'storage' && eq.id !== cluster?.id && (!eq.parentClusterId || eq.parentClusterId === cluster?.id));
   const consoles = allEquipment.filter((eq) => eq.serverRole === 'management_console' && eq.id !== cluster?.id && (!eq.parentClusterId || eq.parentClusterId === cluster?.id));
 
@@ -312,9 +316,9 @@ export function ClusterForm({ cluster, branches, dataCenters, allEquipment, onCl
           <div className="border border-purple-100 dark:border-purple-900/50 rounded-xl p-4 bg-purple-50/40 dark:bg-purple-900/10 space-y-3">
             <p className="text-sm font-semibold text-purple-700 dark:text-purple-300">Состав кластера</p>
             <MemberPicker
-              title="Хосты гипервизора"
+              title="Хосты"
               icon={<Server className="w-4 h-4 text-red-500" />}
-              items={hosts}
+              items={[...hostServers, ...hosts]}
               selected={members}
               onToggle={toggleMember}
               emptyHint="Хосты не зарегистрированы — отметьте «Нет хостов» и укажите ресурсы вручную."

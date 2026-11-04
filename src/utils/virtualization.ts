@@ -114,13 +114,18 @@ export function sanitizeDecimalText(raw: string): [string, boolean] {
 // ============================================================
 import type { Equipment, VirtualMachine, ServerRole, StorageSystemType, StorageProtocol } from '../types';
 
+// Примечание (2026-11): роль 'cluster' в интерфейсе называется «Хост» — это
+// физический сервер платформы виртуализации (хост гипервизора). Кластер
+// виртуализации как логическая сущность состоит из «Хост», «Система хранения
+// данных», «Консоль управления» и «Виртуальные машины». Внутренний код роли
+// ('cluster') сохранён ради совместимости с БД и API.
 export const serverRoleLabels: Record<ServerRole, { label: string; color: string }> = {
   hypervisor_host: {
     label: 'Хост гипервизора',
     color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
   },
   cluster: {
-    label: 'Кластер виртуализации',
+    label: 'Хост',
     color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
   },
   storage: {
@@ -246,9 +251,15 @@ export function buildVirtualizationPlatforms(
   const hosts = equipment.filter((e) => e.serverRole === 'hypervisor_host');
   // Отдельные сущности-кластеры (косяк 6/11): аккумулируют хосты и СХД через parentClusterId
   const clusterEntities = equipment.filter((e) => e.serverRole === 'cluster');
-  const storage = equipment.filter(
+  // Полный список СХД организации (для вложенных внутрь кластеров хранилищ)
+  const allStorage = equipment.filter(
     (e) => e.serverRole === 'storage' || e.category === ('storage' as any),
   );
+  // СХД — физические единицы хранения. Внутренние хранилища кластеров НЕ
+  // дублируются отдельной секцией: они показываются только внутри своего
+  // кластера/хоста (parentClusterId). Плоская секция «Система хранения данных»
+  // содержит только СХД вне кластеров.
+  const storage = allStorage.filter((e) => !(e.parentClusterId || '').trim());
   const physicalConsoles = equipment.filter((e) => e.serverRole === 'management_console');
   const managementConsoles = virtualMachines.filter((v) => v.serverRole === 'management_console');
 
@@ -314,9 +325,12 @@ export function buildVirtualizationPlatforms(
       const ids = new Set(clusterHosts.map((h) => h.id));
       const clusterVms = vms.filter((v) => v.hostServerId && ids.has(v.hostServerId));
       const entity = clusterEntityByName.get(cname);
-      // СХД, помещённые внутрь кластера (или названные так же, как кластер)
+      // СХД, помещённые внутрь кластера: по явной связи parentClusterId или по
+      // совпадению имени кластера у СХД (легаси). Берём из полного списка
+      // хранилищ allStorage — внутри кластера СХД показываются только здесь,
+      // в плоскую секцию «Система хранения данных» они не попадают.
       const clusterStorages = cname
-        ? storage.filter((st) => (entity && st.parentClusterId === entity.id) || (st.clusterName || '').trim() === cname)
+        ? allStorage.filter((st) => (entity && st.parentClusterId === entity.id) || (st.clusterName || '').trim() === cname)
         : [];
       clusters.push({
         name: cname,

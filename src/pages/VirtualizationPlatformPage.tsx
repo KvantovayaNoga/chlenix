@@ -82,8 +82,9 @@ function CollapsibleSection({
   );
 }
 
-/** Кластер — отдельный блок (по аналогии с хостами): сводные аккумулированные
- *  характеристики + вложенные хосты и СХД. Наполнение скрыто до раскрытия. */
+/** Кластер виртуализации — логическая сущность: сводные аккумулированные
+ *  характеристики + вложенные «Хосты» (физические серверы), СХД и ВМ.
+ *  Наполнение скрыто до раскрытия. */
 function ClusterBlock({
   cluster,
   branchName,
@@ -96,11 +97,14 @@ function ClusterBlock({
   /** Переход к ВМ конкретного хоста (по id оборудования) */
   onOpenVms: (hostId: string) => void;
   onOpenPhysical: () => void;
-  /** Открыть карточку оборудования (СХД внутри кластера) — просмотр без выхода со страницы */
+  /** Открыть карточку оборудования (хост/СХД внутри кластера) — просмотр без выхода со страницы */
   onOpenEquipment: (equipmentId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const hasResources = cluster.cpuTotal > 0 || cluster.ramTotal > 0 || cluster.diskTotalGB > 0;
+  // Хосты кластера: физические серверы-хосты платформы (сущности «Хост») и
+  // легаси-хосты гипервизора, привязанные по имени кластера.
+  const allHosts = [...cluster.hostServers, ...cluster.hosts];
   return (
     <div className="rounded-xl border border-purple-100 dark:border-purple-900/50 overflow-hidden">
       <button
@@ -115,7 +119,7 @@ function ClusterBlock({
         <div className="min-w-0 flex-1">
           <p className="font-medium text-gray-800 dark:text-gray-100 truncate">{cluster.name}</p>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            {cluster.hosts.length} хост(а) • {cluster.storages.length} СХД • {cluster.vms.length} ВМ • {branchName}
+            {allHosts.length} хост(а) • {cluster.storages.length} СХД • {cluster.vms.length} ВМ • {branchName}
           </p>
         </div>
         {hasResources && (
