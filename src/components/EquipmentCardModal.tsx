@@ -50,7 +50,7 @@ export function EquipmentCardModal({ equipmentId, onClose }: { equipmentId: stri
   const eq = getEquipmentById(equipmentId);
   if (!eq) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="modal-root fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
         <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-sm w-full text-center">
           <p className="text-gray-600 dark:text-gray-300 mb-4">Оборудование не найдено (возможно, удалено).</p>
           <button onClick={onClose} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm">Закрыть</button>
@@ -77,7 +77,7 @@ export function EquipmentCardModal({ equipmentId, onClose }: { equipmentId: stri
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="modal-root fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div
         className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}

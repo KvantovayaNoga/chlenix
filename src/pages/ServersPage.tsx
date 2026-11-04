@@ -503,7 +503,7 @@ export function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, servic
 
   return (
     <>
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="modal-root fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-800 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
           <h2 className="text-xl font-bold text-gray-200 flex items-center gap-2"><Cpu className="w-6 h-6 text-purple-400" />{vm.name}</h2>
@@ -663,7 +663,7 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="modal-root fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">{vm?.id ? 'Редактировать ВМ' : 'Создать виртуальную машину'}</h2>
@@ -748,7 +748,7 @@ function AddInterfaceModal({ onClose, onSave }: any) {
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="modal-root fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-800 rounded-2xl w-full max-w-md border border-gray-700" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-xl font-bold text-gray-200">Добавить сетевой интерфейс</h2>
@@ -781,7 +781,7 @@ function EditInterfaceModal({ interface: iface, onClose, onSave }: any) {
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="modal-root fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-800 rounded-2xl w-full max-w-md border border-gray-700" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-xl font-bold text-gray-200">Редактировать сетевой интерфейс</h2>
@@ -814,7 +814,7 @@ function EditServiceModal({ service: svc, onClose, onSave }: any) {
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="modal-root fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-800 rounded-2xl w-full max-w-md border border-gray-700" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-xl font-bold text-gray-200">Редактировать сервис</h2>
@@ -847,7 +847,7 @@ function AddServiceModal({ onClose, onSave }: any) {
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="modal-root fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-800 rounded-2xl w-full max-w-md border border-gray-700" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-xl font-bold text-gray-200">Добавить сервис</h2>

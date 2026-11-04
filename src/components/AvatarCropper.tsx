@@ -250,7 +250,7 @@ export function AvatarCropper({ imageSrc, onCrop, onCancel, frameSize = 320, tit
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <div className="modal-root fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-3xl w-full shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-200">{title}</h3>

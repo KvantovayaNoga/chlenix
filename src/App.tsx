@@ -6,6 +6,7 @@ import { useEffect, type ReactNode } from 'react';
 import { Routes, Route, Navigate, Router, useNavigate } from './router';
 import { useAuthStore } from './store/authStore';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { startModalScrollGuard } from './hooks/useLockBodyScroll';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
@@ -59,6 +60,12 @@ function AdminOnly({ children }: { children: ReactNode }) {
 function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const navigate = useNavigate();
+
+  // Глобальная блокировка прокрутки фона при открытом модальном окне:
+  // как только в DOM появляется оверлей .modal-root, страница за ним
+  // (window и внутренние контейнеры overflow) перестаёт скроллиться —
+  // взаимодействие возможно только с модалкой.
+  useEffect(() => startModalScrollGuard(), []);
 
   // При истечении сессии (401 от API) перенаправляем на страницу входа
   // (состояние авторизации очищается в AuthProvider)

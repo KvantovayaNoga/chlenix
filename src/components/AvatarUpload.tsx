@@ -40,7 +40,7 @@ export function AvatarUpload({ currentAvatar, onAvatarChange }: AvatarUploadProp
 
   if (imageSrc) {
     return (
-      <div className="fixed inset-0 z-[100]">
+      <div className="modal-root fixed inset-0 z-[100]">
         <AvatarCropper
           imageSrc={imageSrc}
           onCrop={handleCrop}
