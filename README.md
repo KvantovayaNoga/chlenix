@@ -130,7 +130,7 @@ http://YOUR_SERVER_IP
 
 - **[DEPLOY.md](DEPLOY.md)** — Полная инструкция по деплою (Docker и bare-metal)
 - **[QUICKSTART.md](QUICKSTART.md)** — Быстрый старт за 3 шага
-- Схема базы данных: [`backend/prisma/schema.prisma`](backend/prisma/schema.prisma) и [`database/schema.sql`](database/schema.sql)
+- Схема базы данных: [`backend/prisma/schema.prisma`](backend/prisma/schema.prisma) и миграции в [`backend/prisma/migrations/`](backend/prisma/migrations/)
 
 ## 🏗 Архитектура
 
@@ -194,9 +194,6 @@ chlenix/
 │   │   └── schema.prisma    # Схема БД (Prisma)
 │   └── src/
 │       └── index.ts         # API сервер
-│
-├── database/
-│   └── schema.sql           # SQL схема (альтернатива)
 │
 └── src/                     # Frontend React код
     ├── App.tsx              # Главный компонент

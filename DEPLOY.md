@@ -436,8 +436,6 @@ chlenix/
 │   │   └── schema.prisma    # Схема БД
 │   └── src/
 │       └── index.ts         # API сервер
-├── database/
-│   └── schema.sql           # SQL схема (альтернатива Prisma)
 └── src/                     # Frontend React код
     ├── App.tsx
     ├── pages/

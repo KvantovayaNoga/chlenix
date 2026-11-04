@@ -2,7 +2,7 @@
 -- Новые значения: эксплуатация, эксплуатация с ограничениями (обязательна
 -- причина — defect_note), резерв, ремонт, снято с учета, утерян/украдено,
 -- непригодно к эксплуатации, для списания.
--- Колонка equipment.condition — TEXT с CHECK (см. database/schema.sql),
+-- Колонка equipment.condition — TEXT с CHECK,
 -- поэтому миграция не затрагивает enum PostgreSQL.
 
 ALTER TABLE equipment DROP CONSTRAINT IF EXISTS equipment_condition_check;

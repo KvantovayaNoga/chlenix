@@ -416,7 +416,7 @@ enum EquipmentCategory {
 
 // Статусная модель оборудования (в UI — «Статус»). Значения соответствуют
 // statusLabels на фронтенде и VALUE_TRANSLATIONS.condition на бэкенде.
-// Хранится как TEXT с CHECK в БД (см. database/schema.sql и миграцию
+// Хранится как TEXT с CHECK в БД (см. миграцию
 // 20261104_equipment_status_model) — НЕ как enum PostgreSQL: enum-колонка
 // при деплои через db push давала P3018 (ALTER TYPE ... ADD VALUE нельзя
 // внутри транзакции) → backend нездоров → frontend не стартовал.
