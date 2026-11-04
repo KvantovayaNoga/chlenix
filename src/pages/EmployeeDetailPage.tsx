@@ -3,11 +3,13 @@ import { useDataStore } from '../store/dataStore';
 import { useAuthStore } from '../store/authStore';
 import { ArrowLeft, Mail, Phone, Building, MapPin, Calendar, Monitor, Server, Armchair, MousePointerClick, Network, Package, Unlink, Cpu, Globe, User, PhoneCall, Plus, X, Pencil, Database } from 'lucide-react';
 import type { EquipmentCategory, UserOrganizationRef } from '../types';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { api } from '../api/client';
 import { AddEmployeeModal } from './EmployeesPage';
 import { statusLabels } from '../utils/equipmentStatus';
 import { EquipmentCardModal } from '../components/EquipmentCardModal';
+// Карточка ВМ поверх вкладки «Сотрудники»: тот же VMDetailModal, что на вкладке «Серверы»
+import { VMDetailModal } from './ServersPage';
 import { UserOrganizationsModal } from '../components/UserOrganizationsModal';
 import { HeadStar } from '../components/HeadStar';
 import { formatDate, formatDateTime } from '../utils/formatDate';
@@ -31,11 +33,17 @@ const vmStatusLabels = {
 export function EmployeeDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getEmployeeById, getEquipmentByEmployee, getVMsByResponsible, unassignEquipment, assignEquipment, getUnassignedEquipment, departments, positions, branches, updateEmployee } = useDataStore();
+  const { getEmployeeById, getEquipmentByEmployee, getVMsByResponsible, unassignEquipment, assignEquipment, getUnassignedEquipment, departments, positions, branches, updateEmployee, virtualMachines, equipment, services, employees } = useDataStore();
   // МОЛ: разрешена только связка «сотрудник ↔ оборудование» (assign/unassign —
   // бэкенд допускает materially_responsible на /equipment/:id/assign|unassign).
   // Редактирование карточки сотрудника (canEdit) — admin + HR (EMPLOYEE_MANAGE_ROLES на бэкенде).
-  const { canEdit, isAdmin, currentUser, users } = useAuthStore();
+  const { canEdit, isAdmin, currentUser, users: authUsers } = useAuthStore();
+  // Карточка ВМ поверх вкладки «Сотрудники»: снимок на момент открытия + резолв актуальной версии из стора
+  const [selectedVMSnapshot, setSelectedVM] = useState<{ id: string } | null>(null);
+  const viewingVM = useMemo(
+    () => (selectedVMSnapshot ? virtualMachines.find((v) => v.id === selectedVMSnapshot.id) ?? null : null),
+    [selectedVMSnapshot, virtualMachines],
+  );
   const canAssign = isAdmin() || currentUser?.role === 'materially_responsible' || currentUser?.role === 'hr_specialist';
   const [showAssignEquipmentModal, setShowAssignEquipmentModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -68,12 +76,34 @@ export function EmployeeDetailPage() {
 
   const getUserName = (userId: string | null) => {
     if (!userId) return '—';
-    const user = users.find(u => u.id === userId);
+    const user = authUsers.find(u => u.id === userId);
     return user?.fullName || 'Неизвестный';
   };
   const getDeptName = () => departments.find(d => d.id === employee.departmentId)?.name || '—';
   const getPosName = () => positions.find(p => p.id === employee.positionId)?.name || '—';
   const getBranchName = () => branches.find(b => b.id === employee.branchId)?.name || '—';
+
+  // Хелперы для карточки ВМ (VMDetailModal) — те же, что на вкладке «Серверы»
+  const getEmployeeNameById = (empId: string | null) => {
+    if (!empId) return '—';
+    const emp = employees.find(e => e.id === empId);
+    return emp ? `${emp.lastName} ${emp.firstName}` : 'Неизвестный';
+  };
+  const getServerName = (serverId: string | null) => {
+    if (!serverId) return '—';
+    const server = equipment.find(s => s.id === serverId);
+    return server?.name || serverId;
+  };
+  const getClusterName = (clusterId: string | null | undefined) => {
+    if (!clusterId) return '—';
+    const cl = equipment.find(s => s.id === clusterId);
+    return cl ? (cl.clusterName || cl.name) : clusterId;
+  };
+  const getVmClusterName = (vm: any): string => {
+    const host = vm?.hostServerId ? equipment.find(s => s.id === vm.hostServerId) : null;
+    if (!host?.parentClusterId) return '—';
+    return getClusterName(host.parentClusterId);
+  };
 
   return (
     <div>
@@ -213,7 +243,15 @@ export function EmployeeDetailPage() {
                   const status = vmStatusLabels[vm.status];
                   const isInfra = vm.responsibleEmployeeId === id;
                   return (
-                    <div key={vm.id} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div
+                      key={vm.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedVM({ id: vm.id })}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedVM({ id: vm.id }); } }}
+                      className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-indigo-50/60 dark:hover:bg-gray-600 transition-colors"
+                      title="Открыть карточку виртуальной машины"
+                    >
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <Cpu className="w-5 h-5 text-purple-600 dark:text-purple-400" />
@@ -275,6 +313,29 @@ export function EmployeeDetailPage() {
         <EquipmentCardModal
           equipmentId={viewingEquipmentId}
           onClose={() => setViewingEquipmentId(null)}
+        />
+      )}
+
+      {/* Карточка ВМ поверх вкладки «Сотрудники» — тот же модал, что на вкладке «Серверы» */}
+      {viewingVM && (
+        <VMDetailModal
+          vm={viewingVM}
+          onClose={() => setSelectedVM(null)}
+          canEdit={false}
+          isAdmin={false}
+          employees={employees}
+          services={services.filter(s => s.virtualMachineId === viewingVM.id)}
+          onAddInterface={() => {}}
+          onEditInterface={() => {}}
+          onRemoveInterface={() => {}}
+          onAddService={() => {}}
+          onEditService={() => {}}
+          onDeleteService={() => {}}
+          getEmployeeName={getEmployeeNameById}
+          getServerName={getServerName}
+          getClusterName={getClusterName}
+          getVmClusterName={getVmClusterName}
+          getUserName={getUserName}
         />
       )}
     </div>
