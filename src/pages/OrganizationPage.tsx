@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode, type FormEvent } from 'react';
 import { useNavigate } from '../router';
 import { useAuthStore } from '../store/authStore';
 import { useDataStore } from '../store/dataStore';
@@ -129,7 +129,7 @@ function EmptyOrganizationState({ onCreate }: { onCreate: () => void }) {
   );
 }
 
-function InfoCard({ icon: Icon, title, children }: { icon: any; title: string; children: React.ReactNode }) {
+function InfoCard({ icon: Icon, title, children }: { icon: any; title: string; children: ReactNode }) {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-gray-200 dark:border-gray-700">
       <h3 className="flex items-center gap-2 text-sm font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-4">
@@ -141,7 +141,7 @@ function InfoCard({ icon: Icon, title, children }: { icon: any; title: string; c
   );
 }
 
-function InfoRow({ label, value, action }: { label: string; value?: string | number | null; action?: React.ReactNode }) {
+function InfoRow({ label, value, action }: { label: string; value?: string | number | null; action?: ReactNode }) {
   const empty = value === undefined || value === null || String(value).trim() === '';
   return (
     <div className="flex flex-col sm:flex-row sm:justify-between sm:gap-4 py-1">
@@ -154,8 +154,18 @@ function InfoRow({ label, value, action }: { label: string; value?: string | num
   );
 }
 
-// Действия-ссылки на контактах (карта / tel / mailto / сайт) убраны по требованию UI:
-// в поле «Адрес и контакты» интерактива быть не должно — только статичный текст.
+// Нормализация URL сайта: если пользователь ввёл адрес без протокола — добавляем https://
+// (используется интерактивной ссылкой на сайт в шапке карточки организации)
+function normalizeWebsiteUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
+// Интерактив (карта / tel / mailto / ссылка на сайт) остался только в ШАПКЕ
+// карточки организации. В блоке «Адрес и контакты» по требованию UI — только
+// статичный текст, без ссылок и действий.
 
 export function OrganizationPage() {
   const navigate = useNavigate();
@@ -178,6 +188,16 @@ export function OrganizationPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   // Модалка полной истории изменений организации (открывается кнопкой в шапке)
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  // ВАЖНО: все хуки должны вызываться ДО любых ранних return'ов.
+  // Ранее useEntityHistory вызывался ниже проверки `if (!organization) return …`,
+  // из-за чего при заходе на страницу / обновлении (F5) количество хуков менялось
+  // между рендерами (скелетон → карточка) и React падал с ошибкой #310
+  // («Rendered more hooks than during the previous render»).
+  // История подгружается только когда организация известна (path === null — пауза).
+  const { history: orgHistory } = useEntityHistory(
+    organization ? `/organizations/${organization.id}/history` : null
+  );
 
   if (!organization) {
     // Данные ещё не подгрузились (стартап/обновление страницы F5) — не показываем
@@ -209,9 +229,9 @@ export function OrganizationPage() {
 
   const memberCount = users.filter((u) => u.organizationId === organization.id).length || 1;
 
-  // История изменений организации подгружается с сервера (GET /organizations/:id/history)
-  // через useEntityHistory и мгновенно обновляется после любого сохранения.
-  const { history: orgHistory } = useEntityHistory(`/organizations/${organization.id}/history`);
+  // История изменений организации подгружается с сервера через useEntityHistory
+  // (см. начало компонента — хук вызывается до ранних return'ов, мгновенно
+  // обновляется после любого сохранения).
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-10">
@@ -247,35 +267,56 @@ export function OrganizationPage() {
               )}
               {/* Строка контактов под наименованием организации: адрес, телефон,
                   эл. почта и сайт умещены в одну горизонтальную строку.
-                  Интерактив полностью убран (по требованию UI): это статичные
-                  <span>-элементы без ссылок; hover-эффект — как у остальных
-                  неинтерактивных элементов карточки (без перехода в indigo и
-                  без подчёркивания). */}
+                  Интерактив возвращён по требованию UI: клик по адресу открывает
+                  Яндекс.Карты, телефон — tel:-набор, почта — mailto:, сайт —
+                  переход по ссылке. Hover-эффект — как у аналогичных элементов
+                  проекта (переход цвета в indigo, БЕЗ подчёркивания).
+                  В блоке «Адрес и контакты» ниже интерактива нет — только текст. */}
               {(organization.city || organization.legalAddress || organization.phone || organization.email || organization.website) && (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
                   {(organization.city || organization.legalAddress) && (
-                    <span className="inline-flex items-center gap-1.5" title="Юридический адрес">
+                    <a
+                      href={`https://yandex.ru/maps/?text=${encodeURIComponent([organization.postalCode, organization.city, organization.legalAddress].filter(Boolean).join(', ').trim())}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                      title="Показать адрес на Яндекс Картах"
+                    >
                       <MapPin className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                       {[organization.postalCode, organization.city, organization.legalAddress].filter(Boolean).join(', ')}
-                    </span>
+                    </a>
                   )}
                   {organization.phone && (
-                    <span className="inline-flex items-center gap-1.5" title="Телефон">
+                    <a
+                      href={`tel:${organization.phone.replace(/[^\d+]/g, '')}`}
+                      className="inline-flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                      title="Позвонить"
+                    >
                       <Phone className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                       {organization.phone}
-                    </span>
+                    </a>
                   )}
                   {organization.email && (
-                    <span className="inline-flex items-center gap-1.5" title="Эл. почта">
+                    <a
+                      href={`mailto:${organization.email.trim()}`}
+                      className="inline-flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                      title="Написать письмо"
+                    >
                       <Mail className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                       {organization.email}
-                    </span>
+                    </a>
                   )}
                   {organization.website && (
-                    <span className="inline-flex items-center gap-1.5" title="Сайт">
+                    <a
+                      href={normalizeWebsiteUrl(organization.website)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                      title="Перейти на сайт"
+                    >
                       <Globe className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                       {organization.website}
-                    </span>
+                    </a>
                   )}
                 </div>
               )}
@@ -503,7 +544,7 @@ function EditOrganizationForm({
     setForm((prev) => ({ ...prev, [field]: value }) as any);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (form.name.trim().length < 3) return;
     // Краткое наименование обязательно (как в форме регистрации)
