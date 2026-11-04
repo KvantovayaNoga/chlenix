@@ -22,7 +22,6 @@ import {
   Wallet,
   BadgeCheck,
   Briefcase,
-  ExternalLink,
 } from 'lucide-react';
 import type { Organization, OrganizationLegalForm } from '../types';
 
@@ -154,80 +153,8 @@ function InfoRow({ label, value, action }: { label: string; value?: string | num
   );
 }
 
-// Нормализация URL сайта: если пользователь ввёл адрес без протокола — добавляем https://
-function normalizeWebsiteUrl(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) return '';
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
-}
-
-// Действие-ссылка рядом со значением поля (открыть карту / написать письмо и т.п.)
-const iconLinkCls =
-  'ml-2 inline-flex items-center justify-center w-7 h-7 rounded-lg align-middle ' +
-  'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/10 transition-colors';
-
-function AddressMapAction({ address }: { address: string }) {
-  // Открывает страницу Яндекса с поиском внесённых данных
-  const yandexMapsUrl = `https://yandex.ru/maps/?text=${encodeURIComponent(address.trim())}`;
-  return (
-    <a
-      href={yandexMapsUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      title="Показать адрес на Яндекс Картах"
-      aria-label="Показать адрес на Яндекс Картах"
-      className={iconLinkCls}
-    >
-      <ExternalLink className="w-4 h-4" />
-    </a>
-  );
-}
-
-function PhoneCallAction({ phone }: { phone: string }) {
-  // tel:-ссылка вызывает функцию набора на устройстве
-  const telHref = `tel:${phone.replace(/[^\d+]/g, '')}`;
-  return (
-    <a
-      href={telHref}
-      title="Позвонить"
-      aria-label="Позвонить"
-      className={iconLinkCls}
-    >
-      <Phone className="w-4 h-4" />
-    </a>
-  );
-}
-
-function EmailAction({ email }: { email: string }) {
-  // mailto:-ссылка открывает почту (функция «написать»)
-  return (
-    <a
-      href={`mailto:${email.trim()}`}
-      title="Написать письмо"
-      aria-label="Написать письмо"
-      className={iconLinkCls}
-    >
-      <Mail className="w-4 h-4" />
-    </a>
-  );
-}
-
-function WebsiteAction({ website }: { website: string }) {
-  // Гиперссылка на указанный сайт (открывается в новой вкладке)
-  return (
-    <a
-      href={normalizeWebsiteUrl(website)}
-      target="_blank"
-      rel="noopener noreferrer"
-      title="Перейти на сайт"
-      aria-label="Перейти на сайт"
-      className={`${iconLinkCls} !ml-1`}
-    >
-      <ExternalLink className="w-4 h-4" />
-    </a>
-  );
-}
+// Действия-ссылки на контактах (карта / tel / mailto / сайт) убраны по требованию UI:
+// в поле «Адрес и контакты» интерактива быть не должно — только статичный текст.
 
 export function OrganizationPage() {
   const navigate = useNavigate();
@@ -298,8 +225,9 @@ export function OrganizationPage() {
                   («Сменить организацию» / «+ Создать организацию») — внутри карточки
                   организации эти кнопки больше не нужны. */}
               <div className="flex flex-wrap items-center gap-3">
-                {/* Крупным шрифтом — краткое наименование организации */}
-                <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+                {/* Крупным шрифтом — краткое наименование организации.
+                    Жирность убрана по требованию UI: обычный (normal) вес шрифта. */}
+                <h1 className="text-2xl md:text-3xl font-normal tracking-tight text-gray-900 dark:text-white">
                   {organization.shortName || organization.name}
                 </h1>
                 <span className="px-3 py-1 bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border border-indigo-500/30 rounded-full text-xs font-semibold">
@@ -310,56 +238,40 @@ export function OrganizationPage() {
               {organization.name && (
                 <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">{organization.name}</p>
               )}
-              <div className="flex flex-wrap gap-x-6 gap-y-2 mt-4 text-sm text-gray-500 dark:text-gray-400">
-                {/* Юридический адрес: клик открывает Яндекс с поиском внесённых данных */}
-                {(organization.city || organization.legalAddress) && (
-                  <a
-                    href={`https://yandex.ru/maps/?text=${encodeURIComponent([organization.postalCode, organization.city, organization.legalAddress].filter(Boolean).join(', ').trim())}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Показать адрес на Яндекс Картах"
-                    className="flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                  >
-                    <MapPin className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    {[organization.postalCode, organization.city, organization.legalAddress].filter(Boolean).join(', ')}
-                  </a>
-                )}
-                {/* Телефон: tel:-ссылка вызывает функцию набора */}
-                {organization.phone && (
-                  <a
-                    href={`tel:${organization.phone.replace(/[^\d+]/g, '')}`}
-                    title="Позвонить"
-                    className="flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                  >
-                    <Phone className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    {organization.phone}
-                  </a>
-                )}
-                {/* Эл. почта: mailto:-ссылка открывает письмо */}
-                {organization.email && (
-                  <a
-                    href={`mailto:${organization.email.trim()}`}
-                    title="Написать письмо"
-                    className="flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                  >
-                    <Mail className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    {organization.email}
-                  </a>
-                )}
-                {/* Сайт: гиперссылка на указанный сайт */}
-                {organization.website && (
-                  <a
-                    href={normalizeWebsiteUrl(organization.website)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Перейти на сайт"
-                    className="flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors underline-offset-2 hover:underline"
-                  >
-                    <Globe className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    {organization.website}
-                  </a>
-                )}
-              </div>
+              {/* Строка контактов под наименованием организации: адрес, телефон,
+                  эл. почта и сайт умещены в одну горизонтальную строку.
+                  Интерактив полностью убран (по требованию UI): это статичные
+                  <span>-элементы без ссылок; hover-эффект — как у остальных
+                  неинтерактивных элементов карточки (без перехода в indigo и
+                  без подчёркивания). */}
+              {(organization.city || organization.legalAddress || organization.phone || organization.email || organization.website) && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                  {(organization.city || organization.legalAddress) && (
+                    <span className="inline-flex items-center gap-1.5" title="Юридический адрес">
+                      <MapPin className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      {[organization.postalCode, organization.city, organization.legalAddress].filter(Boolean).join(', ')}
+                    </span>
+                  )}
+                  {organization.phone && (
+                    <span className="inline-flex items-center gap-1.5" title="Телефон">
+                      <Phone className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      {organization.phone}
+                    </span>
+                  )}
+                  {organization.email && (
+                    <span className="inline-flex items-center gap-1.5" title="Эл. почта">
+                      <Mail className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      {organization.email}
+                    </span>
+                  )}
+                  {organization.website && (
+                    <span className="inline-flex items-center gap-1.5" title="Сайт">
+                      <Globe className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      {organization.website}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
             {!isEditing && (
               <div className="flex gap-2 flex-shrink-0">
@@ -494,38 +406,17 @@ export function OrganizationPage() {
               <InfoRow label="Штатная численность" value={organization.employeeCount ?? undefined} />
             </InfoCard>
 
+            {/* По требованию UI: в поле «Адрес и контакты» интерактив полностью
+                отсутствует — адреса, телефоны, почта и сайт отображаются как
+                статичный текст (без Яндекс-поиска, tel:, mailto: и ссылок). */}
             <InfoCard icon={MapPin} title="Адрес и контакты">
               <InfoRow label="Почтовый индекс" value={organization.postalCode} />
               <InfoRow label="Город" value={organization.city} />
-              {/* Юридический адрес: клик по иконке открывает Яндекс с поиском внесённых данных */}
-              <InfoRow
-                label="Юридический адрес"
-                value={organization.legalAddress}
-                action={organization.legalAddress?.trim() ? <AddressMapAction address={[organization.postalCode, organization.city, organization.legalAddress].filter(Boolean).join(', ')} /> : undefined}
-              />
-              <InfoRow
-                label="Фактический адрес"
-                value={organization.actualAddress}
-                action={organization.actualAddress?.trim() ? <AddressMapAction address={organization.actualAddress} /> : undefined}
-              />
-              {/* Телефон: tel:-ссылка вызывает функцию набора */}
-              <InfoRow
-                label="Телефон"
-                value={organization.phone}
-                action={organization.phone?.trim() ? <PhoneCallAction phone={organization.phone} /> : undefined}
-              />
-              {/* Email: mailto:-ссылка открывает письмо */}
-              <InfoRow
-                label="Email"
-                value={organization.email}
-                action={organization.email?.trim() ? <EmailAction email={organization.email} /> : undefined}
-              />
-              {/* Сайт: гиперссылка на указанный сайт */}
-              <InfoRow
-                label="Сайт"
-                value={organization.website}
-                action={organization.website?.trim() ? <WebsiteAction website={organization.website} /> : undefined}
-              />
+              <InfoRow label="Юридический адрес" value={organization.legalAddress} />
+              <InfoRow label="Фактический адрес" value={organization.actualAddress} />
+              <InfoRow label="Телефон" value={organization.phone} />
+              <InfoRow label="Email" value={organization.email} />
+              <InfoRow label="Сайт" value={organization.website} />
             </InfoCard>
 
             <InfoCard icon={Crown} title="Руководство">
