@@ -59,6 +59,12 @@ export function DirectoriesPage() {
   const handleEdit = async (item: any): Promise<boolean> => {
     let ok = false;
     if (activeTab === 'activity-types') {
+      // Основной вид деятельности может быть ровно один. Если другой вид уже
+      // помечен основным — изменения не применяются, пока с текущего основного
+      // не снимут галочку «Основной вид деятельности» (модалка остаётся открытой).
+      if (item.isMain && activityTypes.some(a => a.isMain && a.id !== item.id)) {
+        return false;
+      }
       return await updateActivityType(item.id, { okved: item.okved.trim(), name: item.name.trim(), isMain: Boolean(item.isMain) });
     }
     if (activeTab === 'internal-directories') {
@@ -290,7 +296,11 @@ export function DirectoriesPage() {
           onClose={() => { setShowAddModal(false); setEditingItem(null); }}
           onSave={async (data: any) => {
             // модалка закрывается сама только при успехе — при ошибке данные остаются в форме
-            if (editingItem) return handleEdit({ ...editingItem, ...data });
+            if (editingItem) {
+              const ok = await handleEdit({ ...editingItem, ...data });
+              if (ok) setEditingItem(null);
+              return ok;
+            }
             return handleAdd(data);
           }}
         />
@@ -329,6 +339,7 @@ export function DirectoriesPage() {
 const OKVED_RE = /^\d{1,2}(\.\d{1,2}){0,2}$/;
 
 function DirectoryModal({ item, type, onClose, onSave }: { item: any; type: string; onClose: () => void; onSave: (data: any) => Promise<boolean> }) {
+  const { activityTypes } = useDataStore();
   const [formData, setFormData] = useState(item || (type === 'activity-types' ? { okved: '', name: '', isMain: false } : { name: '', description: '', address: '', owner: '' }));
   const [saving, setSaving] = useState(false);
   const handleSubmit = async (e: React.FormEvent) => {
@@ -337,6 +348,14 @@ function DirectoryModal({ item, type, onClose, onSave }: { item: any; type: stri
     // Валидация ОКВЭД для справочника «Виды деятельности» (зеркало бэкенда)
     if (type === 'activity-types' && !OKVED_RE.test((formData.okved || '').trim())) {
       alert('Некорректный ОКВЭД: максимум 6 цифр и два разделителя в виде точек (например, 62.01.1)');
+      return;
+    }
+    // Всплывающая подсказка: основной вид деятельности может быть только один.
+    // Если другой вид уже помечен основным — изменения НЕ применяются, модалка
+    // остаётся открытой (её можно закрыть кнопкой «Отмена»/крестиком без сохранения),
+    // пока с текущего основного вида не снимут галочку «Основной вид деятельности».
+    if (type === 'activity-types' && formData.isMain && activityTypes.some(a => a.isMain && a.id !== item?.id)) {
+      alert('У организации не может быть 2 основных вида деятельности');
       return;
     }
     setSaving(true);
