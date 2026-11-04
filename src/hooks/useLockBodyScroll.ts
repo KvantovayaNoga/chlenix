@@ -34,16 +34,29 @@ export function lockBackgroundScroll() {
   const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
 
   savedStates.length = 0;
+  // ВАЖНО: position:fixed для <main> НЕ применяется. Layout строится как
+  // flex-контейнер (<div class="flex"> сайдбар + main), и фиксация <main>
+  // вырывала его из потока: при открытии модалки сайдбар визуально «исчезал»,
+  // а контент уезжал под него (страница «ломалась»). Вместо этого — простая
+  // блокировка прокрутки через overflow:hidden: высота <main> ограничена
+  // вьюпортом (min-h-screen + h-screen у сайдбара), поэтому скролл внутри
+  // него останавливается сразу, без перестройки макета. Позиция прокрутки
+  // сохраняется (scrollTop не сбрасывается при overflow:hidden).
   for (const el of collectScrollContainers()) {
     savedStates.push({ el, inline: el.style.cssText });
-    el.style.setProperty("position", "fixed", "important");
-    // сохраняем текущую позицию прокрутки, чтобы фон не «прыгал» наверх
-    el.style.setProperty("top", `-${el.scrollTop}px`, "important");
-    el.style.setProperty("left", "0", "important");
-    el.style.setProperty("width", "100%", "important");
-    el.style.setProperty("height", "100%", "important");
-    el.style.setProperty("overflow", "hidden", "important");
-    el.style.setProperty("overscroll-behavior", "none", "important");
+    if (el === document.documentElement || el === document.body) {
+      el.style.setProperty("position", "fixed", "important");
+      // сохраняем текущую позицию прокрутки, чтобы фон не «прыгал» наверх
+      el.style.setProperty("top", `-${el.scrollTop}px`, "important");
+      el.style.setProperty("left", "0", "important");
+      el.style.setProperty("width", "100%", "important");
+      el.style.setProperty("height", "100%", "important");
+      el.style.setProperty("overscroll-behavior", "none", "important");
+    } else {
+      // внутренние контейнеры (main/Layout): только блокируем прокрутку
+      el.style.setProperty("overflow", "hidden", "important");
+      el.style.setProperty("overscroll-behavior", "contain", "important");
+    }
   }
   // компенсация исчезнувшей полосы прокрутки (чтобы не было «прыжка» вёрстки)
   document.body.style.setProperty(
