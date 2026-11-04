@@ -642,8 +642,9 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
     provisionedOn: vm?.provisionedOn || '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
     // Понятные ошибки: почему нельзя создать/сохранить ВМ
     if (!formData.name.trim()) { setFormError('Укажите имя ВМ — без имени машину не найти в реестре.'); return; }
     if (!formData.hostname.trim()) { setFormError('Укажите hostname ВМ (например, web01.company.local).'); return; }
@@ -660,7 +661,17 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
     const payload = { ...formData };
     if (payload.serverRole === '' || payload.serverRole === 'storage') payload.serverRole = '' as any;
     if (payload.serverRole !== 'management_console' && payload.serverRole !== 'hypervisor_host') payload.provisionedOn = '';
-    onSave(payload);
+    // п.5: ждём реального результата сохранения — окно закрывает родитель,
+    // только если ВМ действительно создана/обновлена (onSave вернёт true/false).
+    setSaving(true);
+    try {
+      const ok = await onSave(payload);
+      if (ok === false) setFormError('Не удалось сохранить ВМ: сервер отклонил запрос. Окно осталось открытым — данные в форме сохранены.');
+    } catch {
+      setFormError('Ошибка соединения. ВМ НЕ сохранена — попробуйте ещё раз.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -668,7 +679,7 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
       <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">{vm?.id ? 'Редактировать ВМ' : 'Создать виртуальную машину'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button>
+          <button onClick={onClose} disabled={saving} className="text-gray-400 hover:text-gray-600 disabled:opacity-50"><X className="w-6 h-6" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -735,8 +746,8 @@ function VMEditModal({ vm, onClose, onSave, servers, employees, saveError }: any
             </div>
           )}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <button type="button" onClick={onClose} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">Отмена</button>
-            <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">{vm?.id ? 'Сохранить' : 'Создать'}</button>
+            <button type="button" onClick={onClose} disabled={saving} className="px-5 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">Отмена</button>
+            <button type="submit" disabled={saving} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed">{saving ? 'Сохранение…' : vm?.id ? 'Сохранить' : 'Создать'}</button>
           </div>
         </form>
       </div>
