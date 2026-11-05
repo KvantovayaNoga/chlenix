@@ -11,6 +11,7 @@ import { EquipmentCardModal } from '../components/EquipmentCardModal';
 // Карточка ВМ поверх вкладки «Сотрудники»: тот же VMDetailModal, что на вкладке «Серверы»
 import { VMDetailModal } from './ServersPage';
 import { UserOrganizationsModal } from '../components/UserOrganizationsModal';
+import { serverRoleVisual } from '../components/ServerRoleIcon';
 import { HeadStar } from '../components/HeadStar';
 import { formatDate, formatDateTime } from '../utils/formatDate';
 
@@ -190,7 +191,14 @@ export function EmployeeDetailPage() {
             ) : (
               <div className="space-y-3">
                 {employeeEquipment.map(eq => {
-                  const Icon = categoryIcons[eq.category];
+                  // Иконка в общем стиле проекта: для серверных сущностей (хост/кластер/СХД/консоль) —
+                  // цвет по роли (ServerRoleIcon), как в «Оборудовании»; остальные — индиго, как в EquipmentCardModal.
+                  const roleVisual = eq.serverRole ? serverRoleVisual(eq.serverRole) : null;
+                  const Icon = roleVisual ? roleVisual.Icon : categoryIcons[eq.category];
+                  const iconBoxClass = roleVisual
+                    ? `${roleVisual.bg} p-2 rounded-lg shadow-sm`
+                    : 'bg-indigo-50 dark:bg-indigo-900/30 p-2 rounded-lg shadow-sm';
+                  const iconColorClass = roleVisual ? roleVisual.color : 'text-indigo-600 dark:text-indigo-400';
                   const condition = conditionLabels[eq.condition];
                   return (
                     <div
@@ -203,7 +211,7 @@ export function EmployeeDetailPage() {
                       title="Открыть карточку оборудования"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="bg-white dark:bg-gray-600 p-2 rounded-lg shadow-sm"><Icon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" /></div>
+                        <div className={iconBoxClass}><Icon className={`w-5 h-5 ${iconColorClass}`} /></div>
                         <div className="min-w-0">
                           <p className="font-medium text-gray-700 dark:text-gray-200 truncate">{eq.name}</p>
                           {/* Инв.№/Сер.№ показываем только для физической техники: кластер — логическая сущность */}
@@ -253,9 +261,10 @@ export function EmployeeDetailPage() {
                       title="Открыть карточку виртуальной машины"
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Cpu className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                          <span className="font-medium text-gray-700 dark:text-gray-200">{vm.name}</span>
+                        <div className="flex items-center gap-2 min-w-0">
+                          {/* Иконка ВМ в общем стиле проекта: такой же бэйдж, как у иконок оборудования выше и EquipmentCardModal */}
+                          <div className="bg-purple-50 dark:bg-purple-900/30 p-2 rounded-lg shadow-sm shrink-0"><Cpu className="w-5 h-5 text-purple-600 dark:text-purple-400" /></div>
+                          <span className="font-medium text-gray-700 dark:text-gray-200 truncate">{vm.name}</span>
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${status.color}`}>{status.label}</span>
                           <span className="text-xs px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">{isInfra ? 'Инфраструктура' : 'Сервисы'}</span>
                         </div>
