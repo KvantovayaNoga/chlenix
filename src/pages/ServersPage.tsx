@@ -535,9 +535,12 @@ export function VMDetailModal({ vm, onClose, canEdit, isAdmin, employees, servic
     void store.deleteService(svcId);
   };
 
+  // Карточка ВМ — read-only окно: закрывается кликом по фону.
+  // Редактирование идёт через отдельный VMFormModal, поэтому закрытие по клику
+  // безопасно даже в режиме canEdit (дочерние формы делают stopPropagation).
   return (
     <>
-    <div className="modal-root fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="modal-root fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-gray-800 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
           <h2 className="text-xl font-bold text-gray-200 flex items-center gap-2"><Cpu className="w-6 h-6 text-purple-400" />{vm.name}</h2>
